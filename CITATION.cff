@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the associated paper below."
+title: "SteinerPy"
+type: software
+license: MIT
+repository-code: "https://github.com/berendmarkhorst/SteinerPy"
+url: "https://github.com/berendmarkhorst/SteinerPy"
+
+authors:
+  - family-names: Markhorst
+    given-names: Berend
+  - family-names: Berkhout
+    given-names: Joost
+  - family-names: Zocca
+    given-names: Alessandro
+  - family-names: Pruyn
+    given-names: Jeroen
+  - family-names: van der Mei
+    given-names: Rob
+
+preferred-citation:
+  type: article
+  title: "Future-proof ship pipe routing: Navigating the energy transition"
+  authors:
+    - family-names: Markhorst
+      given-names: Berend
+    - family-names: Berkhout
+      given-names: Joost
+    - family-names: Zocca
+      given-names: Alessandro
+    - family-names: Pruyn
+      given-names: Jeroen
+    - family-names: van der Mei
+      given-names: Rob
+  journal: "Ocean Engineering"
+  volume: 319
+  pages: "120113"
+  year: 2025
+  publisher: Elsevier
+  doi: "10.1016/j.oceaneng.2024.120113"
