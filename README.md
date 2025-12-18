@@ -1,9 +1,56 @@
 # SteinerPy
-Package to solver Steiner Tree and Steiner Forest Problems with the HiGHS solver.
 
-See the `example.ipynb` notebook for usage examples.
+[![PyPI version](https://badge.fury.io/py/steinerpy.svg)](https://badge.fury.io/py/steinerpy)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-The only dependencies are `networkx` and `highspy`.
+A Python package for solving Steiner Tree and Steiner Forest Problems using the HiGHS solver and NetworkX graphs.
+
+## Installation
+
+Install SteinerPy using pip:
+
+```bash
+pip install steinerpy
+```
+
+Or using uv:
+
+```bash
+uv add steinerpy
+```
+
+## Quick Start
+
+```python
+import networkx as nx
+from steinerpy import SteinerProblem
+
+# Create a graph
+G = nx.Graph()
+G.add_edge('A', 'B', weight=1)
+G.add_edge('B', 'C', weight=2)
+G.add_edge('C', 'D', weight=1)
+
+# Define terminal groups
+terminal_groups = [['A', 'D']]
+
+# Solve the Steiner problem
+problem = SteinerProblem(G, terminal_groups)
+solution = problem.get_solution()
+
+print(f"Optimal cost: {solution.objective}")
+print(f"Selected edges: {solution.selected_edges}")
+```
+
+## Usage Examples
+
+See the `example.ipynb` notebook for detailed usage examples.
+
+## Dependencies
+
+- `networkx`: For graph representation and manipulation
+- `highspy`: For optimization solving
 
 If you use this package in your research, please cite:
 

@@ -15,7 +15,7 @@ def make_model(time_limit: float, logfile: str = "") -> hp.HighsModel:
     # Create model
     model = hp.Highs()
     model.setOptionValue("time_limit", time_limit)
-    model.setOptionValue("output_flag", True)  # Disable/enable console output
+    model.setOptionValue("output_flag", False)  # Disable/enable console output
 
     # Clear the logfile and start logging
     if logfile != "":
