@@ -1,7 +1,8 @@
 # SteinerPy
 
 [![PyPI version](https://badge.fury.io/py/steinerpy.svg)](https://badge.fury.io/py/steinerpy)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/steinerpy)](https://pypi.org/project/steinerpy/)
+[![Python 3.8+](https://img.shields.io/pypi/pyversions/steinerpy.svg)](https://pypi.org/project/steinerpy/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI/CD](https://github.com/berendmarkhorst/SteinerPy/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/berendmarkhorst/SteinerPy/actions)
 [![codecov](https://codecov.io/gh/berendmarkhorst/SteinerPy/branch/main/graph/badge.svg)](https://codecov.io/gh/berendmarkhorst/SteinerPy)
@@ -10,7 +11,7 @@ A Python package for solving Steiner Tree and Steiner Forest Problems using the 
 
 ## Installation
 
-Install SteinerPy using pip:
+Install SteinerPy from PyPI:
 
 ```bash
 pip install steinerpy
@@ -21,6 +22,12 @@ Or using uv:
 ```bash
 uv add steinerpy
 ```
+
+### Requirements
+
+- Python 3.8+
+- NetworkX
+- HiGHS Solver (via highspy)
 
 ## Quick Start
 

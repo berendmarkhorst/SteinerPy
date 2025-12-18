@@ -1,9 +1,10 @@
 import networkx as nx
 import highspy as hp
+from typing import List, Tuple
 from .mathematical_model import build_model, run_model
 
 class SteinerProblem:
-    def __init__(self, graph: nx.Graph, terminal_groups: list[list], weight="weight"):
+    def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight"):
         """
         Initialize the SteinerProblem (can be tree or forest).
         :param graph: networkx graph.
@@ -39,7 +40,7 @@ class SteinerProblem:
         return solution
 
 class Solution:
-    def __init__(self, gap: float, runtime: float, objective: float, selected_edges: list[tuple]):
+    def __init__(self, gap: float, runtime: float, objective: float, selected_edges: List[Tuple]):
         self.gap = gap
         self.runtime = runtime
         self.objective = objective

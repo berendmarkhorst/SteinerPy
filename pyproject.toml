@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "steinerpy"
-version = "0.1.1"
+version = "0.1.2"
 description = "Package to solve Steiner Tree and Steiner Forest Problems with the HiGHS solver"
 readme = "README.md"
 license = "MIT"
@@ -96,7 +96,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --cov=src --cov-report=html --cov-report=term-missing"
+addopts = "-v --cov=steinerpy --cov-report=html --cov-report=term-missing"
 
 [dependency-groups]
 dev = [

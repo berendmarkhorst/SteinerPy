@@ -1,6 +1,7 @@
 import highspy as hp
 import logging
 import time
+from typing import List, Set, Tuple, Dict
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +27,7 @@ def make_model(time_limit: float, logfile: str = "") -> hp.HighsModel:
     return model
 
 
-def get_terminals(terminal_group: list[list]) -> list:
+def get_terminals(terminal_group: List[List]) -> List:
     """
     Turns a nested list of terminals into a list of terminals.
     :param terminal_group: nested list of terminals.
@@ -34,7 +35,7 @@ def get_terminals(terminal_group: list[list]) -> list:
     """
     return [t for group in terminal_group for t in group]
 
-def terminal_groups_without_root(terminal_group: list[list], roots: list, group_index: int) -> set:
+def terminal_groups_without_root(terminal_group: List[List], roots: List, group_index: int) -> Set:
     """
     Get terminal groups until index k without kth root.
     :param terminal_group: nested list of terminals.
@@ -47,7 +48,7 @@ def terminal_groups_without_root(terminal_group: list[list], roots: list, group_
     else:
         return set()
 
-def get_terminal_groups_until_k(terminal_groups: list[list], group_index: int) -> set:
+def get_terminal_groups_until_k(terminal_groups: List[List], group_index: int) -> Set:
     """
     Get terminal groups until index k.
     :param terminal_groups: nested list of terminals.
@@ -56,7 +57,7 @@ def get_terminal_groups_until_k(terminal_groups: list[list], group_index: int) -
     """
     return set(get_terminals(terminal_groups[:group_index]))
 
-def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem') -> tuple[hp.HighsModel, dict[hp.HighsVarType]]:
+def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem') -> Tuple[hp.HighsModel, Dict[str, hp.HighsVarType]]:
     """
     Adds DO-D constraints to the model (see Markhorst et al. 2025)
     :param model: HiGHS model.
@@ -150,7 +151,7 @@ def demand_and_supply_directed(steiner_problem: 'SteinerProblem', group_id_k: in
         return 0
 
 
-def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem', z: hp.HighsVarType, y2: hp.HighsVarType) -> tuple[hp.HighsModel, dict[hp.HighsVarType]]:
+def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem', z: hp.HighsVarType, y2: hp.HighsVarType) -> Tuple[hp.HighsModel, Dict[str, hp.HighsVarType]]:
     """
     We add the flow constraints to the HiGHS model.
     :param model: HiGHS model.
@@ -192,7 +193,7 @@ def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem'
     return model, f
 
 
-def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logfile: str = "") -> tuple[hp.HighsModel, float]:
+def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, Dict[str, hp.HighsVarType]]:
     """
     Returns the deterministic directed model.
     :param steiner_problem: SteinerProblem-object.
@@ -221,7 +222,7 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
     return model, x, y1, y2, z, f
 
 
-def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType) -> tuple[float, float, float, list[tuple]]:
+def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType) -> Tuple[float, float, float, List[Tuple]]:
     """
     Solves the model and returns the result.
     :param model: highspy model.
