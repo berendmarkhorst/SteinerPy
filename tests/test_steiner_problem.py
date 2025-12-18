@@ -2,7 +2,7 @@
 
 import networkx as nx
 import pytest
-from src import SteinerProblem, Solution
+from steinerpy import SteinerProblem, Solution
 
 
 def test_steiner_problem_initialization():

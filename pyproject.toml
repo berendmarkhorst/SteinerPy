@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "steinerpy"
-version = "0.1.0"
+version = "0.1.1"
 description = "Package to solve Steiner Tree and Steiner Forest Problems with the HiGHS solver"
 readme = "README.md"
 license = "MIT"
@@ -60,11 +60,11 @@ Documentation = "https://github.com/berendmarkhorst/SteinerPy"
 Changelog = "https://github.com/berendmarkhorst/SteinerPy/releases"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["steinerpy"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/src",
+    "/steinerpy",
     "/README.md",
     "/LICENSE",
     "/requirements.txt",
