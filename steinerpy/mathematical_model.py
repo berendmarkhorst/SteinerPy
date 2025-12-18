@@ -1,7 +1,7 @@
 import highspy as hp
 import logging
 import time
-from typing import List, Set, Tuple, Dict
+from typing import List, Set, Tuple, Dict, Union
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -130,7 +130,7 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
     return model, x, y1, y2, z
 
 
-def demand_and_supply_directed(steiner_problem: 'SteinerProblem', group_id_k: int, t: tuple, v: tuple, z: hp.HighsVarType) -> hp.HighsVarType | int:
+def demand_and_supply_directed(steiner_problem: 'SteinerProblem', group_id_k: int, t: Tuple, v: Tuple, z: hp.HighsVarType) -> Union[hp.HighsVarType, int]:
     """
     Calculate the demand and supply for a directed model.
     :param cc_k: The current connected component.

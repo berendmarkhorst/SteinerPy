@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2025-12-18
+
+### Fixed
+- Python 3.8 compatibility by replacing union type syntax (`|`) with `typing.Union`
+- Updated PyPI badge links to point to the official PyPI project page
+
 ## [0.1.2] - 2025-12-18
 
 ### Fixed
