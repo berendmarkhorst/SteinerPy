@@ -2,7 +2,13 @@
 
 import networkx as nx
 import pytest
-from steinerpy import SteinerProblem, Solution, PrizeCollectingProblem, PrizeCollectingSolution
+from steinerpy import (
+    SteinerProblem, Solution, PrizeCollectingProblem, PrizeCollectingSolution,
+    NodeWeightedSteinerProblem, NodeWeightedSolution, MaxWeightConnectedSubgraph,
+    DegreeConstrainedSteinerProblem,
+    BudgetConstrainedSteinerProblem, BudgetSolution,
+    DirectedSteinerProblem,
+)
 
 
 def test_steiner_problem_initialization():
@@ -468,6 +474,364 @@ def test_prize_collecting_get_solution_with_budget():
     selected_undirected = {tuple(sorted(e)) for e in solution.selected_edges}
     assert selected_undirected == {('A', 'B'), ('B', 'C')}
     assert solution.total_prize == 5.0
+
+
+# ---------------------------------------------------------------------------
+# Node-Weighted Steiner Tree (NWST) tests
+# ---------------------------------------------------------------------------
+
+def test_node_weighted_steiner_initialization():
+    """Test NodeWeightedSteinerProblem initialization."""
+    G = nx.Graph()
+    G.add_edge('A', 'B')
+    G.add_edge('B', 'C')
+
+    node_weights = {'A': 1, 'B': 5, 'C': 1}
+    problem = NodeWeightedSteinerProblem(G, [['A', 'C']], node_weights)
+
+    assert problem.node_weights == node_weights
+    assert problem.original_terminal_groups_nw == [['A', 'C']]
+    # Transformed graph is a DiGraph with split nodes
+    assert isinstance(problem.graph, nx.DiGraph)
+    # Each original node becomes v_in and v_out → 2 * n nodes
+    assert problem.graph.number_of_nodes() == 2 * G.number_of_nodes()
+
+
+def test_node_weighted_steiner_repr():
+    """Test NodeWeightedSteinerProblem and NodeWeightedSolution repr."""
+    G = nx.Graph()
+    G.add_edge('A', 'B')
+    problem = NodeWeightedSteinerProblem(G, [['A', 'B']], {'A': 1, 'B': 2})
+    assert 'nodes' in repr(problem)
+
+    sol = NodeWeightedSolution(
+        gap=0.0, runtime=0.1, objective=3.0,
+        selected_edges=[('A', 'B')], selected_nodes=['A', 'B']
+    )
+    assert 'NodeWeightedSolution' in repr(sol)
+    assert 'objective=3.00' in repr(sol)
+
+
+def test_node_weighted_steiner_direct_path():
+    """Triangle graph: direct cheap path preferred over expensive node."""
+    G = nx.Graph()
+    G.add_edge('A', 'B')
+    G.add_edge('B', 'C')
+    G.add_edge('A', 'C')
+
+    # B is expensive (10); optimal solution skips B and goes direct A-C.
+    solution = NodeWeightedSteinerProblem(
+        G, [['A', 'C']], {'A': 1, 'B': 10, 'C': 1}
+    ).get_solution(time_limit=30)
+
+    assert isinstance(solution, NodeWeightedSolution)
+    # Objective = node_A + edge_AC(=0) + node_C = 1 + 0 + 1 = 2
+    assert abs(solution.objective - 2.0) < 1e-4
+    # Only edge A-C should appear
+    edges_undirected = {tuple(sorted(e)) for e in solution.selected_edges}
+    assert edges_undirected == {('A', 'C')}
+    # Selected nodes: A (root, traversed) and C (terminal cost added as constant)
+    assert set(solution.selected_nodes) == {'A', 'C'}
+
+
+def test_node_weighted_steiner_chain():
+    """Chain graph: must include intermediate node."""
+    G = nx.Graph()
+    G.add_edge('A', 'B')
+    G.add_edge('B', 'C')
+
+    solution = NodeWeightedSteinerProblem(
+        G, [['A', 'C']], {'A': 1, 'B': 2, 'C': 1}
+    ).get_solution(time_limit=30)
+
+    # Must go through B: total = node_A + edge_AB(0) + node_B + edge_BC(0) + node_C = 1+2+1 = 4
+    assert abs(solution.objective - 4.0) < 1e-4
+    edges_undirected = {tuple(sorted(e)) for e in solution.selected_edges}
+    assert edges_undirected == {('A', 'B'), ('B', 'C')}
+    assert set(solution.selected_nodes) == {'A', 'B', 'C'}
+
+
+def test_node_weighted_steiner_with_edge_weights():
+    """Node and edge weights together determine optimal path."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=3)  # Expensive edge
+    G.add_edge('A', 'C', weight=1)  # Cheap edge
+
+    # Path A-B: node_A(1) + edge(3) + node_B(5) + node_C(terminal,1) = 10
+    # Path A-C: node_A(1) + edge(1) + node_C(terminal,1) = 3
+    solution = NodeWeightedSteinerProblem(
+        G, [['A', 'C']], {'A': 1, 'B': 5, 'C': 1}
+    ).get_solution(time_limit=30)
+
+    assert abs(solution.objective - 3.0) < 1e-4
+
+
+def test_node_weighted_steiner_custom_weight():
+    """Test with a non-default edge weight attribute."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', cost=2)
+
+    problem = NodeWeightedSteinerProblem(G, [['A', 'B']], {'A': 1, 'B': 1}, weight='cost')
+    assert problem.weight == 'cost'
+
+
+# ---------------------------------------------------------------------------
+# Maximum-Weight Connected Subgraph (MWCS) tests
+# ---------------------------------------------------------------------------
+
+def test_mwcs_initialization():
+    """Test MaxWeightConnectedSubgraph initialization."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=0)
+    G.add_edge('B', 'C', weight=0)
+
+    node_weights = {'A': 3, 'B': 5, 'C': -2}
+    problem = MaxWeightConnectedSubgraph(G, node_weights)
+
+    # Root should be the highest-weight node (B)
+    assert problem.mwcs_root == 'B'
+    # Positive-weight nodes become terminals
+    assert set(problem.terminal_groups[0]) >= {'A', 'B'}
+
+
+def test_mwcs_explicit_root():
+    """Test MaxWeightConnectedSubgraph with explicit root."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=0)
+
+    problem = MaxWeightConnectedSubgraph(G, {'A': 1, 'B': 2}, root='A')
+    assert problem.mwcs_root == 'A'
+
+
+def test_mwcs_get_solution():
+    """MWCS finds subgraph maximising total node weight."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=0)
+    G.add_edge('B', 'C', weight=0)
+    G.add_edge('C', 'D', weight=0)
+
+    # D has strongly negative weight → should be excluded
+    node_weights = {'A': 2, 'B': 3, 'C': 1, 'D': -10}
+    solution = MaxWeightConnectedSubgraph(G, node_weights).get_solution(time_limit=30)
+
+    assert isinstance(solution, PrizeCollectingSolution)
+    # Nodes A, B, C should be selected; D should not appear
+    assert 'D' not in solution.selected_nodes
+    assert solution.total_prize >= 6.0  # At least A+B+C
+
+
+# ---------------------------------------------------------------------------
+# Degree-Constrained Steiner Tree tests
+# ---------------------------------------------------------------------------
+
+def test_degree_constrained_initialization():
+    """Test DegreeConstrainedSteinerProblem initialization."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+
+    problem = DegreeConstrainedSteinerProblem(G, [['A', 'C']], max_degree=2)
+    assert problem.max_degree == 2
+    assert problem.terminal_groups == [['A', 'C']]
+
+
+def test_degree_constrained_repr():
+    """Test DegreeConstrainedSteinerProblem repr (inherited)."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    problem = DegreeConstrainedSteinerProblem(G, [['A', 'B']], max_degree=1)
+    assert 'nodes' in repr(problem)
+
+
+def test_degree_constrained_solution_respects_degree():
+    """Solution must not violate the degree constraint."""
+    G = nx.Graph()
+    for u, v, w in [('A', 'B', 1), ('B', 'C', 1), ('C', 'D', 1),
+                    ('A', 'C', 1), ('B', 'D', 1)]:
+        G.add_edge(u, v, weight=w)
+
+    solution = DegreeConstrainedSteinerProblem(
+        G, [['A', 'D']], max_degree=2
+    ).get_solution(time_limit=30)
+
+    assert isinstance(solution, Solution)
+    assert solution.objective is not None
+    # Verify every node in the solution has degree <= max_degree
+    for node in ['A', 'B', 'C', 'D']:
+        degree = sum(1 for e in solution.selected_edges if node in e)
+        assert degree <= 2, f"Node {node} has degree {degree} > 2"
+
+
+def test_degree_constrained_inherits_steiner():
+    """DegreeConstrainedSteinerProblem is a SteinerProblem."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    problem = DegreeConstrainedSteinerProblem(G, [['A', 'B']], max_degree=3)
+    assert isinstance(problem, SteinerProblem)
+    assert hasattr(problem, 'max_degree')
+
+
+# ---------------------------------------------------------------------------
+# Budget-Constrained Steiner Tree tests
+# ---------------------------------------------------------------------------
+
+def test_budget_constrained_initialization():
+    """Test BudgetConstrainedSteinerProblem initialization."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+
+    problem = BudgetConstrainedSteinerProblem(G, [['A', 'B', 'C']], budget=1.5)
+    assert problem.budget == 1.5
+    assert problem.terminal_groups == [['A', 'B', 'C']]
+
+
+def test_budget_solution_repr():
+    """Test BudgetSolution repr."""
+    sol = BudgetSolution(
+        gap=0.0, runtime=0.5, objective=3,
+        selected_edges=[('A', 'B'), ('B', 'C')],
+        connected_terminals=3, total_terminals=4,
+        penalties={'group_0_D': 1},
+    )
+    assert 'BudgetSolution' in repr(sol)
+    assert '3/4' in repr(sol)
+
+
+def test_budget_constrained_connects_within_budget():
+    """With sufficient budget, all terminals should be connected."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+
+    solution = BudgetConstrainedSteinerProblem(
+        G, [['A', 'B', 'C']], budget=10.0  # Generous budget
+    ).get_solution(time_limit=30)
+
+    assert isinstance(solution, BudgetSolution)
+    assert solution.connected_terminals == 3
+    assert solution.total_terminals == 3
+    assert len(solution.penalties) == 0
+
+
+def test_budget_constrained_limited_budget():
+    """With a tight budget, not all terminals can be connected."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+    G.add_edge('C', 'D', weight=1)
+
+    # Budget 2 can connect at most 3 out of 4 terminals in a chain
+    solution = BudgetConstrainedSteinerProblem(
+        G, [['A', 'B', 'C', 'D']], budget=2.0
+    ).get_solution(time_limit=30)
+
+    assert isinstance(solution, BudgetSolution)
+    assert solution.connected_terminals == 3
+    assert solution.total_terminals == 4
+    # Total edge cost must not exceed budget
+    total_cost = sum(G.edges[e]['weight'] for e in solution.selected_edges)
+    assert total_cost <= 2.0 + 1e-6
+
+
+def test_budget_constrained_zero_budget():
+    """With zero budget no edges can be selected; only root is connected."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+
+    solution = BudgetConstrainedSteinerProblem(
+        G, [['A', 'B', 'C']], budget=0.0
+    ).get_solution(time_limit=30)
+
+    assert len(solution.selected_edges) == 0
+    assert solution.connected_terminals == 1  # only root A is connected
+
+
+def test_budget_constrained_inherits_steiner():
+    """BudgetConstrainedSteinerProblem is a SteinerProblem."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    problem = BudgetConstrainedSteinerProblem(G, [['A', 'B']], budget=5.0)
+    assert isinstance(problem, SteinerProblem)
+    assert hasattr(problem, 'budget')
+
+
+# ---------------------------------------------------------------------------
+# Directed Steiner Tree (Arborescence) tests
+# ---------------------------------------------------------------------------
+
+def test_directed_steiner_initialization():
+    """Test DirectedSteinerProblem initialization."""
+    DG = nx.DiGraph()
+    DG.add_edge('A', 'B', weight=1)
+    DG.add_edge('B', 'C', weight=1)
+
+    problem = DirectedSteinerProblem(DG, root='A', terminals=['B', 'C'])
+    assert problem.terminal_groups == [['A', 'B', 'C']]
+    assert problem.roots == ['A']
+    # Arcs are one-directional for DiGraph
+    assert set(problem.arcs) == {('A', 'B'), ('B', 'C')}
+    assert problem.preprocess is False
+
+
+def test_directed_steiner_requires_digraph():
+    """DirectedSteinerProblem must reject undirected graphs."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    with pytest.raises(ValueError, match="directed"):
+        DirectedSteinerProblem(G, root='A', terminals=['B'])
+
+
+def test_directed_steiner_repr():
+    """Test DirectedSteinerProblem repr (inherited)."""
+    DG = nx.DiGraph()
+    DG.add_edge('A', 'B', weight=1)
+    problem = DirectedSteinerProblem(DG, root='A', terminals=['B'])
+    assert 'nodes' in repr(problem)
+
+
+def test_directed_steiner_prefers_directed_path():
+    """Directed model picks the cheapest directed path, not the undirected shortest."""
+    DG = nx.DiGraph()
+    DG.add_edge('A', 'B', weight=1)
+    DG.add_edge('B', 'C', weight=1)
+    DG.add_edge('A', 'C', weight=10)  # Direct but expensive
+
+    solution = DirectedSteinerProblem(
+        DG, root='A', terminals=['B', 'C']
+    ).get_solution(time_limit=30)
+
+    assert isinstance(solution, Solution)
+    # Optimal: A→B→C costs 2; direct A→C costs 10
+    assert abs(solution.objective - 2.0) < 1e-4
+    edges = {tuple(sorted(e)) for e in solution.selected_edges}
+    assert edges == {('A', 'B'), ('B', 'C')}
+
+
+def test_directed_steiner_no_reverse_path():
+    """Directed model cannot use reverse arcs that are not in the DiGraph."""
+    DG = nx.DiGraph()
+    DG.add_edge('A', 'B', weight=1)  # Only A→B, not B→A
+    DG.add_edge('A', 'C', weight=2)
+
+    # From root A, we can reach B and C; solution must use only directed arcs
+    solution = DirectedSteinerProblem(
+        DG, root='A', terminals=['B', 'C']
+    ).get_solution(time_limit=30)
+
+    assert abs(solution.objective - 3.0) < 1e-4  # A→B (1) + A→C (2)
+    for u, v in solution.selected_edges:
+        assert DG.has_edge(u, v), f"Arc ({u},{v}) not in DiGraph"
+
+
+def test_directed_steiner_inherits_base():
+    """DirectedSteinerProblem is a BaseSteinerProblem."""
+    from steinerpy.objects import BaseSteinerProblem
+    DG = nx.DiGraph()
+    DG.add_edge('A', 'B', weight=1)
+    problem = DirectedSteinerProblem(DG, root='A', terminals=['B'])
+    assert isinstance(problem, BaseSteinerProblem)
 
 
 if __name__ == "__main__":

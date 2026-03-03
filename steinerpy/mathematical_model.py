@@ -85,12 +85,17 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
 
     # Constraint 2: indegree of each vertex cannot exceed 1
     for v in steiner_problem.nodes:
-        lhs = sum(y1[(u, w)] for u, w in steiner_problem.arcs if v == w)
-        model.addConstr(lhs <= 1)
+        incoming = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        if incoming:
+            model.addConstr(sum(incoming) <= 1)
 
     # Constraint 3: connection between y1 and x
+    # For directed graphs only one arc direction exists per edge
     for u, v in steiner_problem.edges:
-        model.addConstr(y1[(u, v)] + y1[(v, u)] <= x[(u, v)])
+        if (v, u) in y1:
+            model.addConstr(y1[(u, v)] + y1[(v, u)] <= x[(u, v)])
+        else:
+            model.addConstr(y1[(u, v)] <= x[(u, v)])
 
     # Constraint 4: enforce terminal group rooted at one root
     for group_id_k in group_indices:
@@ -106,26 +111,35 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
     # Constraint 6: terminals in T^{1···k−1} cannot attach to root r k
     for group_id_k in group_indices:
         for t in get_terminal_groups_until_k(steiner_problem.terminal_groups, group_id_k):
-            lhs = sum(y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == t)
-            model.addConstr(lhs == 0)
+            incoming = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == t]
+            if incoming:
+                model.addConstr(sum(incoming) == 0)
 
     # Constraint 7: indegree at most outdegree for Steiner points
     for v in steiner_problem.steiner_points:
-        model.addConstr(sum(y1[(a[0], a[1])] for a in steiner_problem.arcs if a[1] == v) <=
-                        sum(y1[(a[0], a[1])] for a in steiner_problem.arcs if a[0] == v))
+        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        out_arcs = [y1[a] for a in steiner_problem.arcs if a[0] == v]
+        if in_arcs:
+            rhs = sum(out_arcs) if out_arcs else 0
+            model.addConstr(sum(in_arcs) <= rhs)
 
     # Constraint 8: indegree at most outdegree per terminal group
     for group_id_k in group_indices:
         remaining_vertices = set(steiner_problem.nodes) - set(terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id_k))
         for v in remaining_vertices:
-            model.addConstr(sum(y2[group_id_k, (a[0], v)] for a in steiner_problem.arcs if a[1] == v) <=
-                            sum(y2[group_id_k, (v, a[1])] for a in steiner_problem.arcs if a[0] == v))
+            in_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == v]
+            out_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[0] == v]
+            if in_arcs:
+                rhs = sum(out_arcs) if out_arcs else 0
+                model.addConstr(sum(in_arcs) <= rhs)
 
     # Constraint 9: connect y2 and z
     for group_id_k in group_indices:
         for group_id_l in group_indices:
             if group_id_l > group_id_k:
-                model.addConstr(sum(y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == steiner_problem.roots[group_id_l]) <= z[group_id_k, group_id_l])
+                incoming = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == steiner_problem.roots[group_id_l]]
+                if incoming:
+                    model.addConstr(sum(incoming) <= z[group_id_k, group_id_l])
 
     return model, x, y1, y2, z
 
@@ -169,10 +183,16 @@ def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem'
     for v in steiner_problem.nodes:
         for group_id in group_indices:
             for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
-                first_term = sum(f[group_id, t, a] for a in steiner_problem.arcs if a[0] == v)
-                second_term = sum(f[group_id, t, a] for a in steiner_problem.arcs if a[1] == v)
-                left_hand_side = first_term - second_term
+                out_arcs = [a for a in steiner_problem.arcs if a[0] == v]
+                in_arcs = [a for a in steiner_problem.arcs if a[1] == v]
                 demand_and_supply = demand_and_supply_directed(steiner_problem, group_id, t, v, z)
+                has_arcs = bool(out_arcs or in_arcs)
+                has_demand = not isinstance(demand_and_supply, (int, float))
+                if not has_arcs and not has_demand:
+                    continue  # Isolated node with no demand: trivially satisfied
+                first_term = sum(f[group_id, t, a] for a in out_arcs) if out_arcs else 0
+                second_term = sum(f[group_id, t, a] for a in in_arcs) if in_arcs else 0
+                left_hand_side = first_term - second_term
                 model.addConstr(left_hand_side == demand_and_supply)
 
     # Constraint 2: connection between f and y2
@@ -189,6 +209,70 @@ def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem'
             if sum(1 for u, v in steiner_problem.arcs if u == t) > 0:
                 left_hand_side = sum(f[group_id, t, (u, v)] for u, v in steiner_problem.arcs if u == t)
                 model.addConstr(left_hand_side == 0, name="flow_3")
+
+    return model, f
+
+
+def add_optional_flow_constraints(
+    model: hp.HighsModel,
+    steiner_problem: 'SteinerProblem',
+    y2: Dict,
+    connection_vars: Dict,
+) -> Tuple[hp.HighsModel, Dict]:
+    """
+    Flow constraints where terminal connectivity is optional.
+
+    For each non-root terminal t in group k, *connection_vars[(k, t)]* is a binary
+    variable that is 1 when the terminal is connected and 0 when it is not.
+    The flow demand is scaled by this variable so that no flow is required for
+    disconnected (penalised) terminals.
+
+    :param connection_vars: dict (group_id, terminal) -> HiGHS binary variable
+    :return: model with added constraints and flow variable dict f.
+    """
+    group_indices = range(len(steiner_problem.terminal_groups))
+    f = {
+        (group_id, t, a): model.addVariable(0, 1, hp.HighsVarType.kInteger, name=f"f_opt[{group_id},{a}]")
+        for group_id in group_indices
+        for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id)
+        for a in steiner_problem.arcs
+    }
+
+    # Constraint 1: optional flow conservation
+    # demand = connection_var at root, -connection_var at terminal, 0 elsewhere
+    for v in steiner_problem.nodes:
+        for group_id in group_indices:
+            for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
+                out_arcs = [a for a in steiner_problem.arcs if a[0] == v]
+                in_arcs = [a for a in steiner_problem.arcs if a[1] == v]
+                c = connection_vars[(group_id, t)]
+
+                if v == steiner_problem.roots[group_id]:
+                    demand = c
+                elif v == t:
+                    demand = -c
+                else:
+                    # demand = 0 (flow conservation); skip when node has no arcs
+                    if not out_arcs and not in_arcs:
+                        continue
+                    demand = 0
+
+                first_term = sum(f[group_id, t, a] for a in out_arcs) if out_arcs else 0
+                second_term = sum(f[group_id, t, a] for a in in_arcs) if in_arcs else 0
+                model.addConstr(first_term - second_term == demand)
+
+    # Constraint 2: flow can only use selected arcs
+    for group_id in group_indices:
+        for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
+            for a in steiner_problem.arcs:
+                model.addConstr(f[group_id, t, a] <= y2[group_id, a])
+
+    # Constraint 3: no flow leaving a terminal
+    for group_id in group_indices:
+        for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
+            out_arcs = [(u, v) for u, v in steiner_problem.arcs if u == t]
+            if out_arcs:
+                model.addConstr(sum(f[group_id, t, a] for a in out_arcs) == 0)
 
     return model, f
 
@@ -211,6 +295,11 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
 
     # Add constraints
     model, x, y1, y2, z = add_directed_constraints(model, steiner_problem)
+
+    # Add degree constraints if max_degree is specified
+    if getattr(steiner_problem, 'max_degree', None) is not None:
+        add_degree_constraints(model, steiner_problem, x)
+
     model, f = add_flow_constraints(model, steiner_problem, z, y2)
 
     # End tracking compilation time
@@ -243,6 +332,21 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     objective = model.getObjectiveValue()
 
     return gap, runtime, objective, selected_edges
+
+
+def add_degree_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: Dict) -> None:
+    """
+    Add maximum degree constraints to the model.
+    For each node v: sum of x[e] for all edges e incident to v <= max_degree.
+    :param model: HiGHS model.
+    :param steiner_problem: SteinerProblem-object with max_degree attribute.
+    :param x: edge selection decision variables.
+    """
+    max_degree = steiner_problem.max_degree
+    for v in steiner_problem.nodes:
+        incident = [x[e] for e in steiner_problem.edges if v in e]
+        if incident:
+            model.addConstr(sum(incident) <= max_degree)
 
 def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time_limit: float = 300, logfile: str = "") -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType]]:
     """
@@ -353,3 +457,84 @@ def run_prize_collecting_model(model: hp.HighsModel, steiner_problem: 'PrizeColl
     objective = model.getObjectiveValue()
     
     return gap, runtime, objective, selected_edges, selected_nodes, penalties
+
+
+def build_budget_model(steiner_problem: 'BudgetConstrainedSteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple:
+    """
+    Build a budget-constrained Steiner model.
+    Objective: maximize connected terminals (minimize unconnected terminals).
+    Constraint: total edge cost <= budget.
+    :param steiner_problem: BudgetConstrainedSteinerProblem-object.
+    :param time_limit: time limit in seconds.
+    :param logfile: path to logfile.
+    :return: HiGHS model and decision variables.
+    """
+    model = make_model(time_limit, logfile)
+    group_indices = range(len(steiner_problem.terminal_groups))
+
+    model, x, y1, y2, z = add_directed_constraints(model, steiner_problem)
+
+    if getattr(steiner_problem, 'max_degree', None) is not None:
+        add_degree_constraints(model, steiner_problem, x)
+
+    # Terminal penalty variables (1 if terminal is NOT connected)
+    # and connection variables (1 if terminal IS connected)
+    penalty_vars = {}
+    connection_vars = {}
+    for group_id in group_indices:
+        group_root = steiner_problem.roots[group_id]
+        for terminal in steiner_problem.terminal_groups[group_id]:
+            if terminal == group_root:
+                # Root is always connected; no penalty variable needed
+                continue
+            penalty_vars[(group_id, terminal)] = model.addVariable(
+                0, 1, hp.HighsVarType.kInteger, name=f"penalty[{group_id},{terminal}]"
+            )
+            connection_vars[(group_id, terminal)] = model.addVariable(
+                0, 1, hp.HighsVarType.kInteger, name=f"conn[{group_id},{terminal}]"
+            )
+            # Exactly one of connected or penalised
+            model.addConstr(connection_vars[(group_id, terminal)] + penalty_vars[(group_id, terminal)] == 1)
+
+    # Flow constraints that respect the optional connectivity
+    model, f = add_optional_flow_constraints(model, steiner_problem, y2, connection_vars)
+
+    # Budget constraint: total edge cost <= budget
+    model.addConstr(
+        sum(x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
+            for e in steiner_problem.edges) <= steiner_problem.budget
+    )
+
+    return model, x, y1, y2, z, f, penalty_vars
+
+
+def run_budget_model(model: hp.HighsModel, steiner_problem: 'BudgetConstrainedSteinerProblem',
+                     x: Dict, penalty_vars: Dict) -> Tuple[float, float, int, List[Tuple], Dict]:
+    """
+    Solve budget-constrained model: minimize number of unconnected terminals.
+    :param model: HiGHS model.
+    :param steiner_problem: BudgetConstrainedSteinerProblem-object.
+    :param x: edge selection variables.
+    :param penalty_vars: terminal penalty variables.
+    :return: gap, runtime, connected_count, selected_edges, penalties.
+    """
+    logging.info("Started running the budget-constrained model...")
+
+    model.minimize(sum(penalty_vars.values()))
+
+    logging.info(f"Runtime: {model.getRunTime():.2f} seconds")
+
+    selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
+
+    penalties = {}
+    for (group_id, terminal), var in penalty_vars.items():
+        if model.variableValue(var) > 0.5:
+            penalties[f"group_{group_id}_{terminal}"] = 1
+
+    total_terminals = sum(len(g) for g in steiner_problem.terminal_groups)
+    connected_count = total_terminals - len(penalties)
+
+    gap = model.getInfo().mip_gap
+    runtime = model.getRunTime()
+
+    return gap, runtime, connected_count, selected_edges, penalties
