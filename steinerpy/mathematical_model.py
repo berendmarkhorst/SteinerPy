@@ -334,8 +334,9 @@ def run_prize_collecting_model(model: hp.HighsModel, steiner_problem: 'PrizeColl
     
     penalties = {}
     for (group_id, terminal), var in penalty_vars.items():
-        if model.variableValue(var) > 0.5:
-            penalties[f"group_{group_id}_{terminal}"] = model.variableValue(var)
+        var_value = model.variableValue(var)
+        if var_value > 0.5:
+            penalties[f"group_{group_id}_{terminal}"] = penalty_cost * var_value
     
     gap = model.getInfo().mip_gap
     runtime = model.getRunTime()
