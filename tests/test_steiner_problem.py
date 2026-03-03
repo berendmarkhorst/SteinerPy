@@ -426,11 +426,15 @@ def test_prize_collecting_get_solution_integration():
     # Total prize collected from B
     assert solution.total_prize == 5.0
 
-    # Root terminal A has no incoming arc in the flow tree, so it incurs a penalty
-    assert 'group_0_A' in solution.penalties
+    # In a correct Prize Collecting formulation:
+    # - Root terminal A should NOT incur a penalty (it's the source)
+    # - Only non-root terminals incur penalties if not connected
+    # - Since both A and C are connected via the path A-B-C, no penalties
+    assert len(solution.penalties) == 0, f"Expected no penalties, got {solution.penalties}"
 
-    # Objective = edge costs (2) - prize (5) + root penalty (100) = 97
-    assert abs(solution.objective - 97.0) < 1e-4
+    # Objective = edge costs (2) - prize (5) + penalties (0) = -3
+    # This means we have a net profit of 3 (prize exceeds edge costs)
+    assert abs(solution.objective - (-3.0)) < 1e-4, f"Expected objective -3.0, got {solution.objective}"
 
     # Solution is solved to optimality on this small instance
     assert solution.gap < 1e-4
