@@ -530,7 +530,7 @@ def test_node_weighted_steiner_direct_path():
     # Only edge A-C should appear
     edges_undirected = {tuple(sorted(e)) for e in solution.selected_edges}
     assert edges_undirected == {('A', 'C')}
-    # Selected nodes: A (root, traversed) and C (terminal cost added as constant)
+    # Selected nodes should be exactly A and C (both terminals in the solution)
     assert set(solution.selected_nodes) == {'A', 'C'}
 
 
@@ -557,8 +557,8 @@ def test_node_weighted_steiner_with_edge_weights():
     G.add_edge('A', 'B', weight=3)  # Expensive edge
     G.add_edge('A', 'C', weight=1)  # Cheap edge
 
-    # Path A-B: node_A(1) + edge(3) + node_B(5) + node_C(terminal,1) = 10
-    # Path A-C: node_A(1) + edge(1) + node_C(terminal,1) = 3
+    # Via A-B edge (cost 3 + node_B cost 5): node_A(1) + edge_AB(3) + node_B(5) + node_C(1) = 10
+    # Via A-C edge (cost 1): node_A(1) + edge_AC(1) + node_C(1) = 3  ← optimal
     solution = NodeWeightedSteinerProblem(
         G, [['A', 'C']], {'A': 1, 'B': 5, 'C': 1}
     ).get_solution(time_limit=30)

@@ -120,8 +120,8 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
         in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
         out_arcs = [y1[a] for a in steiner_problem.arcs if a[0] == v]
         if in_arcs:
-            rhs = sum(out_arcs) if out_arcs else 0
-            model.addConstr(sum(in_arcs) <= rhs)
+            out_degree_sum = sum(out_arcs) if out_arcs else 0
+            model.addConstr(sum(in_arcs) <= out_degree_sum)
 
     # Constraint 8: indegree at most outdegree per terminal group
     for group_id_k in group_indices:
@@ -130,8 +130,8 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
             in_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == v]
             out_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[0] == v]
             if in_arcs:
-                rhs = sum(out_arcs) if out_arcs else 0
-                model.addConstr(sum(in_arcs) <= rhs)
+                out_degree_sum = sum(out_arcs) if out_arcs else 0
+                model.addConstr(sum(in_arcs) <= out_degree_sum)
 
     # Constraint 9: connect y2 and z
     for group_id_k in group_indices:
@@ -186,9 +186,12 @@ def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem'
                 out_arcs = [a for a in steiner_problem.arcs if a[0] == v]
                 in_arcs = [a for a in steiner_problem.arcs if a[1] == v]
                 demand_and_supply = demand_and_supply_directed(steiner_problem, group_id, t, v, z)
+                # demand_and_supply is either a HiGHS variable (root/terminal) or the integer 0.
+                # When the node has no incident arcs and the demand is zero (isolated, non-source/sink),
+                # the constraint is trivially satisfied and can be skipped.
+                is_highs_expr = not isinstance(demand_and_supply, (int, float))
                 has_arcs = bool(out_arcs or in_arcs)
-                has_demand = not isinstance(demand_and_supply, (int, float))
-                if not has_arcs and not has_demand:
+                if not has_arcs and not is_highs_expr:
                     continue  # Isolated node with no demand: trivially satisfied
                 first_term = sum(f[group_id, t, a] for a in out_arcs) if out_arcs else 0
                 second_term = sum(f[group_id, t, a] for a in in_arcs) if in_arcs else 0

@@ -224,13 +224,15 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
     """
 
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], node_weights: Dict,
-                 weight: str = "weight", preprocess: bool = False, **kwargs):
+                 weight: str = "weight", **kwargs):
         """
         :param graph: networkx undirected graph.
         :param terminal_groups: nested list of terminals.
         :param node_weights: dict mapping node -> node cost.
         :param weight: edge attribute name for weights.
-        :param preprocess: whether to preprocess the transformed graph (default False).
+
+        Note: graph preprocessing is not supported for node-weighted problems because
+        the node-splitting transformation produces a directed graph internally.
         """
         self.node_weights = node_weights
         self.original_terminal_groups_nw = terminal_groups
@@ -313,7 +315,7 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         for group in self.original_terminal_groups_nw:
             for t in group:
                 nodes.add(t)
-        return sorted(nodes, key=str)
+        return sorted(nodes, key=lambda n: str(n))
 
 
 class NodeWeightedSolution(Solution):
