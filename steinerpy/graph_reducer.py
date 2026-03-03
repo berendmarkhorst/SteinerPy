@@ -26,7 +26,7 @@ class ReductionTracker:
         return f"contracted_edge_{self._edge_counter}"
 
 
-def degree_one_reduction(G: nx.Graph, terminals: Set[str], weight: str = "weight", 
+def degree_one_reduction(G: nx.Graph, terminals: Set[any], weight: str = "weight", 
                         tracker: ReductionTracker = None) -> nx.Graph:
     """
     Iteratively remove degree-1 nodes that are not terminals.
@@ -52,7 +52,7 @@ def degree_one_reduction(G: nx.Graph, terminals: Set[str], weight: str = "weight
     return reduced_graph
 
 
-def degree_two_reduction(G: nx.Graph, terminals: Set[str], weight: str = "weight",
+def degree_two_reduction(G: nx.Graph, terminals: Set[any], weight: str = "weight",
                         tracker: ReductionTracker = None) -> nx.Graph:
     """
     Replace degree-2 non-terminal nodes with direct edges between their neighbors.
