@@ -55,7 +55,14 @@ class SteinerProblem:
         else:
             original_selected_edges = selected_edges
 
-        solution = Solution(gap, runtime, objective, original_selected_edges)
+        solution = Solution(
+            gap=gap,
+            runtime=runtime,
+            objective=objective,
+            selected_edges=selected_edges,
+            original_selected_edges=original_selected_edges,
+            was_preprocessed=self.preprocess,
+        )
 
         return solution
 
