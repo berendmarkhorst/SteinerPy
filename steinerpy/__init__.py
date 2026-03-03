@@ -5,10 +5,36 @@ This package provides tools to solve Steiner Tree and Steiner Forest problems
 using the HiGHS solver with NetworkX graphs.
 """
 
-from .objects import SteinerProblem, Solution, PrizeCollectingProblem, PrizeCollectingSolution
+from .objects import (
+    SteinerProblem,
+    Solution,
+    PrizeCollectingProblem,
+    PrizeCollectingSolution,
+    NodeWeightedSteinerProblem,
+    NodeWeightedSolution,
+    MaxWeightConnectedSubgraph,
+    DegreeConstrainedSteinerProblem,
+    BudgetConstrainedSteinerProblem,
+    BudgetSolution,
+    DirectedSteinerProblem,
+)
 from .mathematical_model import build_model, run_model
 from ._version import __version__
 __author__ = "Berend Markhorst, Joost Berkhout, Alessandro Zocca, Jeroen Pruyn, Rob van der Mei"
 __email__ = "berend.markhorst@cwi.nl" 
 
-__all__ = ["SteinerProblem", "Solution", "PrizeCollectingProblem", "PrizeCollectingSolution", "build_model", "run_model"]
+__all__ = [
+    "SteinerProblem",
+    "Solution",
+    "PrizeCollectingProblem",
+    "PrizeCollectingSolution",
+    "NodeWeightedSteinerProblem",
+    "NodeWeightedSolution",
+    "MaxWeightConnectedSubgraph",
+    "DegreeConstrainedSteinerProblem",
+    "BudgetConstrainedSteinerProblem",
+    "BudgetSolution",
+    "DirectedSteinerProblem",
+    "build_model",
+    "run_model",
+]
