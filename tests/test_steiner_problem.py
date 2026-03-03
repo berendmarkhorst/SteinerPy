@@ -2,7 +2,7 @@
 
 import networkx as nx
 import pytest
-from steinerpy import SteinerProblem, Solution
+from steinerpy import SteinerProblem, Solution, PrizeCollectingProblem, PrizeCollectingSolution
 
 
 def test_steiner_problem_initialization():
@@ -153,6 +153,245 @@ def test_steiner_tree_example_from_notebook():
     expected_edges = {('A', 'C'), ('B', 'C'), ('C', 'D')}
     assert selected_undirected == expected_edges, f"Expected edges {expected_edges}, got {selected_undirected}"
 
+def test_prize_collecting_problem_initialization():
+    """Test PrizeCollectingProblem initialization."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=2)
+    G.add_edge('B', 'C', weight=3)
+    G.add_edge('A', 'C', weight=5)
+    
+    node_prizes = {'A': 10, 'B': 15, 'C': 8}
+    terminal_groups = [['A', 'C']]
+    
+    problem = PrizeCollectingProblem(
+        graph=G,
+        terminal_groups=terminal_groups,
+        node_prizes=node_prizes,
+        penalty_cost=20,
+        penalty_budget=10,
+        preprocess=False
+    )
+    
+    # Test base attributes
+    assert problem.graph.number_of_nodes() == 3
+    assert problem.graph.number_of_edges() == 3
+    assert problem.terminal_groups == terminal_groups
+    assert problem.weight == "weight"
+    assert problem.steiner_points == {'B'}
+    
+    # Test prize collecting specific attributes
+    assert problem.node_prizes == node_prizes
+    assert problem.penalty_cost == 20
+    assert problem.penalty_budget == 10
+
+
+def test_prize_collecting_problem_with_preprocessing():
+    """Test PrizeCollectingProblem with preprocessing enabled."""
+    # Create a graph with degree-2 nodes that can be reduced
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=2)  # B can be contracted if it's not a terminal
+    G.add_edge('C', 'D', weight=1)
+    
+    node_prizes = {'A': 10, 'B': 5, 'C': 3, 'D': 8}
+    terminal_groups = [['A', 'D']]  # B and C are not terminals
+    
+    problem = PrizeCollectingProblem(
+        graph=G,
+        terminal_groups=terminal_groups,
+        node_prizes=node_prizes,
+        preprocess=True
+    )
+    
+    # Should inherit preprocessing behavior from SteinerProblem
+    assert problem.original_graph.number_of_nodes() == 4
+    assert problem.preprocess == True
+
+
+def test_prize_collecting_solution_properties():
+    """Test PrizeCollectingSolution properties and methods."""
+    selected_edges = [('A', 'B'), ('B', 'C')]
+    original_selected_edges = [('A', 'X'), ('X', 'B'), ('B', 'C')]
+    selected_nodes = ['A', 'B', 'C']
+    penalties = {'group_0_D': 5.0}
+    
+    solution = PrizeCollectingSolution(
+        gap=0.0,
+        runtime=1.5,
+        objective=25.0,
+        selected_edges=selected_edges,
+        original_selected_edges=original_selected_edges,
+        selected_nodes=selected_nodes,
+        penalties=penalties,
+        total_prize=30.0,
+        was_preprocessed=True
+    )
+    
+    # Test inherited properties
+    assert solution.gap == 0.0
+    assert solution.runtime == 1.5
+    assert solution.objective == 25.0
+    assert solution.edges == original_selected_edges  # Should return original edges
+    assert solution.was_preprocessed == True
+    
+    # Test prize collecting specific properties
+    assert solution.selected_nodes == selected_nodes
+    assert solution.penalties == penalties
+    assert solution.total_prize == 30.0
+    assert solution.net_value == 25.0  # 30.0 - 5.0 penalties
+
+
+def test_prize_collecting_simple_example():
+    """Test a simple prize collecting example."""
+    # Create a simple triangle graph
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+    G.add_edge('A', 'C', weight=3)  # More expensive direct path
+    
+    # Set prizes - make B valuable enough to include
+    node_prizes = {'A': 0, 'B': 10, 'C': 0}  # Only B has a prize
+    terminal_groups = [['A', 'C']]  # Must connect A to C
+    
+    problem = PrizeCollectingProblem(
+        graph=G,
+        terminal_groups=terminal_groups,
+        node_prizes=node_prizes,
+        penalty_cost=100,  # High penalty to encourage connection
+        preprocess=False
+    )
+    
+    # Verify problem setup
+    assert set(problem.nodes) == {'A', 'B', 'C'}
+    assert len(problem.edges) == 3
+    assert problem.steiner_points == {'B'}
+    
+    # Test solution (would need actual solver implementation)
+    # For now, just test that get_solution method exists and has correct signature
+    assert hasattr(problem, 'get_solution')
+
+
+def test_prize_collecting_multiple_terminal_groups():
+    """Test Prize Collecting with multiple terminal groups (forest)."""
+    G = nx.Graph()
+    # Create two disconnected components
+    G.add_edge('A1', 'B1', weight=2)
+    G.add_edge('A2', 'B2', weight=3)
+    
+    node_prizes = {'A1': 5, 'B1': 8, 'A2': 6, 'B2': 7}
+    terminal_groups = [['A1', 'B1'], ['A2', 'B2']]  # Two separate groups
+    
+    problem = PrizeCollectingProblem(
+        graph=G,
+        terminal_groups=terminal_groups,
+        node_prizes=node_prizes,
+        penalty_cost=15,
+        preprocess=False
+    )
+    
+    assert len(problem.terminal_groups) == 2
+    assert problem.roots == ['A1', 'A2']
+    assert problem.steiner_points == set()  # All nodes are terminals
+
+
+def test_prize_collecting_with_budget_constraint():
+    """Test Prize Collecting with penalty budget constraint."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=10)  # Expensive edge
+    
+    node_prizes = {'A': 2, 'B': 3, 'C': 15}  # C has high prize but expensive to reach
+    terminal_groups = [['A', 'C']]
+    
+    problem = PrizeCollectingProblem(
+        graph=G,
+        terminal_groups=terminal_groups,
+        node_prizes=node_prizes,
+        penalty_cost=5,
+        penalty_budget=3,  # Low budget - may need to pay penalties
+        preprocess=False
+    )
+    
+    assert problem.penalty_budget == 3
+
+
+def test_prize_collecting_solution_repr():
+    """Test string representation of PrizeCollectingSolution."""
+    solution = PrizeCollectingSolution(
+        gap=0.1,
+        runtime=2.0,
+        objective=15.5,
+        selected_edges=[('A', 'B')],
+        selected_nodes=['A', 'B', 'C'],
+        penalties={},
+        total_prize=25.0
+    )
+    
+    repr_str = repr(solution)
+    assert "PrizeCollectingSolution" in repr_str
+    assert "objective=15.50" in repr_str
+    assert "prizes=25.00" in repr_str
+    assert "nodes=3" in repr_str
+    assert "edges=1" in repr_str
+
+
+def test_prize_collecting_inheritance():
+    """Test that PrizeCollectingProblem properly inherits from SteinerProblem."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    
+    node_prizes = {'A': 5, 'B': 8}
+    terminal_groups = [['A', 'B']]
+    
+    problem = PrizeCollectingProblem(G, terminal_groups, node_prizes)
+    
+    # Should inherit all SteinerProblem attributes
+    assert hasattr(problem, 'graph')
+    assert hasattr(problem, 'terminal_groups')
+    assert hasattr(problem, 'weight')
+    assert hasattr(problem, 'edges')
+    assert hasattr(problem, 'arcs')
+    assert hasattr(problem, 'nodes')
+    assert hasattr(problem, 'steiner_points')
+    assert hasattr(problem, 'roots')
+    
+    # Should have prize collecting specific attributes
+    assert hasattr(problem, 'node_prizes')
+    assert hasattr(problem, 'penalty_cost')
+    assert hasattr(problem, 'penalty_budget')
+
+
+def test_prize_collecting_empty_prizes():
+    """Test Prize Collecting with empty or no prizes."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=2)
+    
+    # Test with empty prizes dict
+    problem1 = PrizeCollectingProblem(G, [['A', 'B']], {})
+    assert problem1.node_prizes == {}
+    
+    # Test with None prizes for some nodes
+    problem2 = PrizeCollectingProblem(G, [['A', 'B']], {'A': 5})
+    assert problem2.node_prizes.get('B', 0) == 0
+
+
+def test_prize_collecting_custom_weight_attribute():
+    """Test Prize Collecting with custom weight attribute."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', cost=3, weight=1)  # Different weight attributes
+    
+    node_prizes = {'A': 4, 'B': 6}
+    
+    problem = PrizeCollectingProblem(
+        graph=G,
+        terminal_groups=[['A', 'B']],
+        node_prizes=node_prizes,
+        weight="cost"  # Use 'cost' instead of 'weight'
+    )
+    
+    assert problem.weight == "cost"
+    # Edge weight should be 3 (cost attribute), not 1 (weight attribute)
+    assert G.edges[('A', 'B')][problem.weight] == 3
 
 if __name__ == "__main__":
     pytest.main([__file__])
