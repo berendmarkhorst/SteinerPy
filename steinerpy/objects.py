@@ -22,7 +22,7 @@ class SteinerProblem:
         if preprocess:
             self.graph, self.reduction_tracker = preprocess_graph(graph, terminal_groups, weight)
             stats = reduction_stats(self.original_graph, self.graph)
-            logging.info(f"Graph reduced: {stats['nodes_removed']} nodes ({stats['node_reduction_percent']:.1f}%), "
+            logger.info(f"Graph reduced: {stats['nodes_removed']} nodes ({stats['node_reduction_percent']:.1f}%), "
                   f"{stats['edges_removed']} edges ({stats['edge_reduction_percent']:.1f}%) removed")
         else:
             self.graph = graph
