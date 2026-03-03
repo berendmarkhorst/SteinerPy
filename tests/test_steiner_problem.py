@@ -224,6 +224,7 @@ def test_prize_collecting_solution_properties():
         selected_nodes=selected_nodes,
         penalties=penalties,
         total_prize=30.0,
+        edge_cost=3.0,
         was_preprocessed=True
     )
     
@@ -238,7 +239,8 @@ def test_prize_collecting_solution_properties():
     assert solution.selected_nodes == selected_nodes
     assert solution.penalties == penalties
     assert solution.total_prize == 30.0
-    assert solution.net_value == 25.0  # 30.0 - 5.0 penalties
+    assert solution.edge_cost == 3.0
+    assert solution.net_value == 22.0  # 30.0 - 3.0 edge costs - 5.0 penalties
 
 
 def test_prize_collecting_simple_example():

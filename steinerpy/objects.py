@@ -123,6 +123,8 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         else:
             original_selected_edges = selected_edges
 
+        edge_cost = sum(self.graph.edges[e][self.weight] for e in selected_edges)
+
         solution = PrizeCollectingSolution(
             gap=gap,
             runtime=runtime,
@@ -132,6 +134,7 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             selected_nodes=selected_nodes,
             penalties=penalties,
             total_prize=sum(self.node_prizes.get(node, 0) for node in selected_nodes),
+            edge_cost=edge_cost,
             was_preprocessed=self.preprocess
         )
 
@@ -139,16 +142,17 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
     
 class PrizeCollectingSolution(Solution):
     def __init__(self, selected_nodes: List[str] = None, penalties: Dict = None, 
-                 total_prize: float = 0, **kwargs):
+                 total_prize: float = 0, edge_cost: float = 0, **kwargs):
         super().__init__(**kwargs)
         self.selected_nodes = selected_nodes or []
         self.penalties = penalties or {}
         self.total_prize = total_prize
+        self.edge_cost = edge_cost
         
     @property
     def net_value(self):
         """Total prize collected minus edge costs and penalties."""
-        return self.total_prize - sum(self.penalties.values())
+        return self.total_prize - self.edge_cost - sum(self.penalties.values())
     
     def __repr__(self):
         return f"PrizeCollectingSolution(objective={self.objective:.2f}, prizes={self.total_prize:.2f}, nodes={len(self.selected_nodes)}, edges={len(self.edges)})"
