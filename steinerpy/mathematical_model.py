@@ -290,9 +290,19 @@ def add_prize_collecting_constraints(model: hp.HighsModel, steiner_problem: 'Pri
     
     # Constraint: Terminal connection or penalty
     for group_id in group_indices:
+        # Treat the root of each group as connected by definition to avoid
+        # forcing a penalty solely due to indegree 0 in the base model.
+        group_root = getattr(steiner_problem, "roots", None)
+        group_root = group_root[group_id] if group_root is not None else None
         for terminal in steiner_problem.terminal_groups[group_id]:
             # Terminal is either connected (in tree) or we pay penalty
-            is_connected = sum(y1[arc] for arc in steiner_problem.arcs if arc[1] == terminal)
+            if group_root is not None and terminal == group_root:
+                # Root is considered connected, even if it has indegree 0
+                is_connected = 1
+            else:
+                is_connected = sum(
+                    y1[arc] for arc in steiner_problem.arcs if arc[1] == terminal
+                )
             model.addConstr(is_connected + penalty_vars[(group_id, terminal)] >= 1)
     
     # Optional: Budget constraint on total penalties
