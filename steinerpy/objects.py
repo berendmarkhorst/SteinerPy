@@ -7,8 +7,8 @@ from .graph_reducer import preprocess_graph, reduction_stats, map_solution_to_or
 
 logger = logging.getLogger(__name__)
 
-class SteinerProblem:
-    def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight", preprocess=True):
+class BaseSteinerProblem:
+    def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight", preprocess=True, **kwargs):
         """
         Initialize the SteinerProblem (can be tree or forest).
         :param graph: networkx graph.
@@ -34,6 +34,11 @@ class SteinerProblem:
         self.nodes = list(self.graph.nodes())
         self.steiner_points = set(self.nodes) - set([t for group in terminal_groups for t in group])
         self.roots = [group[0] for group in self.terminal_groups]
+
+        # Extract global modifiers like max_degree or budget from kwargs
+        self.max_degree = kwargs.get('max_degree', None)
+        self.budget = kwargs.get('budget', None)
+        
 
     def __repr__(self):
         return f"Problem with a graph of {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges and {self.terminal_groups} as terminal groups."
@@ -81,5 +86,3 @@ class Solution:
     def edges(self):
         """Return the edges in the original graph."""
         return self.original_selected_edges
-
-
