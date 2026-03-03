@@ -267,13 +267,13 @@ def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time
             )
     
     # Add prize collecting constraints
-    add_prize_collecting_constraints(model, steiner_problem, node_vars, penalty_vars, y1, z)
+    add_prize_collecting_constraints(model, steiner_problem, node_vars, penalty_vars, y1)
     
     return model, x, y1, y2, z, f, node_vars, penalty_vars
 
 
 def add_prize_collecting_constraints(model: hp.HighsModel, steiner_problem: 'PrizeCollectingProblem', 
-                                   node_vars: Dict, penalty_vars: Dict, y1: hp.HighsVarType, z: hp.HighsVarType):
+                                   node_vars: Dict, penalty_vars: Dict, y1: hp.HighsVarType):
     """
     Add prize collecting specific constraints to the base model.
     """
