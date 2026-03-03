@@ -91,41 +91,6 @@ class Solution:
 class SteinerProblem(BaseSteinerProblem):
     pass
 
-class PrizeCollectingProblem(BaseSteinerProblem):
-    def __init__(self, graph, terminal_groups, node_prizes, penalty_budget=None, **kwargs):
-        """
-        Prize Collecting Steiner Problem.
-        :param node_prizes: dict mapping node -> prize value
-        :param penalty_budget: maximum penalty allowed (optional)
-        """
-        self.node_prizes = node_prizes
-        self.penalty_budget = penalty_budget
-        super().__init__(graph, terminal_groups, **kwargs)
-        
-    def get_solution(self, time_limit: float = 300, log_file: str = "") -> 'PrizeCollectingSolution':
-        """Override to use prize collecting model."""
-        model, x, y, penalty_vars = build_prize_collecting_model(self, time_limit=time_limit, logfile=log_file)
-        gap, runtime, objective, selected_edges, selected_nodes, penalties = run_prize_collecting_model(model, self, x, y, penalty_vars)
-
-        if self.preprocess:
-            original_selected_edges = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
-        else:
-            original_selected_edges = selected_edges
-
-        solution = PrizeCollectingSolution(
-            gap=gap,
-            runtime=runtime,
-            objective=objective,
-            selected_edges=selected_edges,
-            original_selected_edges=original_selected_edges,
-            selected_nodes=selected_nodes,
-            penalties=penalties,
-            total_prize=sum(self.node_prizes.get(node, 0) for node in selected_nodes),
-            was_preprocessed=self.preprocess,
-        )
-
-        return solution
-
 class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem instead of BaseSteinerProblem
     def __init__(self, graph, terminal_groups, node_prizes, penalty_cost=1000, penalty_budget=None, **kwargs):
         """
