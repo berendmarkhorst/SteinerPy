@@ -26,7 +26,7 @@ class ReductionTracker:
         return f"contracted_edge_{self._edge_counter}"
 
 
-def degree_one_reduction(G: nx.Graph, terminals: Set[any], weight: str = "weight", 
+def degree_one_reduction(G: nx.Graph, terminals: Set[any], 
                         tracker: ReductionTracker = None) -> nx.Graph:
     """
     Iteratively remove degree-1 nodes that are not terminals.
