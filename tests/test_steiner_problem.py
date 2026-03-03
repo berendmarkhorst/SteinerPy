@@ -15,15 +15,17 @@ def test_steiner_problem_initialization():
     terminal_groups = [['A', 'D']]
     
     problem = SteinerProblem(G, terminal_groups)
-    
-    assert problem.graph.number_of_nodes() == 4
-    assert problem.graph.number_of_edges() == 3
+
+    assert problem.original_graph.number_of_nodes() == 4
+    assert problem.original_graph.number_of_edges() == 3
+    assert problem.graph.number_of_nodes() == 2
+    assert problem.graph.number_of_edges() == 1
     assert problem.terminal_groups == terminal_groups
     assert problem.weight == "weight"
-    assert len(problem.edges) == 3
-    assert len(problem.arcs) == 6  # bidirectional
-    assert len(problem.nodes) == 4
-    assert problem.steiner_points == {'B', 'C'}
+    assert len(problem.edges) == 1
+    assert len(problem.arcs) == 2  # bidirectional
+    assert len(problem.nodes) == 2
+    assert problem.steiner_points == set()
     assert problem.roots == ['A']
 
 
@@ -80,7 +82,7 @@ def test_steiner_problem_multiple_terminal_groups():
     
     assert len(problem.terminal_groups) == 2
     assert problem.roots == ['A', 'D']
-    assert problem.steiner_points == {'C'}
+    assert problem.steiner_points == set()
 
 
 def test_steiner_tree_example_from_notebook():
