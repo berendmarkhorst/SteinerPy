@@ -48,12 +48,11 @@ class SteinerProblem:
         """
 
         model, x, y1, y2, z, f = build_model(self, time_limit=time_limit, logfile=log_file)
-
         gap, runtime, objective, selected_edges = run_model(model, self, x)
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
-            original_selected_edges = map_solution_to_original(selected_edges, self.reduction_tracker)
+            original_selected_edges = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
         else:
             original_selected_edges = selected_edges
 
