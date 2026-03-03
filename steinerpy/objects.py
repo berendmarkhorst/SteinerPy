@@ -16,7 +16,7 @@ class SteinerProblem:
         :param terminal_groups: nested list of terminals.
         :param weight: edge attribute specified by this string as the edge weight.
         """
-        self.original_graph = graph.copy()
+        self.original_graph = graph
         self.preprocess = preprocess
         
         if preprocess:
