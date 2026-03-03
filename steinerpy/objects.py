@@ -1,17 +1,33 @@
 import networkx as nx
 import highspy as hp
 from typing import List, Tuple
+import logging
 from .mathematical_model import build_model, run_model
+from .graph_reducer import preprocess_graph, reduction_stats, map_solution_to_original, ReductionTracker
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class SteinerProblem:
-    def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight"):
+    def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight", preprocess=True):
         """
         Initialize the SteinerProblem (can be tree or forest).
         :param graph: networkx graph.
         :param terminal_groups: nested list of terminals.
         :param weight: edge attribute specified by this string as the edge weight.
         """
-        self.graph = graph
+        self.original_graph = graph.copy()
+        self.preprocess = preprocess
+        
+        if preprocess:
+            self.graph, self.reduction_tracker = preprocess_graph(graph, terminal_groups, weight)
+            stats = reduction_stats(self.original_graph, self.graph)
+            logging.info(f"Graph reduced: {stats['nodes_removed']} nodes ({stats['node_reduction_percent']:.1f}%), "
+                  f"{stats['edges_removed']} edges ({stats['edge_reduction_percent']:.1f}%) removed")
+        else:
+            self.graph = graph
+            self.reduction_tracker = ReductionTracker()
+
         self.terminal_groups = terminal_groups
         self.weight = weight
         self.edges = list(self.graph.edges())
@@ -35,16 +51,30 @@ class SteinerProblem:
 
         gap, runtime, objective, selected_edges = run_model(model, self, x)
 
-        solution = Solution(gap, runtime, objective, selected_edges)
+        # Map solution back to original graph if preprocessing was used
+        if self.preprocess:
+            original_selected_edges = map_solution_to_original(selected_edges, self.reduction_tracker)
+        else:
+            original_selected_edges = selected_edges
+
+        solution = Solution(gap, runtime, objective, original_selected_edges)
 
         return solution
 
 class Solution:
-    def __init__(self, gap: float, runtime: float, objective: float, selected_edges: List[Tuple]):
+    def __init__(self, gap: float, runtime: float, objective: float, 
+                 selected_edges: List[Tuple], original_selected_edges: List[Tuple] = None,
+                 was_preprocessed: bool = False):
         self.gap = gap
         self.runtime = runtime
         self.objective = objective
-        self.selected_edges = selected_edges
-
+        self.selected_edges = selected_edges  # Edges in the (possibly reduced) graph
+        self.original_selected_edges = original_selected_edges or selected_edges  # Edges in the original graph
+        self.was_preprocessed = was_preprocessed
+    
+    @property
+    def edges(self):
+        """Return the edges in the original graph."""
+        return self.original_selected_edges
 
 
