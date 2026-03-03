@@ -148,7 +148,7 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
         initial_edges = reduced_graph.number_of_edges()
         
         # Apply degree-1 reduction first
-        reduced_graph = degree_one_reduction(reduced_graph, all_terminals, weight, tracker)
+        reduced_graph = degree_one_reduction(reduced_graph, all_terminals, tracker)
         
         # Apply degree-2 reduction
         reduced_graph = degree_two_reduction(reduced_graph, all_terminals, weight, tracker)
