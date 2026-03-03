@@ -395,5 +395,76 @@ def test_prize_collecting_custom_weight_attribute():
     # Edge weight should be 3 (cost attribute), not 1 (weight attribute)
     assert G.edges[('A', 'B')][problem.weight] == 3
 
+def test_prize_collecting_get_solution_integration():
+    """Integration test: run get_solution end-to-end and verify objective, selected nodes, and penalties."""
+    # Chain graph: A --1-- B --1-- C
+    # Terminals: [['A', 'C']] — A is root, C is the non-root terminal
+    # B is a Steiner point with prize 5
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+
+    problem = PrizeCollectingProblem(
+        graph=G,
+        terminal_groups=[['A', 'C']],
+        node_prizes={'A': 0, 'B': 5, 'C': 0},
+        penalty_cost=100,
+        preprocess=False,
+    )
+
+    solution = problem.get_solution(time_limit=30)
+
+    assert isinstance(solution, PrizeCollectingSolution)
+
+    # Both edges must be selected to connect A to C through B
+    selected_undirected = {tuple(sorted(e)) for e in solution.selected_edges}
+    assert selected_undirected == {('A', 'B'), ('B', 'C')}
+
+    # B is a Steiner point with a positive prize — should be selected
+    assert 'B' in solution.selected_nodes
+
+    # Total prize collected from B
+    assert solution.total_prize == 5.0
+
+    # Root terminal A has no incoming arc in the flow tree, so it incurs a penalty
+    assert 'group_0_A' in solution.penalties
+
+    # Objective = edge costs (2) - prize (5) + root penalty (100) = 97
+    assert abs(solution.objective - 97.0) < 1e-4
+
+    # Solution is solved to optimality on this small instance
+    assert solution.gap < 1e-4
+
+
+def test_prize_collecting_get_solution_with_budget():
+    """Integration test: verify penalty_budget constraint limits the number of penalties."""
+    # Chain graph: A --1-- B --1-- C
+    # With penalty_budget=1, at most 1 terminal penalty variable can be active
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+
+    problem = PrizeCollectingProblem(
+        graph=G,
+        terminal_groups=[['A', 'C']],
+        node_prizes={'A': 0, 'B': 5, 'C': 0},
+        penalty_cost=100,
+        penalty_budget=1,
+        preprocess=False,
+    )
+
+    solution = problem.get_solution(time_limit=30)
+
+    assert isinstance(solution, PrizeCollectingSolution)
+
+    # Budget of 1 allows at most 1 terminal to be penalized
+    assert len(solution.penalties) <= 1
+
+    # Same edges and prize as the unconstrained case
+    selected_undirected = {tuple(sorted(e)) for e in solution.selected_edges}
+    assert selected_undirected == {('A', 'B'), ('B', 'C')}
+    assert solution.total_prize == 5.0
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
