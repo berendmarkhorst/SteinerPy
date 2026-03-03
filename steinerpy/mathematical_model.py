@@ -1,5 +1,6 @@
 import highspy as hp
 import logging
+import networkx as nx
 import time
 from typing import List, Set, Tuple, Dict, Union
 
@@ -280,13 +281,94 @@ def add_optional_flow_constraints(
     return model, f
 
 
-def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, Dict[str, hp.HighsVarType]]:
+def find_violated_cuts(
+    steiner_problem: 'SteinerProblem',
+    y2: Dict,
+    z: Dict,
+    model: hp.HighsModel,
+    eps: float = 1e-6,
+) -> List[Tuple[int, int, List[Tuple]]]:
     """
-    Returns the deterministic directed model.
+    Find violated directed cut constraints for the current LP/MIP solution.
+
+    For each pair (group_id_k, group_id_l) with k <= l and for each terminal t
+    in terminal_groups[group_id_l], checks whether the directed cut from
+    roots[group_id_k] to t is satisfied.  A cut is violated when the minimum
+    cut value is strictly less than z[k, l].
+
+    :param steiner_problem: SteinerProblem-object.
+    :param y2: per-group arc variables {(group_id, arc): var}.
+    :param z: connectivity variables {(k, l): var}.
+    :param model: HiGHS model (used to read current variable values).
+    :param eps: numerical tolerance / creep-flow added to each arc capacity.
+    :return: list of (group_id_k, group_id_l, cut_arcs) for each violated cut.
+    """
+    # No terminals → nothing to check
+    if len(steiner_problem.terminal_groups[0]) == 0:
+        return []
+
+    group_indices = range(len(steiner_problem.terminal_groups))
+    violated_cuts = []
+
+    for group_id_l in group_indices:
+        for group_id_k in range(group_id_l + 1):  # k <= l
+            root_k = steiner_problem.roots[group_id_k]
+            z_val = model.variableValue(z[(group_id_k, group_id_l)])
+
+            if z_val < eps:
+                continue  # z = 0 → no connectivity required for this pair
+
+            # Build a directed graph with y2 capacities for group k.
+            # A small eps is added to each capacity for numerical stability in
+            # the minimum-cut computation (prevents division-by-zero issues).
+            digraph = nx.DiGraph()
+            for (u, v) in steiner_problem.arcs:
+                capacity = model.variableValue(y2[(group_id_k, (u, v))]) + eps
+                digraph.add_edge(u, v, capacity=capacity)
+
+            for t in steiner_problem.terminal_groups[group_id_l]:
+                if t == root_k:
+                    continue
+
+                try:
+                    cut_value, partition = nx.minimum_cut(
+                        digraph, root_k, t, capacity="capacity"
+                    )
+                except nx.NetworkXError:
+                    # No path exists — treat as a zero-capacity cut
+                    cut_value = 0.0
+                    partition = (
+                        {root_k},
+                        set(steiner_problem.nodes) - {root_k},
+                    )
+
+                if cut_value < z_val - eps:
+                    cut_arcs = [
+                        (u, v)
+                        for (u, v) in steiner_problem.arcs
+                        if u in partition[0] and v in partition[1]
+                    ]
+                    if not cut_arcs:
+                        logging.warning(
+                            f"Empty cut for group_k={group_id_k}, group_l={group_id_l}, "
+                            f"terminal={t}: no arc exists from the root side to the terminal "
+                            f"side. Forcing z[{group_id_k},{group_id_l}] = 0."
+                        )
+                    violated_cuts.append((group_id_k, group_id_l, cut_arcs))
+
+    return violated_cuts
+
+
+def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType]:
+    """
+    Returns the deterministic directed model without flow variables.
+    Connectivity is enforced lazily via directed cut constraints added during
+    solving (see :func:`run_model`).
+
     :param steiner_problem: SteinerProblem-object.
     :param time_limit: time limit in seconds for the HiGHS model. Default is 300 seconds.
     :param logfile: path to logfile.
-    :return: HiGHS model.
+    :return: (model, x, y1, y2, z) – HiGHS model and decision variables.
     """
     # Create the model
     logging.info("Building the model.")
@@ -296,14 +378,12 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
     # Start tracking compilation time
     start_time = time.time()
 
-    # Add constraints
+    # Add structural constraints (no flow variables)
     model, x, y1, y2, z = add_directed_constraints(model, steiner_problem)
 
     # Add degree constraints if max_degree is specified
     if getattr(steiner_problem, 'max_degree', None) is not None:
         add_degree_constraints(model, steiner_problem, x)
-
-    model, f = add_flow_constraints(model, steiner_problem, z, y2)
 
     # End tracking compilation time
     end_time = time.time()
@@ -311,27 +391,58 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
 
     logging.info(f"Model built in {compilation_time:.2f} seconds.")
 
-    return model, x, y1, y2, z, f
+    return model, x, y1, y2, z
 
 
-def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType) -> Tuple[float, float, float, List[Tuple]]:
+def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType, y2: Dict, z: Dict) -> Tuple[float, float, float, List[Tuple]]:
     """
-    Solves the model and returns the result.
-    :param model: highspy model.
+    Solves the model using an iterative cut-generation (lazy-cut) approach and
+    returns the result.
+
+    Instead of adding flow variables and constraints upfront, the solver is run
+    repeatedly.  After each solve, violated directed cut constraints are
+    identified via a minimum-cut computation (networkx) and appended to the
+    model before the next solve.  The process terminates when no violated cut
+    is found, guaranteeing that the returned solution is feasible.
+
+    :param model: HiGHS model (built by :func:`build_model`).
     :param steiner_problem: SteinerProblem-object.
-    :param x: highspy variable.
-    :return: Solution-object.
+    :param x: edge selection decision variables.
+    :param y2: per-group arc variables {(group_id, arc): var}.
+    :param z: connectivity variables {(k, l): var}.
+    :return: (gap, runtime, objective, selected_edges).
+             Note: *runtime* covers only the iterative solve loop and does not
+             include the model compilation time reported by :func:`build_model`.
     """
-    logging.info(f"Started with running the model...")
+    logging.info("Started running the model with iterative cut generation.")
 
-    # Optimize model
-    model.minimize(sum(x[e] * steiner_problem.graph.edges[e][steiner_problem.weight] for e in steiner_problem.edges))
+    objective_expr = sum(
+        x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
+        for e in steiner_problem.edges
+    )
 
-    logging.info(f"Runtime: {model.getRunTime():.2f} seconds")
+    start_time = time.time()
+
+    while True:
+        model.minimize(objective_expr)
+
+        violated_cuts = find_violated_cuts(steiner_problem, y2, z, model)
+
+        if not violated_cuts:
+            break  # Solution is feasible with respect to all cut constraints
+
+        # Add each violated cut as a new constraint: sum(y2[k,a] for a in cut) >= z[k,l]
+        for group_id_k, group_id_l, cut_arcs in violated_cuts:
+            lhs = sum(y2[(group_id_k, a)] for a in cut_arcs) if cut_arcs else 0
+            model.addConstr(lhs >= z[(group_id_k, group_id_l)])
+
+        logging.info(f"Added {len(violated_cuts)} violated cut(s), re-solving.")
+
+    runtime = time.time() - start_time
+    logging.info(f"Runtime: {runtime:.2f} seconds")
 
     selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
     gap = model.getInfo().mip_gap
-    runtime = model.getRunTime()
     objective = model.getObjectiveValue()
 
     return gap, runtime, objective, selected_edges
@@ -356,7 +467,10 @@ def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time
     Build prize collecting model by extending the base Steiner model.
     """
     # Start with the base model (reuse existing code)
-    model, x, y1, y2, z, f = build_model(steiner_problem, time_limit, logfile)
+    model, x, y1, y2, z = build_model(steiner_problem, time_limit, logfile)
+
+    # Prize-collecting needs explicit flow constraints for connectivity enforcement
+    model, f = add_flow_constraints(model, steiner_problem, z, y2)
     
     # Add prize collecting specific variables
     group_indices = range(len(steiner_problem.terminal_groups))

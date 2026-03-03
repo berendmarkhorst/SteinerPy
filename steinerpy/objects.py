@@ -100,8 +100,8 @@ class BaseSteinerProblem:
         :return: Solution object.
         """
 
-        model, x, y1, y2, z, f = build_model(self, time_limit=time_limit, logfile=log_file)
-        gap, runtime, objective, selected_edges = run_model(model, self, x)
+        model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
+        gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
@@ -249,8 +249,8 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         """Solve and map solution back to the original node-weighted graph."""
         from .mathematical_model import build_model, run_model
 
-        model, x, y1, y2, z, f = build_model(self, time_limit=time_limit, logfile=log_file)
-        gap, runtime, objective, _ = run_model(model, self, x)
+        model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
+        gap, runtime, objective, _ = run_model(model, self, x, y2, z)
 
         # Use arc (y1) variables for the actual directed tree structure instead of edge
         # (x) variables, to avoid degenerate zero-weight cross-edges being included.
