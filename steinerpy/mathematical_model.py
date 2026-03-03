@@ -243,3 +243,113 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     objective = model.getObjectiveValue()
 
     return gap, runtime, objective, selected_edges
+
+def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time_limit: float = 300, logfile: str = "") -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType]]:
+    """
+    Build prize collecting model by extending the base Steiner model.
+    """
+    # Start with the base model (reuse existing code)
+    model, x, y1, y2, z, f = build_model(steiner_problem, time_limit, logfile)
+    
+    # Add prize collecting specific variables
+    group_indices = range(len(steiner_problem.terminal_groups))
+    
+    # Node selection variables (whether we collect prize from a node)
+    node_vars = {node: model.addVariable(0, 1, hp.HighsVarType.kInteger, name=f"node[{node}]") 
+                 for node in steiner_problem.nodes}
+    
+    # Terminal penalty variables (penalty for not connecting a terminal)
+    penalty_vars = {}
+    for group_id in group_indices:
+        for terminal in steiner_problem.terminal_groups[group_id]:
+            penalty_vars[(group_id, terminal)] = model.addVariable(
+                0, 1, hp.HighsVarType.kInteger, name=f"penalty[{group_id},{terminal}]"
+            )
+    
+    # Add prize collecting constraints
+    add_prize_collecting_constraints(model, steiner_problem, node_vars, penalty_vars, y1)
+    
+    return model, x, y1, y2, z, f, node_vars, penalty_vars
+
+
+def add_prize_collecting_constraints(model: hp.HighsModel, steiner_problem: 'PrizeCollectingProblem', 
+                                   node_vars: Dict, penalty_vars: Dict, y1: hp.HighsVarType):
+    """
+    Add prize collecting specific constraints to the base model.
+    """
+    group_indices = range(len(steiner_problem.terminal_groups))
+    
+    # Constraint: Node can only be selected if it's in the tree
+    for node in steiner_problem.nodes:
+        # If node is selected, it must have at least one incident edge (or be a terminal)
+        incident_arcs = [y1[arc] for arc in steiner_problem.arcs 
+                        if arc[0] == node or arc[1] == node]
+        if incident_arcs:
+            model.addConstr(node_vars[node] <= sum(incident_arcs) + 
+                           sum(1 for group in steiner_problem.terminal_groups if node in group))
+    
+    # Constraint: Terminal connection or penalty
+    for group_id in group_indices:
+        # Treat the root of each group as connected by definition to avoid
+        # forcing a penalty solely due to indegree 0 in the base model.
+        group_root = getattr(steiner_problem, "roots", None)
+        group_root = group_root[group_id] if group_root is not None else None
+        for terminal in steiner_problem.terminal_groups[group_id]:
+            # Terminal is either connected (in tree) or we pay penalty
+            if group_root is not None and terminal == group_root:
+                # Root is considered connected, even if it has indegree 0
+                is_connected = 1
+            else:
+                is_connected = sum(
+                    y1[arc] for arc in steiner_problem.arcs if arc[1] == terminal
+                )
+            model.addConstr(is_connected + penalty_vars[(group_id, terminal)] >= 1)
+    
+    # Optional: Budget constraint on total penalties
+    if hasattr(steiner_problem, 'penalty_budget') and steiner_problem.penalty_budget is not None:
+        total_penalties = sum(penalty_vars.values())
+        model.addConstr(total_penalties <= steiner_problem.penalty_budget)
+
+
+def run_prize_collecting_model(model: hp.HighsModel, steiner_problem: 'PrizeCollectingProblem', 
+                              x: hp.HighsVarType, node_vars: Dict, penalty_vars: Dict) -> Tuple[float, float, float, List[Tuple], List[str], Dict]:
+    """
+    Solve prize collecting model and extract solution.
+    """
+    logging.info("Started running the prize collecting model...")
+    
+    # Build objective: edge costs - node prizes + penalties
+    objective_expr = sum(x[e] * steiner_problem.graph.edges[e][steiner_problem.weight] 
+                        for e in steiner_problem.edges)
+    
+    # Subtract node prizes
+    for node in steiner_problem.nodes:
+        prize = steiner_problem.node_prizes.get(node, 0)
+        if prize > 0:
+            objective_expr -= node_vars[node] * prize
+    
+    # Add penalty costs
+    penalty_cost = getattr(steiner_problem, 'penalty_cost', 1000)
+    for penalty_var in penalty_vars.values():
+        objective_expr += penalty_var * penalty_cost
+    
+    # Minimize the objective
+    model.minimize(objective_expr)
+    
+    logging.info(f"Runtime: {model.getRunTime():.2f} seconds")
+    
+    # Extract solution
+    selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
+    selected_nodes = [node for node in steiner_problem.nodes if model.variableValue(node_vars[node]) > 0.5]
+    
+    penalties = {}
+    for (group_id, terminal), var in penalty_vars.items():
+        var_value = model.variableValue(var)
+        if var_value > 0.5:
+            penalties[f"group_{group_id}_{terminal}"] = penalty_cost * var_value
+    
+    gap = model.getInfo().mip_gap
+    runtime = model.getRunTime()
+    objective = model.getObjectiveValue()
+    
+    return gap, runtime, objective, selected_edges, selected_nodes, penalties

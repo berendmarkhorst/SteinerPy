@@ -1,14 +1,14 @@
 import networkx as nx
 import highspy as hp
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 import logging
-from .mathematical_model import build_model, run_model
+from .mathematical_model import build_model, run_model, build_prize_collecting_model, run_prize_collecting_model
 from .graph_reducer import preprocess_graph, reduction_stats, map_solution_to_original, ReductionTracker
 
 logger = logging.getLogger(__name__)
 
-class SteinerProblem:
-    def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight", preprocess=True):
+class BaseSteinerProblem:
+    def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight", preprocess=True, **kwargs):
         """
         Initialize the SteinerProblem (can be tree or forest).
         :param graph: networkx graph.
@@ -34,6 +34,11 @@ class SteinerProblem:
         self.nodes = list(self.graph.nodes())
         self.steiner_points = set(self.nodes) - set([t for group in terminal_groups for t in group])
         self.roots = [group[0] for group in self.terminal_groups]
+
+        # Extract global modifiers like max_degree or budget from kwargs
+        self.max_degree = kwargs.get('max_degree', None)
+        self.budget = kwargs.get('budget', None)
+        
 
     def __repr__(self):
         return f"Problem with a graph of {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges and {self.terminal_groups} as terminal groups."
@@ -83,3 +88,71 @@ class Solution:
         return self.original_selected_edges
 
 
+class SteinerProblem(BaseSteinerProblem):
+    pass
+
+class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem instead of BaseSteinerProblem
+    def __init__(self, graph, terminal_groups, node_prizes, penalty_cost=1000, penalty_budget=None, **kwargs):
+        """
+        Prize Collecting Steiner Problem - extends regular Steiner problem.
+        :param node_prizes: dict mapping node -> prize value
+        :param penalty_cost: cost per unconnected terminal
+        :param penalty_budget: maximum total penalty allowed (optional)
+        """
+        # Initialize base Steiner problem first
+        super().__init__(graph, terminal_groups, **kwargs)
+        
+        # Add prize collecting specific attributes
+        self.node_prizes = node_prizes
+        self.penalty_cost = penalty_cost
+        self.penalty_budget = penalty_budget
+        
+    def get_solution(self, time_limit: float = 300, log_file: str = "") -> 'PrizeCollectingSolution':
+        """Override to use prize collecting model."""
+        model, x, y1, y2, z, f, node_vars, penalty_vars = build_prize_collecting_model(
+            self, time_limit=time_limit, logfile=log_file
+        )
+        
+        gap, runtime, objective, selected_edges, selected_nodes, penalties = run_prize_collecting_model(
+            model, self, x, node_vars, penalty_vars
+        )
+
+        # Map solution back to original graph if preprocessing was used
+        if self.preprocess:
+            original_selected_edges = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
+        else:
+            original_selected_edges = selected_edges
+
+        edge_cost = sum(self.graph.edges[e][self.weight] for e in selected_edges)
+
+        solution = PrizeCollectingSolution(
+            gap=gap,
+            runtime=runtime,
+            objective=objective,
+            selected_edges=selected_edges,
+            original_selected_edges=original_selected_edges,
+            selected_nodes=selected_nodes,
+            penalties=penalties,
+            total_prize=sum(self.node_prizes.get(node, 0) for node in selected_nodes),
+            edge_cost=edge_cost,
+            was_preprocessed=self.preprocess
+        )
+
+        return solution
+    
+class PrizeCollectingSolution(Solution):
+    def __init__(self, selected_nodes: List[str] = None, penalties: Dict = None, 
+                 total_prize: float = 0, edge_cost: float = 0, **kwargs):
+        super().__init__(**kwargs)
+        self.selected_nodes = selected_nodes or []
+        self.penalties = penalties or {}
+        self.total_prize = total_prize
+        self.edge_cost = edge_cost
+        
+    @property
+    def net_value(self):
+        """Total prize collected minus edge costs and penalties."""
+        return self.total_prize - self.edge_cost - sum(self.penalties.values())
+    
+    def __repr__(self):
+        return f"PrizeCollectingSolution(objective={self.objective:.2f}, prizes={self.total_prize:.2f}, nodes={len(self.selected_nodes)}, edges={len(self.edges)})"
