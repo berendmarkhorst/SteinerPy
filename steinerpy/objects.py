@@ -5,7 +5,6 @@ import logging
 from .mathematical_model import build_model, run_model
 from .graph_reducer import preprocess_graph, reduction_stats, map_solution_to_original, ReductionTracker
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class SteinerProblem:
