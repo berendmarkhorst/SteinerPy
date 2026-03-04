@@ -1,0 +1,50 @@
+name: Bump Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Type of bump (patch, minor, major)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to push the version change back to the repo
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Get all tags
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version and commit
+        run: |
+          # 1. Bump the version in pyproject.toml
+          NEW_VERSION=$(uv version --bump ${{ github.event.inputs.bump_type }})
+          echo "Bumping to $NEW_VERSION"
+          
+          # 2. Sync the lockfile to match the new version
+          uv lock
+          
+          # 3. Commit and Tag
+          git add pyproject.toml uv.lock
+          git commit -m "chore: bump version to $NEW_VERSION"
+          git tag -a "v$NEW_VERSION" -m "Release $NEW_VERSION"
+          
+          # 4. Push back to main
+          git push origin main --follow-tags
