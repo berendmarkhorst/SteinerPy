@@ -934,5 +934,113 @@ def test_prize_collecting_with_max_degree_modifier():
         assert deg <= 2, f"Node {node} has degree {deg} > 2"
 
 
+# ---------------------------------------------------------------------------
+# Solver parameter tests
+# ---------------------------------------------------------------------------
+
+def test_invalid_solver_raises_value_error():
+    """get_solution raises ValueError for an unknown solver name."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    problem = SteinerProblem(G, [['A', 'B']], preprocess=False)
+    with pytest.raises(ValueError, match="solver"):
+        problem.get_solution(solver="cplex")
+
+
+def test_highs_solver_explicit():
+    """Explicitly passing solver='highs' produces the same result as the default."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=2)
+    G.add_edge('C', 'D', weight=1)
+
+    problem = SteinerProblem(G, [['A', 'D']], preprocess=False)
+    solution = problem.get_solution(time_limit=30, solver="highs")
+
+    assert isinstance(solution, Solution)
+    assert abs(solution.objective - 4.0) < 1e-4
+
+
+def test_gurobi_solver_raises_import_error_when_not_installed():
+    """get_solution raises ImportError when gurobipy is absent."""
+    import sys
+    import importlib
+
+    gurobi_available = importlib.util.find_spec("gurobipy") is not None
+    if gurobi_available:
+        pytest.skip("gurobipy is installed; skipping import-error test.")
+
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    problem = SteinerProblem(G, [['A', 'B']], preprocess=False)
+    with pytest.raises(ImportError, match="gurobipy"):
+        problem.get_solution(solver="gurobi")
+
+
+def test_gurobi_solver_matches_highs():
+    """When gurobipy is available and licensed, Gurobi and HiGHS give the same objective."""
+    import importlib
+
+    gurobi_available = importlib.util.find_spec("gurobipy") is not None
+    if not gurobi_available:
+        pytest.skip("gurobipy is not installed.")
+
+    try:
+        import gurobipy as gp
+        env = gp.Env(empty=True)
+        env.setParam("OutputFlag", 0)
+        env.start()
+        gp.Model(env=env).dispose()
+        env.dispose()
+    except Exception:
+        pytest.skip("Gurobi license not available.")
+
+    # Build a small graph
+    G = nx.Graph()
+    edges = [("A", "C"), ("A", "D"), ("B", "C"), ("C", "D")]
+    weights = [1, 10, 1, 1]
+    for edge, w in zip(edges, weights):
+        G.add_edge(edge[0], edge[1], weight=w)
+
+    problem = SteinerProblem(G, [["A", "B", "D"]], preprocess=False)
+
+    sol_highs = problem.get_solution(time_limit=30, solver="highs")
+    sol_gurobi = problem.get_solution(time_limit=30, solver="gurobi")
+
+    assert abs(sol_highs.objective - sol_gurobi.objective) < 1e-4, (
+        f"HiGHS objective {sol_highs.objective} != Gurobi objective {sol_gurobi.objective}"
+    )
+
+
+def test_gurobi_solver_node_weighted():
+    """NodeWeightedSteinerProblem accepts solver parameter without error."""
+    import importlib
+
+    gurobi_available = importlib.util.find_spec("gurobipy") is not None
+    if not gurobi_available:
+        pytest.skip("gurobipy is not installed.")
+
+    try:
+        import gurobipy as gp
+        env = gp.Env(empty=True)
+        env.setParam("OutputFlag", 0)
+        env.start()
+        gp.Model(env=env).dispose()
+        env.dispose()
+    except Exception:
+        pytest.skip("Gurobi license not available.")
+
+    from steinerpy import NodeWeightedSteinerProblem, NodeWeightedSolution
+
+    G = nx.Graph()
+    G.add_edge('A', 'B')
+    G.add_edge('B', 'C')
+    node_weights = {'A': 1, 'B': 2, 'C': 1}
+
+    problem = NodeWeightedSteinerProblem(G, [['A', 'C']], node_weights)
+    solution = problem.get_solution(time_limit=30, solver="gurobi")
+    assert isinstance(solution, NodeWeightedSolution)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
