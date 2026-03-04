@@ -34,17 +34,21 @@ jobs:
 
       - name: Bump version and commit
         run: |
-          # 1. Bump the version in pyproject.toml
-          NEW_VERSION=$(uv version --bump ${{ github.event.inputs.bump_type }})
-          echo "Bumping to $NEW_VERSION"
+          # 1. Bump version and capture the output
+          BUMP_OUTPUT=$(uv version --bump ${{ github.event.inputs.bump_type }})
           
-          # 2. Sync the lockfile to match the new version
+          # 2. Extract ONLY the version number (the part after the last space)
+          # This turns "steinerpy 0.1.3 => 1.0.0" into "1.0.0"
+          NEW_VERSION=$(echo "$BUMP_OUTPUT" | awk '{print $NF}')
+          echo "New Version Extracted: $NEW_VERSION"
+          
+          # 3. Sync the lockfile
           uv lock
           
-          # 3. Commit and Tag
+          # 4. Commit and Tag using the cleaned version number
           git add pyproject.toml uv.lock
           git commit -m "chore: bump version to $NEW_VERSION"
           git tag -a "v$NEW_VERSION" -m "Release $NEW_VERSION"
           
-          # 4. Push back to main
+          # 5. Push back to main
           git push origin main --follow-tags
