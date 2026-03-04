@@ -281,15 +281,18 @@ def add_optional_flow_constraints(
     return model, f
 
 
-def find_violated_cuts(
+def find_violated_cuts_from_values(
     steiner_problem: 'SteinerProblem',
-    y2: Dict,
-    z: Dict,
-    model: hp.HighsModel,
+    y2_vals: Dict,
+    z_vals: Dict,
     eps: float = 1e-6,
 ) -> List[Tuple[int, int, List[Tuple]]]:
     """
-    Find violated directed cut constraints for the current LP/MIP solution.
+    Find violated directed cut constraints given pre-extracted variable values.
+
+    This is the core cut-separation routine shared by both the HiGHS and Gurobi
+    backends.  It operates on plain value dicts rather than solver-specific
+    variable objects, making it solver-agnostic.
 
     For each pair (group_id_k, group_id_l) with k <= l and for each terminal t
     in terminal_groups[group_id_l], checks whether the directed cut from
@@ -297,9 +300,8 @@ def find_violated_cuts(
     cut value is strictly less than z[k, l].
 
     :param steiner_problem: SteinerProblem-object.
-    :param y2: per-group arc variables {(group_id, arc): var}.
-    :param z: connectivity variables {(k, l): var}.
-    :param model: HiGHS model (used to read current variable values).
+    :param y2_vals: per-group arc values {(group_id, arc): float}.
+    :param z_vals: connectivity variable values {(k, l): float}.
     :param eps: numerical tolerance / creep-flow added to each arc capacity.
     :return: list of (group_id_k, group_id_l, cut_arcs) for each violated cut.
     """
@@ -313,7 +315,7 @@ def find_violated_cuts(
     for group_id_l in group_indices:
         for group_id_k in range(group_id_l + 1):  # k <= l
             root_k = steiner_problem.roots[group_id_k]
-            z_val = model.variableValue(z[(group_id_k, group_id_l)])
+            z_val = z_vals[(group_id_k, group_id_l)]
 
             if z_val < eps:
                 continue  # z = 0 → no connectivity required for this pair
@@ -323,7 +325,7 @@ def find_violated_cuts(
             # the minimum-cut computation (prevents division-by-zero issues).
             digraph = nx.DiGraph()
             for (u, v) in steiner_problem.arcs:
-                capacity = model.variableValue(y2[(group_id_k, (u, v))]) + eps
+                capacity = y2_vals[(group_id_k, (u, v))] + eps
                 digraph.add_edge(u, v, capacity=capacity)
 
             for t in steiner_problem.terminal_groups[group_id_l]:
@@ -357,6 +359,33 @@ def find_violated_cuts(
                     violated_cuts.append((group_id_k, group_id_l, cut_arcs))
 
     return violated_cuts
+
+
+def find_violated_cuts(
+    steiner_problem: 'SteinerProblem',
+    y2: Dict,
+    z: Dict,
+    model: hp.HighsModel,
+    eps: float = 1e-6,
+) -> List[Tuple[int, int, List[Tuple]]]:
+    """
+    Find violated directed cut constraints for the current HiGHS LP/MIP solution.
+
+    Reads variable values from the HiGHS model and delegates to
+    :func:`find_violated_cuts_from_values`.
+
+    :param steiner_problem: SteinerProblem-object.
+    :param y2: per-group arc variables {(group_id, arc): var}.
+    :param z: connectivity variables {(k, l): var}.
+    :param model: HiGHS model (used to read current variable values).
+    :param eps: numerical tolerance / creep-flow added to each arc capacity.
+    :return: list of (group_id_k, group_id_l, cut_arcs) for each violated cut.
+    """
+    group_indices = range(len(steiner_problem.terminal_groups))
+    y2_vals = {(group_id, a): model.variableValue(y2[(group_id, a)])
+               for group_id in group_indices for a in steiner_problem.arcs}
+    z_vals = {key: model.variableValue(var) for key, var in z.items()}
+    return find_violated_cuts_from_values(steiner_problem, y2_vals, z_vals, eps)
 
 
 def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType]:
@@ -655,3 +684,246 @@ def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem'
     runtime = model.getRunTime()
 
     return gap, runtime, connected_count, selected_edges, penalties
+
+
+# ---------------------------------------------------------------------------
+# Gurobi backend (optional – requires gurobipy and a valid Gurobi license)
+# ---------------------------------------------------------------------------
+
+def _check_gurobipy() -> None:
+    """Raise a clear ImportError when gurobipy is not installed."""
+    try:
+        import gurobipy  # noqa: F401
+    except ImportError:
+        raise ImportError(
+            "gurobipy is not installed or no valid Gurobi license was found. "
+            "Install gurobipy and obtain a license to use solver='gurobi'."
+        )
+
+
+def build_model_gurobi(
+    steiner_problem: 'SteinerProblem',
+    time_limit: float = 300,
+    logfile: str = "",
+) -> Tuple:
+    """
+    Build the cut-based Steiner model using Gurobi.
+
+    Mirrors :func:`build_model` but creates a ``gurobipy.Model`` instead of a
+    HiGHS model.  Connectivity is enforced lazily inside
+    :func:`run_model_gurobi` via a branch-and-cut callback, so no flow
+    variables are added here.
+
+    :param steiner_problem: SteinerProblem-object.
+    :param time_limit: time limit in seconds.
+    :param logfile: path to a Gurobi log file (empty string = no file).
+    :return: (model, x, y1, y2, z) – Gurobi model and decision variables.
+    """
+    _check_gurobipy()
+    import gurobipy as gp
+    from gurobipy import GRB
+
+    logging.info("Building the Gurobi model.")
+    start_time = time.time()
+
+    env = gp.Env(empty=True)
+    env.setParam("OutputFlag", 0)
+    env.setParam("TimeLimit", time_limit)
+    if logfile:
+        env.setParam("LogFile", logfile)
+    env.start()
+    model = gp.Model(env=env)
+
+    # Sets
+    group_indices = range(len(steiner_problem.terminal_groups))
+    k_indices = [(k, l) for k in group_indices for l in group_indices if l >= k]
+
+    # Decision variables
+    x = {e: model.addVar(vtype=GRB.BINARY, name=f"x[{e}]")
+         for e in steiner_problem.edges}
+    y1 = {a: model.addVar(vtype=GRB.BINARY, name=f"y1[{a}]")
+          for a in steiner_problem.arcs}
+    y2 = {(group_id, a): model.addVar(vtype=GRB.BINARY, name=f"y2[{group_id},{a}]")
+          for group_id in group_indices for a in steiner_problem.arcs}
+    z = {(k, l): model.addVar(vtype=GRB.BINARY, name=f"z[{k},{l}]")
+         for k, l in k_indices}
+
+    model.update()
+
+    # Constraint 1: connection between y2 and y1
+    for group_id in group_indices:
+        for a in steiner_problem.arcs:
+            model.addConstr(y2[group_id, a] <= y1[a])
+
+    # Constraint 2: indegree of each vertex cannot exceed 1
+    for v in steiner_problem.nodes:
+        incoming = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        if incoming:
+            model.addConstr(gp.quicksum(incoming) <= 1)
+
+    # Constraint 3: connection between y1 and x
+    for u, v in steiner_problem.edges:
+        if (v, u) in y1:
+            model.addConstr(y1[(u, v)] + y1[(v, u)] <= x[(u, v)])
+        else:
+            model.addConstr(y1[(u, v)] <= x[(u, v)])
+
+    # Constraint 4: enforce terminal group rooted at one root
+    for group_id_k in group_indices:
+        model.addConstr(
+            gp.quicksum(z[group_id_l, group_id_k]
+                        for group_id_l in group_indices if group_id_l <= group_id_k) == 1
+        )
+
+    # Constraint 5: enforce one root per arborescence
+    for group_id_k in group_indices:
+        for group_id_l in group_indices:
+            if group_id_l > group_id_k:
+                model.addConstr(z[group_id_k, group_id_k] >= z[group_id_k, group_id_l])
+
+    # Constraint 6: terminals in T^{1...k-1} cannot attach to root r_k
+    for group_id_k in group_indices:
+        for t in get_terminal_groups_until_k(steiner_problem.terminal_groups, group_id_k):
+            incoming = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == t]
+            if incoming:
+                model.addConstr(gp.quicksum(incoming) == 0)
+
+    # Constraint 7: indegree at most outdegree for Steiner points
+    for v in steiner_problem.steiner_points:
+        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        out_arcs = [y1[a] for a in steiner_problem.arcs if a[0] == v]
+        if in_arcs:
+            out_sum = gp.quicksum(out_arcs) if out_arcs else 0
+            model.addConstr(gp.quicksum(in_arcs) <= out_sum)
+
+    # Constraint 8: indegree at most outdegree per terminal group
+    for group_id_k in group_indices:
+        remaining_vertices = (
+            set(steiner_problem.nodes)
+            - set(terminal_groups_without_root(
+                steiner_problem.terminal_groups, steiner_problem.roots, group_id_k
+            ))
+        )
+        for v in remaining_vertices:
+            in_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == v]
+            out_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[0] == v]
+            if in_arcs:
+                out_sum = gp.quicksum(out_arcs) if out_arcs else 0
+                model.addConstr(gp.quicksum(in_arcs) <= out_sum)
+
+    # Constraint 9: connect y2 and z
+    for group_id_k in group_indices:
+        for group_id_l in group_indices:
+            if group_id_l > group_id_k:
+                incoming = [y2[group_id_k, a]
+                            for a in steiner_problem.arcs
+                            if a[1] == steiner_problem.roots[group_id_l]]
+                if incoming:
+                    model.addConstr(gp.quicksum(incoming) <= z[group_id_k, group_id_l])
+
+    # Optional degree constraints
+    if getattr(steiner_problem, 'max_degree', None) is not None:
+        max_degree = steiner_problem.max_degree
+        for v in steiner_problem.nodes:
+            incident = [x[e] for e in steiner_problem.edges if v in e]
+            if incident:
+                model.addConstr(gp.quicksum(incident) <= max_degree)
+
+    model.update()
+
+    compilation_time = time.time() - start_time
+    logging.info(f"Gurobi model built in {compilation_time:.2f} seconds.")
+
+    return model, x, y1, y2, z
+
+
+def run_model_gurobi(
+    model,
+    steiner_problem: 'SteinerProblem',
+    x: Dict,
+    y2: Dict,
+    z: Dict,
+) -> Tuple[float, float, float, List[Tuple]]:
+    """
+    Solve the Steiner model using Gurobi with a lazy-cut callback.
+
+    The cut-separation logic (directed minimum cuts) is identical to the HiGHS
+    iterative approach in :func:`run_model`, but here the cuts are injected as
+    *lazy constraints* inside a branch-and-cut callback, which lets Gurobi
+    exploit its full branch-and-bound tree rather than re-solving from scratch.
+
+    :param model: Gurobi model (built by :func:`build_model_gurobi`).
+    :param steiner_problem: SteinerProblem-object.
+    :param x: edge selection decision variables.
+    :param y2: per-group arc variables {(group_id, arc): var}.
+    :param z: connectivity variables {(k, l): var}.
+    :return: (gap, runtime, objective, selected_edges).
+    """
+    _check_gurobipy()
+    import gurobipy as gp
+    from gurobipy import GRB
+
+    logging.info("Started running the Gurobi model with lazy cut callback.")
+
+    group_indices = range(len(steiner_problem.terminal_groups))
+
+    # Objective: minimise total edge cost
+    obj = gp.quicksum(
+        x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
+        for e in steiner_problem.edges
+    )
+    model.setObjective(obj, GRB.MINIMIZE)
+
+    # Enable lazy constraints
+    model.Params.LazyConstraints = 1
+
+    # Attach data needed inside the callback
+    model._steiner_problem = steiner_problem
+    model._y2 = y2
+    model._z = z
+    model._group_indices = group_indices
+
+    def _cut_callback(cb_model, where):
+        if where != GRB.Callback.MIPSOL:
+            return
+
+        # Extract current integer solution values
+        y2_vals = {
+            (group_id, a): cb_model.cbGetSolution(cb_model._y2[(group_id, a)])
+            for group_id in cb_model._group_indices
+            for a in cb_model._steiner_problem.arcs
+        }
+        z_vals = {
+            key: cb_model.cbGetSolution(var)
+            for key, var in cb_model._z.items()
+        }
+
+        violated = find_violated_cuts_from_values(
+            cb_model._steiner_problem, y2_vals, z_vals
+        )
+
+        for group_id_k, group_id_l, cut_arcs in violated:
+            lhs = (
+                gp.quicksum(cb_model._y2[(group_id_k, a)] for a in cut_arcs)
+                if cut_arcs else 0
+            )
+            cb_model.cbLazy(lhs >= cb_model._z[(group_id_k, group_id_l)])
+
+        if violated:
+            logging.info(f"Gurobi callback: added {len(violated)} lazy cut(s).")
+
+    start_time = time.time()
+    model.optimize(_cut_callback)
+    runtime = time.time() - start_time
+
+    logging.info(f"Gurobi runtime: {runtime:.2f} seconds")
+
+    if model.SolCount == 0:
+        # No feasible solution found within the time limit
+        return float("inf"), runtime, float("inf"), []
+
+    selected_edges = [e for e in steiner_problem.edges if x[e].X > 0.5]
+    gap = model.MIPGap
+    objective = model.ObjVal
+
+    return gap, runtime, objective, selected_edges

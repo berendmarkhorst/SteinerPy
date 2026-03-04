@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict, Optional
 import logging
 from .mathematical_model import (
     build_model, run_model,
+    build_model_gurobi, run_model_gurobi,
     build_prize_collecting_model, run_prize_collecting_model,
     build_budget_model, run_budget_model,
 )
@@ -93,9 +94,9 @@ class BaseSteinerProblem:
     def __repr__(self):
         return f"Problem with a graph of {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges and {self.terminal_groups} as terminal groups."
 
-    def get_solution(self, time_limit: float = 300, log_file: str = "") -> 'Solution':
+    def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs") -> 'Solution':
         """
-        Get the solution of the Steiner Problem using HighsPy.
+        Get the solution of the Steiner Problem.
 
         When ``budget`` was supplied at construction time the solver maximises
         the number of connected terminals subject to the budget constraint and
@@ -107,9 +108,27 @@ class BaseSteinerProblem:
 
         :param time_limit: time limit in seconds.
         :param log_file: path to the log file.
+        :param solver: which MIP solver to use – ``"highs"`` (default) or
+            ``"gurobi"``.  When ``"gurobi"`` is chosen the cut-based
+            formulation is solved with Gurobi lazy-cut callbacks, which
+            requires *gurobipy* and a valid Gurobi license to be installed.
         :return: :class:`Solution` (or :class:`BudgetSolution` when a budget is set).
+        :raises ValueError: if an unknown solver name is provided.
+        :raises ImportError: if ``solver="gurobi"`` but gurobipy is not installed.
         """
+        solver = solver.lower()
+        if solver not in ("highs", "gurobi"):
+            raise ValueError(
+                f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'."
+            )
+
         if self.budget is not None:
+            # Budget-constrained path: only HiGHS is supported for this variant
+            if solver == "gurobi":
+                raise NotImplementedError(
+                    "The budget-constrained variant does not yet support solver='gurobi'. "
+                    "Use solver='highs' instead."
+                )
             # Budget-constrained: maximise connected terminals
             model, x, y1, y2, z, f, penalty_vars = build_budget_model(
                 self, time_limit=time_limit, logfile=log_file
@@ -139,8 +158,12 @@ class BaseSteinerProblem:
                 penalties=penalties,
             )
 
-        model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
-        gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
+        if solver == "gurobi":
+            model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file)
+            gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
+        else:
+            model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
+            gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
@@ -196,7 +219,7 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         self.penalty_budget = penalty_budget
         
     def get_solution(self, time_limit: float = 300, log_file: str = "") -> 'PrizeCollectingSolution':
-        """Override to use prize collecting model."""
+        """Override to use prize collecting model (HiGHS only)."""
         model, x, y1, y2, z, f, node_vars, penalty_vars = build_prize_collecting_model(
             self, time_limit=time_limit, logfile=log_file
         )
@@ -284,21 +307,35 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         super().__init__(transformed_graph, new_terminal_groups, weight=weight,
                          preprocess=False, **kwargs)
 
-    def get_solution(self, time_limit: float = 300, log_file: str = "") -> 'NodeWeightedSolution':
+    def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs") -> 'NodeWeightedSolution':
         """Solve and map solution back to the original node-weighted graph."""
-        from .mathematical_model import build_model, run_model
+        from .mathematical_model import build_model, run_model, build_model_gurobi, run_model_gurobi
 
-        model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
-        gap, runtime, objective, _ = run_model(model, self, x, y2, z)
+        solver = solver.lower()
+        if solver not in ("highs", "gurobi"):
+            raise ValueError(f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'.")
+
+        if solver == "gurobi":
+            model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file)
+            gap, runtime, objective, _ = run_model_gurobi(model, self, x, y2, z)
+        else:
+            model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
+            gap, runtime, objective, _ = run_model(model, self, x, y2, z)
 
         # Use arc (y1) variables for the actual directed tree structure instead of edge
         # (x) variables, to avoid degenerate zero-weight cross-edges being included.
         # Also exclude arcs pointing INTO root nodes (roots have no parents in an arborescence).
         root_nodes_split = set(self.roots)
-        used_arcs = [
-            (u, v) for (u, v) in self.arcs
-            if model.variableValue(y1[(u, v)]) > 0.5 and v not in root_nodes_split
-        ]
+        if solver == "gurobi":
+            used_arcs = [
+                (u, v) for (u, v) in self.arcs
+                if y1[(u, v)].X > 0.5 and v not in root_nodes_split
+            ]
+        else:
+            used_arcs = [
+                (u, v) for (u, v) in self.arcs
+                if model.variableValue(y1[(u, v)]) > 0.5 and v not in root_nodes_split
+            ]
 
         # Terminal node costs are always incurred (not captured in the solver objective
         # because the path ends at t_in without traversing t_in -> t_out for non-root terminals)

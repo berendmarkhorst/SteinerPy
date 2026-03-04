@@ -7,7 +7,7 @@
 [![CI/CD](https://github.com/berendmarkhorst/SteinerPy/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/berendmarkhorst/SteinerPy/actions)
 [![codecov](https://codecov.io/gh/berendmarkhorst/SteinerPy/branch/main/graph/badge.svg)](https://codecov.io/gh/berendmarkhorst/SteinerPy)
 
-A Python package for solving Steiner Tree and Steiner Forest Problems — and several advanced variants — using the HiGHS solver and NetworkX graphs.
+A Python package for solving Steiner Tree and Steiner Forest Problems — and several advanced variants — using the HiGHS solver and NetworkX graphs.  Gurobi is also supported as an alternative solver via lazy-cut callbacks.
 
 ## Installation
 
@@ -29,6 +29,11 @@ uv add steinerpy
 - NetworkX
 - HiGHS Solver (via highspy)
 
+To use Gurobi as the solver, you additionally need:
+
+- [gurobipy](https://pypi.org/project/gurobipy/) (install with `pip install gurobipy`)
+- A valid Gurobi license
+
 ## Quick Start
 
 ```python
@@ -44,12 +49,16 @@ G.add_edge('C', 'D', weight=1)
 # Define terminal groups
 terminal_groups = [['A', 'D']]
 
-# Solve the Steiner problem
+# Solve with HiGHS (default)
 problem = SteinerProblem(G, terminal_groups)
 solution = problem.get_solution()
 
 print(f"Optimal cost: {solution.objective}")
 print(f"Selected edges: {solution.selected_edges}")
+
+# Solve with Gurobi (requires gurobipy + license)
+solution_gurobi = problem.get_solution(solver="gurobi")
+print(f"Gurobi optimal cost: {solution_gurobi.objective}")
 ```
 
 ## Supported Problem Variants
@@ -89,6 +98,25 @@ solution = PrizeCollectingProblem(graph, terminal_groups, node_prizes, max_degre
 
 > **Note:** `DegreeConstrainedSteinerProblem` and `BudgetConstrainedSteinerProblem` are still available for backward compatibility but are deprecated — pass the corresponding kwargs to the base class instead.
 
+## Solver Selection
+
+Every problem class exposes a `solver` parameter on `get_solution()`.  Two backends are supported:
+
+| `solver` value | Backend | Notes |
+|----------------|---------|-------|
+| `"highs"` (default) | [HiGHS](https://highs.dev/) via *highspy* | Always available; cut-based formulation solved iteratively (re-solve loop). |
+| `"gurobi"` | [Gurobi](https://www.gurobi.com/) via *gurobipy* | Optional; requires *gurobipy* and a valid Gurobi license.  Connectivity cuts are injected as **lazy constraints** inside a branch-and-cut callback, which lets Gurobi exploit its full branch-and-bound tree. |
+
+```python
+# Use HiGHS (default — no extra installation required)
+solution = SteinerProblem(graph, terminal_groups).get_solution()
+
+# Use Gurobi (requires gurobipy + license)
+solution = SteinerProblem(graph, terminal_groups).get_solution(solver="gurobi")
+```
+
+Both solvers implement the same cut-based (DO-D) formulation from Markhorst et al. (2025) and produce identical optimal solutions.  Gurobi may be faster on larger instances because callbacks avoid repeated re-solves from scratch.
+
 ## Usage Examples
 
 See the `example.ipynb` notebook for detailed usage examples.
@@ -96,7 +124,8 @@ See the `example.ipynb` notebook for detailed usage examples.
 ## Dependencies
 
 - `networkx`: For graph representation and manipulation
-- `highspy`: For optimization solving
+- `highspy`: For optimization solving (HiGHS backend, required)
+- `gurobipy`: For optimization solving (Gurobi backend, optional — requires a Gurobi license)
 
 If you use this package in your research, please cite:
 
