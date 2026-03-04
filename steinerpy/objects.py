@@ -1,5 +1,6 @@
 import networkx as nx
 import highspy as hp
+import warnings
 from typing import List, Tuple, Dict, Optional
 import logging
 from .mathematical_model import (
@@ -95,10 +96,48 @@ class BaseSteinerProblem:
     def get_solution(self, time_limit: float = 300, log_file: str = "") -> 'Solution':
         """
         Get the solution of the Steiner Problem using HighsPy.
+
+        When ``budget`` was supplied at construction time the solver maximises
+        the number of connected terminals subject to the budget constraint and
+        returns a :class:`BudgetSolution`.  Otherwise the solver minimises the
+        total edge cost and returns a plain :class:`Solution`.
+
+        Optional modifiers set at construction time (``max_degree``, ``budget``)
+        are applied automatically regardless of which problem class is used.
+
         :param time_limit: time limit in seconds.
         :param log_file: path to the log file.
-        :return: Solution object.
+        :return: :class:`Solution` (or :class:`BudgetSolution` when a budget is set).
         """
+        if self.budget is not None:
+            # Budget-constrained: maximise connected terminals
+            model, x, y1, y2, z, f, penalty_vars = build_budget_model(
+                self, time_limit=time_limit, logfile=log_file
+            )
+            gap, runtime, connected_count, selected_edges, penalties = run_budget_model(
+                model, self, x, penalty_vars
+            )
+
+            if self.preprocess:
+                original_selected_edges = map_solution_to_original(
+                    selected_edges, self.reduction_tracker, self.graph
+                )
+            else:
+                original_selected_edges = selected_edges
+
+            total_terminals = sum(len(g) for g in self.terminal_groups)
+
+            return BudgetSolution(
+                gap=gap,
+                runtime=runtime,
+                objective=connected_count,
+                selected_edges=selected_edges,
+                original_selected_edges=original_selected_edges,
+                was_preprocessed=self.preprocess,
+                connected_terminals=connected_count,
+                total_terminals=total_terminals,
+                penalties=penalties,
+            )
 
         model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
         gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
@@ -384,8 +423,14 @@ class DegreeConstrainedSteinerProblem(SteinerProblem):
     """
     Degree-Constrained Steiner Tree Problem.
 
-    Finds a Steiner tree where the degree of every node does not exceed *max_degree*.
-    One linear constraint per node is added: the sum of selected incident edges <= max_degree.
+    .. deprecated:: 0.2.0
+        Pass ``max_degree`` directly to :class:`SteinerProblem` (or any other
+        problem class) instead::
+
+            SteinerProblem(graph, terminal_groups, max_degree=2)
+
+        This class is kept for backward compatibility and will be removed in a
+        future version.
     """
 
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], max_degree: int, **kwargs):
@@ -394,6 +439,13 @@ class DegreeConstrainedSteinerProblem(SteinerProblem):
         :param terminal_groups: nested list of terminals.
         :param max_degree: maximum allowed degree for any node in the solution.
         """
+        warnings.warn(
+            "DegreeConstrainedSteinerProblem is deprecated. "
+            "Pass max_degree directly to SteinerProblem (or any other problem class) instead: "
+            "SteinerProblem(graph, terminal_groups, max_degree=max_degree).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         kwargs['max_degree'] = max_degree
         super().__init__(graph, terminal_groups, **kwargs)
 
@@ -406,7 +458,14 @@ class BudgetConstrainedSteinerProblem(SteinerProblem):
     """
     Budget-Constrained Steiner Tree Problem.
 
-    Maximises the number of connected terminals subject to total edge cost <= budget.
+    .. deprecated:: 0.2.0
+        Pass ``budget`` directly to :class:`SteinerProblem` (or any other
+        problem class) instead::
+
+            SteinerProblem(graph, terminal_groups, budget=10.0)
+
+        This class is kept for backward compatibility and will be removed in a
+        future version.
     """
 
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], budget: float, **kwargs):
@@ -415,38 +474,15 @@ class BudgetConstrainedSteinerProblem(SteinerProblem):
         :param terminal_groups: nested list of terminals.
         :param budget: maximum total edge cost allowed.
         """
+        warnings.warn(
+            "BudgetConstrainedSteinerProblem is deprecated. "
+            "Pass budget directly to SteinerProblem (or any other problem class) instead: "
+            "SteinerProblem(graph, terminal_groups, budget=budget).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         kwargs['budget'] = budget
         super().__init__(graph, terminal_groups, **kwargs)
-
-    def get_solution(self, time_limit: float = 300, log_file: str = "") -> 'BudgetSolution':
-        """Solve and return a BudgetSolution."""
-        model, x, y1, y2, z, f, penalty_vars = build_budget_model(
-            self, time_limit=time_limit, logfile=log_file
-        )
-        gap, runtime, connected_count, selected_edges, penalties = run_budget_model(
-            model, self, x, penalty_vars
-        )
-
-        if self.preprocess:
-            original_selected_edges = map_solution_to_original(
-                selected_edges, self.reduction_tracker, self.graph
-            )
-        else:
-            original_selected_edges = selected_edges
-
-        total_terminals = sum(len(g) for g in self.terminal_groups)
-
-        return BudgetSolution(
-            gap=gap,
-            runtime=runtime,
-            objective=connected_count,
-            selected_edges=selected_edges,
-            original_selected_edges=original_selected_edges,
-            was_preprocessed=self.preprocess,
-            connected_terminals=connected_count,
-            total_terminals=total_terminals,
-            penalties=penalties,
-        )
 
 
 class BudgetSolution(Solution):

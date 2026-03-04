@@ -62,9 +62,32 @@ Every variant below can be solved as a **Steiner Tree** (a single group of termi
 | **Prize-Collecting Steiner Tree / Forest** | `PrizeCollectingProblem` | Each terminal carries a prize; the solver balances the prize collected against the edge and penalty costs, so not all terminals need to be connected. |
 | **Node-Weighted Steiner Tree / Forest** | `NodeWeightedSteinerProblem` | Nodes carry costs instead of (or in addition to) edges.  Internally uses a node-splitting transformation to convert the problem to a standard edge-weighted formulation. |
 | **Maximum-Weight Connected Subgraph** | `MaxWeightConnectedSubgraph` | Finds a connected subgraph maximising the total node weight.  Nodes with negative weights are included only when they are needed as connectors.  Convenience subclass of `PrizeCollectingProblem`. |
-| **Degree-Constrained Steiner Tree / Forest** | `DegreeConstrainedSteinerProblem` | Adds a per-node degree limit: no node in the solution may have more than `max_degree` incident edges. |
-| **Budget-Constrained Steiner Tree / Forest** | `BudgetConstrainedSteinerProblem` | Given a maximum total edge-cost budget, maximises the number of connected terminal pairs. |
 | **Directed Steiner Tree (Arborescence)** | `DirectedSteinerProblem` | The graph is directed (`nx.DiGraph`) and a designated root node must reach every terminal via directed paths. |
+
+### Optional Constraint Modifiers
+
+The two side-constraints below are **optional keyword arguments** that can be combined freely with any problem class above:
+
+| Modifier kwarg | Effect |
+|----------------|--------|
+| `max_degree=k` | Every node in the solution has at most *k* incident edges. |
+| `budget=B` | Total edge cost may not exceed *B*; the solver maximises the number of connected terminals and returns a `BudgetSolution`. |
+
+```python
+# Degree-constrained Steiner tree
+solution = SteinerProblem(graph, terminal_groups, max_degree=2).get_solution()
+
+# Budget-constrained Steiner tree
+solution = SteinerProblem(graph, terminal_groups, budget=10.0).get_solution()
+
+# Both constraints together (previously impossible with dedicated classes)
+solution = SteinerProblem(graph, terminal_groups, max_degree=2, budget=10.0).get_solution()
+
+# Degree-constrained prize-collecting problem
+solution = PrizeCollectingProblem(graph, terminal_groups, node_prizes, max_degree=3).get_solution()
+```
+
+> **Note:** `DegreeConstrainedSteinerProblem` and `BudgetConstrainedSteinerProblem` are still available for backward compatibility but are deprecated — pass the corresponding kwargs to the base class instead.
 
 ## Usage Examples
 
