@@ -10,6 +10,7 @@ on:
 
 jobs:
   test:
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -21,14 +22,14 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v4
       with:
+        enable-cache: true
         version: "latest"
     
     - name: Set up Python ${{ matrix.python-version }}
       run: uv python install ${{ matrix.python-version }}
     
     - name: Install dependencies
-      run: |
-        uv sync --dev
+      run: uv sync --dev
     
     - name: Run tests
       run: |
@@ -42,9 +43,15 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
 
   publish:
+    name: Build and Publish to PyPI
     needs: test
-    runs-on: ubuntu-latest
     if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    
+    # These permissions are required for Trusted Publishing (OIDC)
+    permissions:
+      id-token: write
+      contents: read
     
     steps:
     - uses: actions/checkout@v4
@@ -61,6 +68,6 @@ jobs:
       run: uv build
     
     - name: Publish to PyPI
-      env:
-        UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      # No secrets.PYPI_API_TOKEN needed! 
+      # uv detects the OIDC token automatically if permissions are set above.
       run: uv publish
