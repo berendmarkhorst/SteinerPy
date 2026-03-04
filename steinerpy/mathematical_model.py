@@ -576,12 +576,12 @@ def run_prize_collecting_model(model: hp.HighsModel, steiner_problem: 'PrizeColl
     return gap, runtime, objective, selected_edges, selected_nodes, penalties
 
 
-def build_budget_model(steiner_problem: 'BudgetConstrainedSteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple:
+def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple:
     """
     Build a budget-constrained Steiner model.
     Objective: maximize connected terminals (minimize unconnected terminals).
     Constraint: total edge cost <= budget.
-    :param steiner_problem: BudgetConstrainedSteinerProblem-object.
+    :param steiner_problem: SteinerProblem-object with a ``budget`` attribute.
     :param time_limit: time limit in seconds.
     :param logfile: path to logfile.
     :return: HiGHS model and decision variables.
@@ -625,12 +625,12 @@ def build_budget_model(steiner_problem: 'BudgetConstrainedSteinerProblem', time_
     return model, x, y1, y2, z, f, penalty_vars
 
 
-def run_budget_model(model: hp.HighsModel, steiner_problem: 'BudgetConstrainedSteinerProblem',
+def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem',
                      x: Dict, penalty_vars: Dict) -> Tuple[float, float, int, List[Tuple], Dict]:
     """
     Solve budget-constrained model: minimize number of unconnected terminals.
     :param model: HiGHS model.
-    :param steiner_problem: BudgetConstrainedSteinerProblem-object.
+    :param steiner_problem: SteinerProblem-object with a ``budget`` attribute.
     :param x: edge selection variables.
     :param penalty_vars: terminal penalty variables.
     :return: gap, runtime, connected_count, selected_edges, penalties.

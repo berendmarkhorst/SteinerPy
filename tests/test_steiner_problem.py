@@ -834,5 +834,105 @@ def test_directed_steiner_inherits_base():
     assert isinstance(problem, BaseSteinerProblem)
 
 
+# ---------------------------------------------------------------------------
+# Mix-and-match constraint modifier tests
+# ---------------------------------------------------------------------------
+
+def test_steiner_problem_with_max_degree_solution():
+    """SteinerProblem accepts max_degree kwarg and enforces the degree constraint in the solution."""
+    G = nx.Graph()
+    for u, v, w in [('A', 'B', 1), ('B', 'C', 1), ('C', 'D', 1), ('A', 'C', 1), ('B', 'D', 1)]:
+        G.add_edge(u, v, weight=w)
+
+    problem = SteinerProblem(G, [['A', 'D']], max_degree=2, preprocess=False)
+    assert problem.max_degree == 2
+
+    solution = problem.get_solution(time_limit=30)
+
+    assert isinstance(solution, Solution)
+    for node in G.nodes():
+        deg = sum(1 for e in solution.selected_edges if node in e)
+        assert deg <= 2, f"Node {node} has degree {deg} > 2"
+
+
+def test_steiner_problem_with_budget_kwarg():
+    """SteinerProblem accepts budget as a kwarg modifier and returns BudgetSolution."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+    G.add_edge('C', 'D', weight=1)
+
+    problem = SteinerProblem(G, [['A', 'B', 'C', 'D']], budget=2.0, preprocess=False)
+    assert problem.budget == 2.0
+
+    solution = problem.get_solution(time_limit=30)
+    assert isinstance(solution, BudgetSolution)
+    # Total edge cost must not exceed budget
+    total_cost = sum(G.edges[e]['weight'] for e in solution.selected_edges)
+    assert total_cost <= 2.0 + 1e-6
+
+
+def test_steiner_problem_with_both_modifiers():
+    """SteinerProblem supports combining max_degree and budget simultaneously."""
+    G = nx.Graph()
+    for u, v, w in [('A', 'B', 1), ('B', 'C', 1), ('C', 'D', 1), ('A', 'C', 2), ('B', 'D', 2)]:
+        G.add_edge(u, v, weight=w)
+
+    # Budget of 2 and max_degree of 2
+    solution = SteinerProblem(
+        G, [['A', 'B', 'C', 'D']], max_degree=2, budget=2.0, preprocess=False
+    ).get_solution(time_limit=30)
+
+    assert isinstance(solution, BudgetSolution)
+    total_cost = sum(G.edges[e]['weight'] for e in solution.selected_edges)
+    assert total_cost <= 2.0 + 1e-6
+    for node in G.nodes():
+        deg = sum(1 for e in solution.selected_edges if node in e)
+        assert deg <= 2, f"Node {node} has degree {deg} > 2"
+
+
+def test_deprecated_degree_constrained_still_works():
+    """DegreeConstrainedSteinerProblem still works but emits DeprecationWarning."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+
+    with pytest.warns(DeprecationWarning):
+        problem = DegreeConstrainedSteinerProblem(G, [['A', 'B']], max_degree=2)
+
+    assert problem.max_degree == 2
+    assert isinstance(problem, SteinerProblem)
+
+
+def test_deprecated_budget_constrained_still_works():
+    """BudgetConstrainedSteinerProblem still works but emits DeprecationWarning."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+
+    with pytest.warns(DeprecationWarning):
+        problem = BudgetConstrainedSteinerProblem(G, [['A', 'B']], budget=5.0)
+
+    assert problem.budget == 5.0
+    assert isinstance(problem, SteinerProblem)
+
+
+def test_prize_collecting_with_max_degree_modifier():
+    """PrizeCollectingProblem accepts max_degree as a kwarg modifier."""
+    G = nx.Graph()
+    for u, v, w in [('A', 'B', 1), ('B', 'C', 1), ('A', 'C', 1)]:
+        G.add_edge(u, v, weight=w)
+
+    problem = PrizeCollectingProblem(
+        G, [['A', 'C']], node_prizes={'A': 5, 'B': 5, 'C': 5},
+        max_degree=2, preprocess=False
+    )
+    assert problem.max_degree == 2
+
+    solution = problem.get_solution(time_limit=30)
+    assert isinstance(solution, PrizeCollectingSolution)
+    for node in G.nodes():
+        deg = sum(1 for e in solution.selected_edges if node in e)
+        assert deg <= 2, f"Node {node} has degree {deg} > 2"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
