@@ -1,52 +1,36 @@
-# SteinerPy v0.1.2 - Python 3.8 Compatibility & PyPI Release
+# SteinerPy v1.0.1 - Preprocessing Bug Fixes
 
-## 🚀 Major Milestone: Now Available on PyPI!
+## Bug Fixes
 
-Install with:
+- **Recursive solution backmapping ([#20])**: When graph preprocessing collapsed
+  a chain of degree-2 nodes in several steps, the solution was only expanded one
+  level, so `SteinerProblem` could return edges that don't exist in the original
+  graph (e.g. `[(0, 2), (2, 3)]` for a `0-1-2-3` chain). Backmapping now walks the
+  full contraction chain and returns the correct original edges
+  (`[(0, 1), (1, 2), (2, 3)]`).
+
+- **Prize-Collecting preprocessing ([#19])**: Graph reduction is incompatible with
+  the Prize-Collecting objective — degree-1 removal and degree-2 contraction
+  discard non-terminal nodes together with their prizes. `PrizeCollectingProblem`
+  and `MaxWeightConnectedSubgraph` now force `preprocess=False`, and passing
+  `preprocess=True` explicitly raises a warning explaining why.
+
+- **Version reporting**: `steinerpy.__version__` is now sourced from the installed
+  package metadata, so it always matches the released version.
+
+## Testing
+
+- Added regression tests for multi-hop contraction backmapping (`tests/test_graph_reducer.py`).
+- Added Prize-Collecting regression and warning tests.
+- Full suite passes on Python 3.8–3.12.
+
+## Install
+
 ```bash
-pip install steinerpy
+pip install --upgrade steinerpy
 ```
 
-## 🐛 Bug Fixes
-
-- **Python 3.8 Compatibility**: Fixed type annotations throughout the codebase
-  - Replaced modern `list[type]` syntax with `typing.List[Type]`
-  - Added proper imports for `List`, `Set`, `Tuple`, `Dict` from `typing`
-  - Now fully compatible with Python 3.8+ as advertised
-
-- **Package Configuration**: 
-  - Fixed pytest coverage configuration
-  - Updated CI/CD pipeline for cross-platform testing
-
-## 🧪 Testing
-
-- Comprehensive test suite with **94% code coverage**
-- Integration tests that verify actual solver functionality
-- Tests pass on Python 3.8, 3.9, 3.10, 3.11, and 3.12
-
-## 📦 Package Features
-
-- **Steiner Tree Problems**: Connect a single set of terminals optimally
-- **Steiner Forest Problems**: Connect multiple sets of terminals
-- **HiGHS Solver Integration**: High-performance optimization
-- **NetworkX Compatibility**: Works seamlessly with NetworkX graphs
-- **Flexible Edge Weights**: Support for custom edge weight attributes
-
-## 📖 Documentation
-
-- Updated README with real PyPI badges and download statistics
-- Example Jupyter notebook included
-- Comprehensive API documentation
-- Citation information for academic use
-
-## 🔧 Development
-
-- Modern Python packaging with `pyproject.toml`
-- Automated CI/CD with GitHub Actions
-- Cross-platform testing (Linux, macOS, Windows)
-- Automated PyPI publishing on releases
-
-## 🙏 Academic Citation
+## Academic Citation
 
 If you use this software in your research, please cite:
 
@@ -54,4 +38,7 @@ If you use this software in your research, please cite:
 
 ---
 
-**Full Changelog**: https://github.com/berendmarkhorst/SteinerPy/compare/v0.1.1...v0.1.2
+**Full Changelog**: https://github.com/berendmarkhorst/SteinerPy/compare/v1.0.0...v1.0.1
+
+[#19]: https://github.com/berendmarkhorst/SteinerPy/issues/19
+[#20]: https://github.com/berendmarkhorst/SteinerPy/issues/20

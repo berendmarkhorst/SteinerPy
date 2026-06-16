@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-06-16
+
+### Fixed
+- Backmapping of solutions from preprocessed graphs now expands chains of
+  degree-2 contractions recursively, so `SteinerProblem` no longer returns edges
+  that don't exist in the original graph ([#20]).
+- `PrizeCollectingProblem` (and its subclass `MaxWeightConnectedSubgraph`) no
+  longer run graph preprocessing: degree-1/degree-2 reductions discarded
+  non-terminal node prizes and corrupted the objective. Preprocessing is forced
+  off, and explicitly passing `preprocess=True` now raises a warning ([#19]).
+- `steinerpy.__version__` is now read from the installed package metadata, so it
+  always matches the released version instead of drifting out of sync.
+
+[#19]: https://github.com/berendmarkhorst/SteinerPy/issues/19
+[#20]: https://github.com/berendmarkhorst/SteinerPy/issues/20
+
 ## [0.1.3] - 2025-12-18
 
 ### Fixed
