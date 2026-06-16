@@ -163,26 +163,64 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
     return reduced_graph, tracker
 
 
-def map_solution_to_original(reduced_solution_edges: List[Tuple[str, str]], 
+def map_solution_to_original(reduced_solution_edges: List[Tuple[str, str]],
                            tracker: ReductionTracker,
                            reduced_graph: nx.Graph) -> List[Tuple[str, str]]:
     """
     Map a solution from the reduced graph back to the original graph.
-    Only expand edges that were actually created by contractions.
-    
+
+    Only edges that the reduced graph itself marks as ``'contracted'`` are
+    expanded; genuine original edges (and the ``preprocess=False`` pass-through)
+    are returned unchanged.
+
+    Expansion is *recursive*.  Degree-2 reduction can collapse a chain in several
+    steps, e.g. for ``0-1-2-3`` node 1 is contracted into edge ``(0,2)`` and then
+    node 2 into edge ``(0,3)``.  Expanding ``(0,3)`` yields ``(0,2)`` and ``(2,3)``,
+    but ``(0,2)`` is itself a previously-contracted edge that no longer exists in
+    the reduced graph.  We therefore walk the full contraction chain using the
+    tracker (not reduced-graph metadata) for those intermediate synthetic edges.
+
     Args:
         reduced_solution_edges: List of edges in the reduced graph solution
         tracker: ReductionTracker that recorded the reductions
         reduced_graph: The reduced graph (to check edge metadata)
-        
+
     Returns:
         List of edges in the original graph that correspond to the solution
     """
+    # edge_id -> (removed_node, cu, cw). Edge ids are globally unique.
+    id_to_contraction = {
+        cid: (node, cu, cw)
+        for (node, cu, cw, _weight_uv, _weight_vw, cid) in tracker.degree_two_contractions
+        if cid is not None
+    }
+    # frozenset({cu, cw}) -> edge_id. The last contraction recorded for a pair
+    # wins, mirroring the edge_id the reduced graph stored on the surviving edge.
+    pair_to_id = {}
+    for (node, cu, cw, _weight_uv, _weight_vw, cid) in tracker.degree_two_contractions:
+        if cid is not None:
+            pair_to_id[frozenset((cu, cw))] = cid
+
+    def expand(u, w, edge_id, visited):
+        """Recursively expand the contracted edge (u, w) into original edges."""
+        if edge_id is None or edge_id in visited or edge_id not in id_to_contraction:
+            return [(u, w)]
+        visited = visited | {edge_id}
+        node, _cu, _cw = id_to_contraction[edge_id]
+        return _expand_sub(u, node, visited) + _expand_sub(node, w, visited)
+
+    def _expand_sub(a, b, visited):
+        """Expand a sub-edge: recurse if it is itself a contracted edge, else keep."""
+        edge_id = pair_to_id.get(frozenset((a, b)))
+        if edge_id is None:
+            return [(a, b)]  # original (atomic) edge
+        return expand(a, b, edge_id, visited)
+
     original_edges = []
-    
+
     for edge in reduced_solution_edges:
         u, v = edge
-        
+
         # Normalize edge direction to match graph storage
         if reduced_graph.has_edge(u, v):
             edge_data = reduced_graph[u][v]
@@ -190,30 +228,18 @@ def map_solution_to_original(reduced_solution_edges: List[Tuple[str, str]],
             edge_data = reduced_graph[v][u]
             u, v = v, u  # Swap to match graph
         else:
-            # Edge not found in reduced graph - this shouldn't happen
+            # Edge not found in reduced graph (e.g. preprocess=False) - keep as is
             original_edges.append(edge)
             continue
-        
-        # Check if this edge was created by contraction
+
+        # Only edges the reduced graph marks as contracted are expanded; this
+        # keeps genuine original edges from being routed through the tracker map.
         if edge_data.get('edge_type') == 'contracted':
-            edge_id = edge_data.get('edge_id')
-            
-            # Find the corresponding contraction
-            expanded = False
-            for node, cu, cw, weight_uv, weight_vw, cid in tracker.degree_two_contractions:
-                if cid == edge_id and ((cu == u and cw == v) or (cu == v and cw == u)):
-                    # This edge was created by contracting 'node' - expand it
-                    original_edges.extend([(u, node), (node, v)])
-                    expanded = True
-                    break
-            
-            if not expanded:
-                # Edge ID not found in contractions - treat as original edge
-                original_edges.append(edge)
+            original_edges.extend(expand(u, v, edge_data.get('edge_id'), frozenset()))
         else:
             # Original edge - keep as is
             original_edges.append(edge)
-    
+
     return original_edges
 
 

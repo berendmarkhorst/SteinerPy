@@ -1,5 +1,7 @@
 """Basic tests for SteinerProblem class."""
 
+import warnings
+
 import networkx as nx
 import pytest
 from steinerpy import (
@@ -192,26 +194,74 @@ def test_prize_collecting_problem_initialization():
 
 
 def test_prize_collecting_problem_with_preprocessing():
-    """Test PrizeCollectingProblem with preprocessing enabled."""
-    # Create a graph with degree-2 nodes that can be reduced
+    """PrizeCollectingProblem must never preprocess: reductions drop node prizes.
+
+    Passing preprocess=True is overridden to False and warns the user (issue #19).
+    """
+    # Create a graph with degree-2 nodes that would otherwise be reduced
     G = nx.Graph()
     G.add_edge('A', 'B', weight=1)
-    G.add_edge('B', 'C', weight=2)  # B can be contracted if it's not a terminal
+    G.add_edge('B', 'C', weight=2)  # B/C would be contracted if preprocessing ran
     G.add_edge('C', 'D', weight=1)
-    
+
     node_prizes = {'A': 10, 'B': 5, 'C': 3, 'D': 8}
     terminal_groups = [['A', 'D']]  # B and C are not terminals
-    
-    problem = PrizeCollectingProblem(
-        graph=G,
-        terminal_groups=terminal_groups,
-        node_prizes=node_prizes,
-        preprocess=True
-    )
-    
-    # Should inherit preprocessing behavior from SteinerProblem
+
+    with pytest.warns(UserWarning, match="preprocessing is not supported"):
+        problem = PrizeCollectingProblem(
+            graph=G,
+            terminal_groups=terminal_groups,
+            node_prizes=node_prizes,
+            preprocess=True,  # explicitly requested -> overridden + warned
+        )
+
+    # Preprocessing is forced off; the graph is the unreduced original.
+    assert problem.preprocess is False
     assert problem.original_graph.number_of_nodes() == 4
-    assert problem.preprocess == True
+    assert problem.graph.number_of_nodes() == 4  # NOT reduced
+    assert problem.graph.number_of_edges() == 3
+    # All node prizes preserved (B and C not discarded).
+    assert problem.node_prizes == node_prizes
+
+
+def test_prize_collecting_no_warning_by_default():
+    """PrizeCollectingProblem must not warn when preprocess is omitted or False."""
+    G = nx.Graph()
+    G.add_edge('A', 'B', weight=1)
+    G.add_edge('B', 'C', weight=1)
+    node_prizes = {'A': 1, 'B': 2, 'C': 1}
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any warning becomes an error
+        p_default = PrizeCollectingProblem(G, [['A', 'C']], node_prizes)
+        p_explicit = PrizeCollectingProblem(G, [['A', 'C']], node_prizes, preprocess=False)
+
+    assert p_default.preprocess is False
+    assert p_explicit.preprocess is False
+
+
+def test_prize_collecting_preprocessing_does_not_drop_prizes():
+    """Issue #19 regression: the exact reported instance must solve correctly.
+
+    With preprocessing forced off, the prize-bearing nodes are no longer reduced
+    away, so the solver returns the same valid solution as preprocess=False.
+    """
+    G = nx.from_edgelist([(0, 1), (1, 2), (2, 3)])
+    G.edges[0, 1]["weight"] = 1
+    G.edges[1, 2]["weight"] = 100
+    G.edges[2, 3]["weight"] = 30
+    prizes = {0: 1, 1: 100, 2: 10, 3: 40}
+
+    problem = PrizeCollectingProblem(G, [[2]], prizes, weight="weight", penalty_cost=0)
+    solution = problem.get_solution(time_limit=30)
+
+    assert problem.preprocess is False
+    # Non-empty, valid solution selecting edge (2, 3) — matches preprocess=False.
+    selected = {tuple(sorted(e)) for e in solution.edges}
+    assert selected == {(2, 3)}
+    # Every solution edge exists in the original graph.
+    for u, v in solution.edges:
+        assert G.has_edge(u, v)
 
 
 def test_prize_collecting_solution_properties():
@@ -592,6 +642,8 @@ def test_mwcs_initialization():
     assert problem.mwcs_root == 'B'
     # Positive-weight nodes become terminals
     assert set(problem.terminal_groups[0]) >= {'A', 'B'}
+    # MWCS inherits PrizeCollectingProblem behaviour: preprocessing is off (issue #19)
+    assert problem.preprocess is False
 
 
 def test_mwcs_explicit_root():

@@ -210,9 +210,24 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         :param penalty_cost: cost per unconnected terminal
         :param penalty_budget: maximum total penalty allowed (optional)
         """
+        # Prize-Collecting Steiner Tree is incompatible with graph reduction:
+        # degree-1 removal and degree-2 contraction discard non-terminal nodes
+        # together with their prizes, which corrupts the objective. Force it off
+        # (also covers subclasses such as MaxWeightConnectedSubgraph).
+        if kwargs.get('preprocess', False):
+            warnings.warn(
+                "Graph preprocessing is not supported for PrizeCollectingProblem "
+                "(and subclasses such as MaxWeightConnectedSubgraph): degree-1/degree-2 "
+                "reductions discard non-terminal node prizes and corrupt the objective. "
+                "Forcing preprocess=False.",
+                UserWarning,
+                stacklevel=2,
+            )
+        kwargs['preprocess'] = False
+
         # Initialize base Steiner problem first
         super().__init__(graph, terminal_groups, **kwargs)
-        
+
         # Add prize collecting specific attributes
         self.node_prizes = node_prizes
         self.penalty_cost = penalty_cost
