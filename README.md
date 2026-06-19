@@ -117,6 +117,20 @@ solution = SteinerProblem(graph, terminal_groups).get_solution(solver="gurobi")
 
 Both solvers implement the same cut-based (DO-D) formulation from Markhorst et al. (2025) and produce identical optimal solutions.  Gurobi may be faster on larger instances because callbacks avoid repeated re-solves from scratch.
 
+## Dual-Ascent Accelerator (opt-in)
+
+An optional [Wong (1984)](https://doi.org/10.1007/BF02612335) dual-ascent procedure can speed up the exact solve.  It computes, cheaply, a lower bound, a feasible primal solution, and *reduced costs*; following [Leitner et al. (2018)](https://doi.org/10.1007/s10589-017-9966-x) the reduced costs are used to **fix variables to zero** (eliminate arcs/edges that cannot appear in any optimal solution) before HiGHS/Gurobi runs.  When the bound matches the heuristic, the instance is solved **without building the ILP at all**.
+
+```python
+# Enable per problem (constructor) ...
+solution = SteinerProblem(graph, terminal_groups, dual_ascent=True).get_solution()
+
+# ... or per call (overrides the constructor flag)
+solution = SteinerProblem(graph, terminal_groups).get_solution(dual_ascent=True)
+```
+
+It is **off by default** and returns the same optimum as the baseline.  Supported for Steiner **tree**, **forest** (multi-root), and **directed** (`DirectedSteinerProblem`) problems; it is skipped automatically when a `budget` or `max_degree` modifier is set, and for the prize-collecting / node-weighted variants.  See [`benchmarks/`](benchmarks/) for a SteinLib comparison harness.
+
 ## Usage Examples
 
 See the `example.ipynb` notebook for detailed usage examples.

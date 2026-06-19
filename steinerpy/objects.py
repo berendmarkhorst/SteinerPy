@@ -89,12 +89,30 @@ class BaseSteinerProblem:
         # Extract global modifiers like max_degree or budget from kwargs
         self.max_degree = kwargs.get('max_degree', None)
         self.budget = kwargs.get('budget', None)
-        
+        # Opt-in dual-ascent accelerator (lower bound + primal heuristic +
+        # reduced-cost variable fixing). Off by default; see steinerpy.dual_ascent.
+        self.dual_ascent = kwargs.get('dual_ascent', False)
+
+
+    def _da_eligible(self) -> bool:
+        """Whether the dual-ascent accelerator is sound for this problem.
+
+        Eligible for plain Steiner tree/forest (undirected) and directed Steiner
+        arborescence (DiGraph). Excluded when a budget or degree constraint is
+        active, since the dual-ascent primal heuristic ignores those and its
+        upper bound would no longer be valid for reduced-cost fixing.
+        """
+        if self.budget is not None:
+            return False
+        if getattr(self, 'max_degree', None) is not None:
+            return False
+        return True
 
     def __repr__(self):
         return f"Problem with a graph of {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges and {self.terminal_groups} as terminal groups."
 
-    def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs") -> 'Solution':
+    def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs",
+                     dual_ascent: bool = None) -> 'Solution':
         """
         Get the solution of the Steiner Problem.
 
@@ -158,11 +176,46 @@ class BaseSteinerProblem:
                 penalties=penalties,
             )
 
+        # Optional dual-ascent accelerator: lower bound + primal heuristic +
+        # reduced-cost variable fixing. Early-exits when proven optimal.
+        use_da = self.dual_ascent if dual_ascent is None else dual_ascent
+        fixing = None
+        da_primal = None
+        if use_da and self._da_eligible():
+            import time as _time
+            import math as _math
+            from .dual_ascent import (
+                dual_ascent as _run_da, reduced_cost_fixing,
+            )
+            _t0 = _time.time()
+            da = _run_da(self, self.weight)
+            if da.feasible and not _math.isinf(da.lower_bound) and not _math.isinf(da.upper_bound):
+                if abs(da.upper_bound - da.lower_bound) <= 1e-6 * max(1.0, abs(da.upper_bound)):
+                    # Proven optimal by dual ascent — skip the ILP entirely.
+                    if self.preprocess:
+                        original = map_solution_to_original(da.primal_edges, self.reduction_tracker, self.graph)
+                    else:
+                        original = da.primal_edges
+                    return Solution(
+                        gap=0.0, runtime=_time.time() - _t0, objective=da.upper_bound,
+                        selected_edges=da.primal_edges, original_selected_edges=original,
+                        was_preprocessed=self.preprocess,
+                    )
+                fixing = reduced_cost_fixing(self, da)
+                da_primal = da.primal_edges
+
         if solver == "gurobi":
             model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file)
+            if fixing is not None:
+                from .dual_ascent import apply_fixes_gurobi
+                apply_fixes_gurobi(model, x, y1, y2, fixing)
             gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
+            if fixing is not None:
+                from .dual_ascent import apply_fixes_highs, set_highs_warm_start
+                apply_fixes_highs(model, x, y1, y2, fixing)
+                set_highs_warm_start(model, x, da_primal)
             gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
 
         # Map solution back to original graph if preprocessing was used

@@ -169,3 +169,8 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# Benchmark data and generated results (see benchmarks/README.md)
+benchmarks/data/
+benchmarks/results/
+benchmarks/instances.txt

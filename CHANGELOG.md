@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Dual-ascent accelerator** (opt-in `dual_ascent=True`): a Wong (1984)
+  dual-ascent procedure computes a lower bound, a primal heuristic, and reduced
+  costs, then applies reduced-cost variable fixing (Leitner et al. 2018) to
+  shrink the ILP before solving — and solves directly (no ILP) when the bound is
+  tight. Supported for Steiner tree, forest (multi-root) and directed problems;
+  off by default and returns the same optimum as the baseline. New module
+  `steinerpy.dual_ascent`.
+- `benchmarks/` harness: SteinLib `.stp` parser, known-optima validation, and an
+  HPC-friendly (resumable, parallel) runner comparing baseline vs accelerator.
+
 ## [1.0.1] - 2026-06-16
 
 ### Fixed
