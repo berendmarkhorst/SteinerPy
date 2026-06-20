@@ -127,9 +127,24 @@ def degree_two_reduction(G: nx.Graph, terminals: Set[any], weight: str = "weight
     return reduced_graph
 
 
-def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str = "weight") -> Tuple[nx.Graph, ReductionTracker]:
-    """
-    Apply both reductions and return the reduced graph and tracker.
+def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str = "weight",
+                     special_distance: bool = False, long_edge: bool = False,
+                     max_settle: int = 2000) -> Tuple[nx.Graph, ReductionTracker]:
+    """Apply the structural (and, optionally, heavy) reductions to a fixpoint.
+
+    Always applies the degree-1 and degree-2 reductions.  When ``special_distance``
+    or ``long_edge`` is set, the corresponding sound edge-deletion test (see
+    :func:`heavy_edge_deletions`) is interleaved with the degree reductions, so
+    each deletion can cascade into further structural simplifications and vice
+    versa, until nothing changes.
+
+    :param special_distance: enable the Special Distance test (Steiner *tree*
+        only; automatically skipped when more than one terminal group is given).
+    :param long_edge: enable the long-edge / alternative-path test (valid for
+        Steiner tree and forest).
+    :param max_settle: work cap for the long-edge bounded Dijkstra.
+    :returns: ``(reduced_graph, tracker)``.  Deleted edges need no tracking; only
+        the degree reductions are recorded for solution back-mapping.
     """
     # Flatten terminal groups to get all terminals
     all_terminals = set()
@@ -152,7 +167,27 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
         
         # Apply degree-2 reduction
         reduced_graph = degree_two_reduction(reduced_graph, all_terminals, weight, tracker)
-        
+
+        # Optionally apply the heavy edge-deletion tests (Special Distance /
+        # long-edge). Every deleted edge is provably in no optimal solution, so
+        # the optimum is preserved and the degree reductions above can cascade
+        # further on the next iteration. A connectivity guard reverts a pass that
+        # would (numerically) disconnect a terminal group — which a sound
+        # deletion can never do, so this only protects against edge cases.
+        if special_distance or long_edge:
+            dels = heavy_edge_deletions(
+                reduced_graph, terminal_groups, weight,
+                special_distance=special_distance, long_edge=long_edge,
+                max_settle=max_settle,
+            )
+            if dels:
+                snapshot = reduced_graph.copy()
+                for du, dv in dels:
+                    if reduced_graph.has_edge(du, dv):
+                        reduced_graph.remove_edge(du, dv)
+                if not _groups_connected(reduced_graph, terminal_groups):
+                    reduced_graph = snapshot  # defensive: should never trigger
+
         # Check if any changes occurred
         if (reduced_graph.number_of_nodes() == initial_nodes and 
             reduced_graph.number_of_edges() == initial_edges):
@@ -241,6 +276,261 @@ def map_solution_to_original(reduced_solution_edges: List[Tuple[str, str]],
             original_edges.append(edge)
 
     return original_edges
+
+
+# ---------------------------------------------------------------------------
+# Heavy (bound/alternative-based) edge-deletion reductions
+# ---------------------------------------------------------------------------
+#
+# These implement two provably optimum-preserving edge-deletion tests from the
+# Steiner-tree reduction literature, complementing the simple degree-1/degree-2
+# structural reductions above:
+#
+#   * Special Distance (bottleneck Steiner distance) test
+#       Rehfeldt & Koch, "Implications, conflicts, and reductions for Steiner
+#       trees", Math. Programming B 197 (2023), Theorem 1; see also Duin (1993),
+#       Polzin & Vahdati Daneshmand (2001), and the survey Ljubic (2021),
+#       Section 4 ("alternative-based" reduction tests).
+#
+#   * Long-edge / alternative-path test
+#       The "an edge with a cheaper detour is in no optimal solution" criterion,
+#       the cheapest special case of the Special Distance test, and the only one
+#       of the two that stays valid for the Steiner *forest* generalisation.
+#
+# Both tests only ever *delete* edges that are provably contained in no optimal
+# solution, so — exactly like the dual-ascent reduced-cost reduction — they need
+# no entry in the ReductionTracker: a deleted edge can never appear in a mapped
+# solution.  Only the degree reductions they cascade into are tracked.
+
+
+def _groups_connected(G: nx.Graph, terminal_groups: List[List]) -> bool:
+    """True iff every terminal group is internally connected in ``G``.
+
+    Used as a defensive guard: a sound deletion can never disconnect a group, so
+    a failure here aborts the offending pass instead of corrupting the optimum.
+    """
+    if G.number_of_nodes() == 0:
+        return all(len(g) <= 1 for g in terminal_groups)
+    # Union-find over the current edges.
+    parent = {n: n for n in G.nodes()}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for u, v in G.edges():
+        ru, rv = find(u), find(v)
+        if ru != rv:
+            parent[ru] = rv
+
+    for group in terminal_groups:
+        present = [t for t in group if t in parent]
+        if len(present) <= 1:
+            continue
+        r0 = find(present[0])
+        if any(find(t) != r0 for t in present[1:]):
+            return False
+    return True
+
+
+def _voronoi(G: nx.Graph, terminals, weight: str):
+    """Single multi-source Dijkstra building the terminal Voronoi diagram.
+
+    Returns ``(dist, base)`` where ``dist[v]`` is the distance from ``v`` to its
+    nearest terminal and ``base[v]`` is that terminal.  One Dijkstra over the
+    whole graph replaces the |T| single-source Dijkstras the naive special
+    distance computation would need.
+    """
+    import heapq
+    dist: Dict = {}
+    base: Dict = {}
+    pq = []
+    for t in terminals:
+        dist[t] = 0.0
+        base[t] = t
+        heapq.heappush(pq, (0.0, t))
+    while pq:
+        d, u = heapq.heappop(pq)
+        if d > dist.get(u, float("inf")):
+            continue
+        for v, attr in G[u].items():
+            nd = d + attr.get(weight, 1)
+            if nd < dist.get(v, float("inf")):
+                dist[v] = nd
+                base[v] = base[u]
+                heapq.heappush(pq, (nd, v))
+    return dist, base
+
+
+def _mehlhorn_terminal_mst(G: nx.Graph, terminals, dist: Dict, base: Dict,
+                           weight: str) -> Dict:
+    """All-pairs terminal *bottleneck* distance via Mehlhorn's construction.
+
+    Mehlhorn (1988) showed that the minimum spanning tree of the auxiliary graph
+    built from the *Voronoi-boundary* edges — for each graph edge ``{u, w}`` whose
+    endpoints lie in different terminal regions, a candidate terminal edge
+    ``{base(u), base(w)}`` of weight ``dist(u) + c(u, w) + dist(w)`` — is a
+    minimum spanning tree of the complete terminal distance network.  Because the
+    minimax (bottleneck) distance between two nodes is identical across *all*
+    spanning trees of a graph, the bottleneck distances read off this tree equal
+    those of the exact distance network — at a cost of ``O(m + n log n)`` instead
+    of ``O(|T| · (m + n log n))``.
+
+    Returns ``bott[a][b]`` for terminals ``a, b``.
+    """
+    K = nx.Graph()
+    for t in terminals:
+        K.add_node(t)
+    best: Dict = {}  # (ta, tb) with ta <= tb -> cheapest boundary distance
+    for u, w, attr in G.edges(data=True):
+        bu, bw = base.get(u), base.get(w)
+        if bu is None or bw is None or bu == bw:
+            continue
+        cand = dist[u] + attr.get(weight, 1) + dist[w]
+        key = (bu, bw) if bu <= bw else (bw, bu)
+        if cand < best.get(key, float("inf")):
+            best[key] = cand
+    for (a, b), wq in best.items():
+        K.add_edge(a, b, weight=wq)
+
+    mst = nx.minimum_spanning_tree(K, weight="weight")
+
+    bott: Dict = {}
+    for root in terminals:
+        if not mst.has_node(root):
+            continue
+        bott[root] = {root: 0.0}
+        seen = {root}
+        stack = [(root, 0.0)]
+        while stack:
+            u, mx = stack.pop()
+            for v in mst.neighbors(u):
+                if v in seen:
+                    continue
+                seen.add(v)
+                nm = max(mx, mst[u][v].get("weight", 1))
+                bott[root][v] = nm
+                stack.append((v, nm))
+    return bott
+
+
+def special_distance_deletions(G: nx.Graph, terminals: Set, weight: str = "weight",
+                               eps: float = 1e-9) -> Set[Tuple]:
+    """Edges deletable by the Special Distance (bottleneck Steiner distance) test.
+
+    For an edge ``e = {v, w}`` let ``s(v, w)`` be the bottleneck distance between
+    ``v`` and ``w`` in the distance network over ``T ∪ {v, w}`` (Rehfeldt & Koch
+    2023, Sec. 2.1).  By Theorem 1, if ``s(v, w) < c(e)`` then **no** minimum
+    Steiner tree contains ``e``.
+
+    We use the sound upper bound
+
+        s(v, w) ≤ max( d(v, t_v), b_T(t_v, t_w), d(t_w, w) )
+
+    where ``t_v`` / ``t_w`` are the terminals nearest ``v`` / ``w``, ``d`` is the
+    shortest-path distance, and ``b_T`` is the terminal-network bottleneck
+    distance.  This is the bottleneck of one concrete path
+    ``v → t_v → … → t_w → w`` in the distance network, hence an upper bound on
+    ``s``; any value strictly below ``c(e)`` certifies deletion.
+
+    Both ingredients are obtained the *fast* way (Mehlhorn 1988): a single
+    multi-source Dijkstra (the terminal Voronoi diagram) yields every nearest
+    terminal and its distance, and the Voronoi-boundary MST yields the terminal
+    bottleneck distances — ``O(m + n log n)`` overall, versus ``O(|T|)`` separate
+    shortest-path computations.
+
+    The terminal-hopping bound is valid for a single terminal group (ordinary
+    Steiner tree).  The caller is responsible for only invoking it in that case;
+    for the Steiner forest use :func:`long_edge_deletions` instead.
+    """
+    terminals = set(terminals)
+    if not terminals:
+        return set()
+
+    dist, base = _voronoi(G, terminals, weight)
+    bott = _mehlhorn_terminal_mst(G, terminals, dist, base, weight)
+
+    to_delete: Set[Tuple] = set()
+    for u, v, data in G.edges(data=True):
+        c = data.get(weight, 1)
+        bu, bv = base.get(u), base.get(v)
+        if bu is None or bv is None:
+            continue
+        du = dist.get(u, float("inf"))
+        dv = dist.get(v, float("inf"))
+        b = bott.get(bu, {}).get(bv, float("inf"))
+        if max(du, b, dv) < c - eps:
+            to_delete.add((u, v))
+    return to_delete
+
+
+def long_edge_deletions(G: nx.Graph, weight: str = "weight",
+                        max_settle: int = 2000, eps: float = 1e-9) -> Set[Tuple]:
+    """Edges deletable because a strictly cheaper detour exists in ``G \\ e``.
+
+    If the shortest-path distance between the endpoints of ``e = {v, w}`` is below
+    ``c(e)``, then any solution using ``e`` can re-route along that cheaper path
+    without increasing its cost (and without affecting any other terminal group),
+    so ``e`` is in no minimum solution.  With positive edge costs a path shorter
+    than ``c(e)`` cannot itself contain ``e``, so the shortest-path distance in
+    ``G`` already certifies an ``e``-free detour.
+
+    This is computed the fast way recommended by Rehfeldt & Koch (2023, Sec. 2.3):
+    one cost-bounded Dijkstra **per vertex** ``v0`` (not per edge) settles every
+    neighbour, and any incident edge ``{v0, w}`` whose neighbour is reached more
+    cheaply than ``c({v0, w})`` is deleted.  The search is bounded by ``v0``'s
+    largest incident edge cost (no cheaper detour for any incident edge can lie
+    beyond it) and by ``max_settle`` nodes.  This is ``O(n)`` bounded Dijkstras
+    instead of ``O(m)``, and stays valid for the Steiner *forest*.
+    """
+    import heapq
+
+    to_delete: Set[Tuple] = set()
+    for v0 in G.nodes():
+        nbrs = G[v0]
+        if not nbrs:
+            continue
+        cmax = max(a.get(weight, 1) for a in nbrs.values())
+        dist = {v0: 0.0}
+        pq = [(0.0, v0)]
+        settled = 0
+        while pq and settled < max_settle:
+            d, x = heapq.heappop(pq)
+            if d > dist.get(x, float("inf")):
+                continue
+            if d >= cmax:                   # no cheaper detour for any incident edge
+                break
+            settled += 1
+            for y, attr in G[x].items():
+                nd = d + attr.get(weight, 1)
+                if nd < dist.get(y, float("inf")):
+                    dist[y] = nd
+                    heapq.heappush(pq, (nd, y))
+        for w, attr in nbrs.items():
+            c = attr.get(weight, 1)
+            if dist.get(w, float("inf")) < c - eps:
+                to_delete.add((v0, w))
+    return to_delete
+
+def heavy_edge_deletions(G: nx.Graph, terminal_groups: List[List], weight: str = "weight",
+                         special_distance: bool = True, long_edge: bool = True,
+                         max_settle: int = 2000) -> Set[Tuple]:
+    """Combined sound edge-deletion set for one reduction pass.
+
+    Applies the Special Distance test (only when there is a single terminal
+    group, i.e. an ordinary Steiner tree) and/or the long-edge test (valid for
+    tree and forest), returning the union of edges that are provably in no
+    optimal solution.
+    """
+    all_terms = {t for g in terminal_groups for t in g}
+    dels: Set[Tuple] = set()
+    if special_distance and len(terminal_groups) == 1:
+        dels |= special_distance_deletions(G, all_terms, weight)
+    if long_edge:
+        dels |= long_edge_deletions(G, weight, max_settle=max_settle)
+    return dels
 
 
 def reduction_stats(original: nx.Graph, reduced: nx.Graph) -> dict:
