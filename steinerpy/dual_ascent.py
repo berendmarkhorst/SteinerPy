@@ -18,7 +18,7 @@ that reduced-cost fixing aligns column-for-column with the ILP variables.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple, Hashable, Optional
+from typing import Dict, FrozenSet, List, Set, Tuple, Hashable, Optional
 import math
 
 import networkx as nx
@@ -38,6 +38,10 @@ class GroupAscent:
     terminals: List[Hashable]
     reduced_costs: Dict[Arc, float]
     lower_bound: float
+    # Steiner cuts (node sets W with root not in W, a terminal in W) discovered
+    # during the ascent; reused to warm-start the ILP cut loop. See
+    # :func:`steiner_cuts`.
+    cuts: List[FrozenSet] = field(default_factory=list)
 
 
 @dataclass
@@ -96,6 +100,19 @@ def _arc_costs(graph, arcs, weight: str) -> Dict[Arc, float]:
 # Core dual ascent (single root)
 # ---------------------------------------------------------------------------
 
+def _bfs(source, adj: Dict[Hashable, Set]) -> Set:
+    """Reachable set from *source* over adjacency *adj* (including *source*)."""
+    seen = {source}
+    stack = [source]
+    while stack:
+        u = stack.pop()
+        for v in adj.get(u, ()):
+            if v not in seen:
+                seen.add(v)
+                stack.append(v)
+    return seen
+
+
 def _ascent(arcs: List[Arc], root, terminals, costs: Dict[Arc, float],
             nodes: Set) -> GroupAscent:
     """Wong dual ascent on a fixed arc set with the given initial arc *costs*.
@@ -103,21 +120,38 @@ def _ascent(arcs: List[Arc], root, terminals, costs: Dict[Arc, float],
     Returns a :class:`GroupAscent` whose ``lower_bound`` is a valid lower bound
     on the min-cost arborescence rooted at ``root`` spanning ``terminals``.
     ``lower_bound == inf`` signals an unreachable terminal (disconnected).
+
+    This is Wong (1984); the implementation keeps the saturation graph
+    incrementally (saturated-arc adjacency in both directions, updated as arcs
+    saturate) and uses hand-rolled BFS instead of rebuilding a ``networkx``
+    graph and recomputing ``ancestors``/``descendants`` every iteration — the
+    efficient-implementation idea from Duin / Pajor et al. (Ljubic 2020, sec.
+    6).  It is exactly equivalent to the naive version (same lower bound,
+    reduced costs, and Steiner cuts); only the per-iteration cost changes.
     """
     c = dict(costs)
-    sat: Set[Arc] = {a for a in arcs if c[a] <= EPS}
     demand = set(terminals) - {root}
     lb = 0.0
+    cuts: List[FrozenSet] = []
+    seen: Set[FrozenSet] = set()
+
+    # Arcs indexed by head (for delta_in), plus saturated-arc adjacency in both
+    # directions, maintained incrementally as arcs saturate.
+    in_arcs: Dict[Hashable, List[Arc]] = {}
+    sat_succ: Dict[Hashable, Set] = {}
+    sat_pred: Dict[Hashable, Set] = {}
+    for a in arcs:
+        in_arcs.setdefault(a[1], []).append(a)
+        if c[a] <= EPS:
+            sat_succ.setdefault(a[0], set()).add(a[1])
+            sat_pred.setdefault(a[1], set()).add(a[0])
 
     while True:
-        S = nx.DiGraph()
-        S.add_nodes_from(nodes)
-        S.add_edges_from(sat)
-
-        reach = (nx.descendants(S, root) | {root}) if root in S else {root}
+        # Nodes reachable from root through saturated arcs (root included).
+        reach = _bfs(root, sat_succ)
         unconnected = demand - reach
         if not unconnected:
-            return GroupAscent(root, list(terminals), c, lb)
+            return GroupAscent(root, list(terminals), c, lb, cuts)
 
         # Wong's Steiner-cut dual: W = the set of nodes that can reach the
         # unconnected terminal t through saturated arcs (its ancestor-closure).
@@ -126,25 +160,84 @@ def _ascent(arcs: List[Arc], root, terminals, costs: Dict[Arc, float],
         # reach t and be in W), so every in-cut arc has c~ > 0 and the dual
         # increment is strictly positive, guaranteeing termination.
         t = min(unconnected, key=lambda n: str(n))
-        W = (nx.ancestors(S, t) | {t}) if t in S else {t}
+        W = _bfs(t, sat_pred)
 
-        delta_in = [a for a in arcs if a[1] in W and a[0] not in W]
+        fw = frozenset(W)
+        if fw not in seen:
+            seen.add(fw)
+            cuts.append(fw)
+
+        delta_in = [a for v in W for a in in_arcs.get(v, ()) if a[0] not in W]
         if not delta_in:
             # Terminal unreachable from root -> infeasible/disconnected.
-            return GroupAscent(root, list(terminals), c, math.inf)
+            return GroupAscent(root, list(terminals), c, math.inf, cuts)
 
         delta = min(c[a] for a in delta_in)
         lb += delta
         for a in delta_in:
             c[a] -= delta
             if c[a] <= EPS:
-                sat.add(a)
+                sat_succ.setdefault(a[0], set()).add(a[1])
+                sat_pred.setdefault(a[1], set()).add(a[0])
 
 
 def dual_ascent_arborescence(graph, arcs, root, terminals, weight="weight") -> GroupAscent:
     """Public single-root entry point (tree / directed)."""
     nodes = _node_universe(arcs, terminals, root)
     return _ascent(list(arcs), root, terminals, _arc_costs(graph, arcs, weight), nodes)
+
+
+# Cap on how many candidate roots the multi-root ascent tries per group.
+MAX_ROOTS = 8
+
+
+def _candidate_roots(terminals, root, cap: int = MAX_ROOTS) -> List:
+    """Candidate roots for multi-root ascent: the model root first (so the bound
+    is never worse than the single-root one), then other terminals, capped."""
+    others = sorted((t for t in terminals if t != root), key=lambda n: str(n))
+    return [root] + others[: max(0, cap - 1)]
+
+
+def _multi_root_group(graph, arcs: List[Arc], terminals, costs: Dict[Arc, float],
+                      candidate_roots: List, weight, is_directed: bool):
+    """Multi-root / multi-start dual ascent for one group on initial *costs*.
+
+    Runs :func:`_ascent` from each candidate root and, for each, builds the
+    saturation-biased primal heuristic.  Returns ``(ga_best, primal, ub)`` where:
+
+    * ``ga_best`` is the :class:`GroupAscent` with the largest **finite** lower
+      bound (every ascent is a valid dual, so the max is a valid lower bound).
+      Its ``(lower_bound, reduced_costs, root)`` triple is mutually consistent —
+      the caller uses it for reduced-cost fixing and cut seeding.
+    * ``primal`` / ``ub`` are the **cheapest** feasible primal found across all
+      roots (any feasible primal is a valid upper bound, so the minimum is too).
+      A tighter upper bound yields more early-exits and stronger fixing — this is
+      the main win, because the lower bound is typically already very tight.
+    """
+    ga_best: Optional[GroupAscent] = None
+    best_primal, best_ub = None, math.inf
+    for r in candidate_roots:
+        nodes = _node_universe(arcs, terminals, r)
+        ga = _ascent(list(arcs), r, terminals, costs, nodes)
+        if ga_best is None \
+                or (math.isinf(ga_best.lower_bound) and not math.isinf(ga.lower_bound)) \
+                or (not math.isinf(ga.lower_bound) and ga.lower_bound > ga_best.lower_bound):
+            ga_best = ga
+        sat = {a for a in arcs if ga.reduced_costs[a] <= EPS}
+        pe, ok = _primal_for_group(graph, arcs, r, terminals, sat, weight, is_directed)
+        if ok:
+            c = _edges_cost(graph, pe, weight)
+            if c < best_ub:
+                best_ub, best_primal = c, pe
+        # Adaptive stop: once the best LB and best UB coincide the group is
+        # proven optimal, and no remaining root can change either bound (its LB
+        # is <= the running max, its UB >= the running min).  Skipping them is
+        # therefore output-identical to running every root — it just avoids the
+        # wasted work on the instances that early-exit without an ILP.
+        if ga_best is not None and not math.isinf(ga_best.lower_bound) \
+                and best_ub - ga_best.lower_bound <= 1e-9 * max(1.0, abs(best_ub)):
+            break
+    return ga_best, best_primal, best_ub
 
 
 # ---------------------------------------------------------------------------
@@ -226,12 +319,18 @@ def _dual_ascent_forest(steiner_problem, arcs, edges, weight) -> DualAscentResul
 
     order = sorted(range(len(groups)), key=lambda k: len(groups[k]))
     group_results: Dict[int, GroupAscent] = {}
+    group_primals: Dict[int, Optional[List[Tuple]]] = {}
     lb = 0.0
     for k in order:
         init_costs = {a: residual[frozenset(a)] for a in arcs}
-        nodes = _node_universe(arcs, groups[k], roots[k])
-        ga = _ascent(list(arcs), roots[k], groups[k], init_costs, nodes)
+        # Multi-root per group on the current shared residual; any root yields a
+        # valid per-group dual, and the residual depletion below uses the chosen
+        # ascent's own reduced costs, so Sum(loads) <= c_e still holds.  The
+        # cheapest per-root primal feeds the union upper bound.
+        cand = _candidate_roots(groups[k], roots[k])
+        ga, primal_k, _ub_k = _multi_root_group(graph, arcs, groups[k], init_costs, cand, weight, False)
         group_results[k] = ga
+        group_primals[k] = primal_k
         if math.isinf(ga.lower_bound):
             lb = math.inf
         elif not math.isinf(lb):
@@ -249,11 +348,10 @@ def _dual_ascent_forest(steiner_problem, arcs, edges, weight) -> DualAscentResul
     union: Dict[frozenset, Tuple] = {}
     feasible = True
     for k in range(len(groups)):
-        ga = group_results[k]
-        sat = {a for a in arcs if ga.reduced_costs[a] <= EPS}
-        ge, ok = _primal_for_group(graph, arcs, roots[k], groups[k], sat, weight, False)
-        if not ok:
+        ge = group_primals[k]
+        if ge is None:
             feasible = False
+            continue
         for (u, v) in ge:
             union.setdefault(frozenset((u, v)), (u, v))
     primal_edges = list(union.values())
@@ -285,11 +383,14 @@ def dual_ascent(steiner_problem, weight: Optional[str] = None) -> DualAscentResu
     if is_directed or len(groups) == 1:
         root = roots[0]
         terminals = groups[0]
-        ga = dual_ascent_arborescence(graph, arcs, root, terminals, weight)
-        sat = {a for a in arcs if ga.reduced_costs[a] <= EPS}
-        primal, ok = _primal_for_group(graph, arcs, root, terminals, sat, weight, is_directed)
-        feasible = ok and not math.isinf(ga.lower_bound)
-        ub = _edges_cost(graph, primal, weight) if feasible else math.inf
+        costs = _arc_costs(graph, arcs, weight)
+        # Directed arborescences have a fixed root; undirected trees may try
+        # several roots and keep the tightest lower bound and primal upper bound.
+        cand = [root] if is_directed else _candidate_roots(terminals, root)
+        ga, primal, ub = _multi_root_group(graph, arcs, terminals, costs, cand, weight, is_directed)
+        feasible = primal is not None and not math.isinf(ga.lower_bound) and not math.isinf(ub)
+        if not feasible:
+            primal, ub = [], math.inf
         return DualAscentResult(
             lower_bound=ga.lower_bound, upper_bound=ub, primal_edges=primal,
             feasible=feasible, is_directed=is_directed,
@@ -471,3 +572,186 @@ def set_highs_warm_start(model, x, primal_edges) -> bool:
         return True
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Cut initialization (warm-start the ILP cut loop with dual-ascent cuts)
+# ---------------------------------------------------------------------------
+
+def steiner_cuts(result: DualAscentResult, roots=None) -> List[Tuple[int, int, List[Arc]]]:
+    """Convert the Steiner cuts found during dual ascent into model-ready triples.
+
+    Each cut is a node set ``W`` (with the group root outside and a terminal
+    inside). The corresponding directed-cut inequality is
+
+        sum(y2[(k, a)] for a in delta_in(W)) >= z[(k, k)]
+
+    where ``delta_in(W)`` are the arcs entering ``W``.  Triples are returned in
+    the ``(group_id_k, group_id_l, cut_arcs)`` shape used by the ILP cut loop
+    (see :func:`steinerpy.mathematical_model.run_model`), with ``l = k``; the
+    group index ``k`` matches ``result.groups`` order (group 0..K-1).  Cuts with
+    no entering arc are dropped and duplicates (by arc set) are removed per group.
+
+    ``roots`` is the list of **model** roots (``steiner_problem.roots``). A cut
+    ``W`` is a valid model inequality only when the model's group root is outside
+    ``W``; with multi-root ascent the cut may have been discovered from a
+    different root, so cuts containing the model root are filtered out here (a
+    pure safety filter — dropping cuts is always sound).  When ``roots`` is
+    ``None`` the ascent root is used, which the ascent guarantees is outside
+    every ``W`` (backwards-compatible no-op filter).
+    """
+    triples: List[Tuple[int, int, List[Arc]]] = []
+    arcs = result.arcs
+    for k, ga in enumerate(result.groups):
+        model_root = ga.root if roots is None else roots[k]
+        seen: Set[FrozenSet] = set()
+        for W in ga.cuts:
+            if model_root in W:
+                continue  # not a valid Steiner cut for the model's root
+            din = [a for a in arcs if a[1] in W and a[0] not in W]
+            if not din:
+                continue
+            key = frozenset(din)
+            if key in seen:
+                continue
+            seen.add(key)
+            triples.append((k, k, din))
+    return triples
+
+
+def seed_cuts_highs(model, y2, z, cuts: List[Tuple[int, int, List[Arc]]]) -> int:
+    """Add dual-ascent Steiner cuts to a HiGHS model as initial constraints.
+
+    Mirrors the cut added inside :func:`steinerpy.mathematical_model.run_model`.
+    Returns the number of constraints added.
+    """
+    n = 0
+    for (k, l, cut_arcs) in cuts:
+        terms = [y2[(k, a)] for a in cut_arcs if (k, a) in y2]
+        if not terms or (k, l) not in z:
+            continue
+        model.addConstr(sum(terms) >= z[(k, l)])
+        n += 1
+    return n
+
+
+def seed_cuts_gurobi(model, y2, z, cuts: List[Tuple[int, int, List[Arc]]]) -> int:
+    """Add dual-ascent Steiner cuts to a Gurobi model as plain (non-lazy)
+    constraints before ``optimize()``, strengthening the root LP.
+
+    Returns the number of constraints added.
+    """
+    import gurobipy as gp
+    n = 0
+    for (k, l, cut_arcs) in cuts:
+        terms = [y2[(k, a)] for a in cut_arcs if (k, a) in y2]
+        if not terms or (k, l) not in z:
+            continue
+        model.addConstr(gp.quicksum(terms) >= z[(k, l)])
+        n += 1
+    if n:
+        model.update()
+    return n
+
+
+def set_highs_cutoff(model, ub: float) -> bool:
+    """Best-effort objective cutoff for HiGHS. Returns True on success."""
+    try:
+        model.setOptionValue("objective_bound", float(ub))
+        return True
+    except Exception:
+        return False
+
+
+def set_gurobi_cutoff(model, ub: float) -> bool:
+    """Best-effort objective cutoff for Gurobi. Returns True on success."""
+    try:
+        model.Params.Cutoff = float(ub)
+        model.update()
+        return True
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Bound-based graph reduction (dual-ascent reduction test)
+# ---------------------------------------------------------------------------
+
+class _ProblemView:
+    """Lightweight duck-typed view of a Steiner problem for :func:`dual_ascent`
+    (avoids constructing a full ``SteinerProblem`` / import cycle)."""
+
+    def __init__(self, graph, terminal_groups, weight):
+        self.graph = graph
+        self.weight = weight
+        self.terminal_groups = terminal_groups
+        self.edges = list(graph.edges())
+        if isinstance(graph, nx.DiGraph):
+            self.arcs = self.edges
+        else:
+            self.arcs = self.edges + [(v, u) for (u, v) in self.edges]
+        self.roots = [g[0] for g in terminal_groups]
+
+
+def _terminals_connected(graph, terminal_groups) -> bool:
+    """True iff every group's terminals share one connected component (a safety
+    net — reduced-cost fixing never removes an edge needed for feasibility)."""
+    if graph.is_directed():
+        return True
+    comp: Dict = {}
+    for i, cc in enumerate(nx.connected_components(graph)):
+        for n in cc:
+            comp[n] = i
+    for grp in terminal_groups:
+        ids = {comp.get(t) for t in grp}
+        if None in ids or len(ids) > 1:
+            return False
+    return True
+
+
+def reduce_graph_with_dual_ascent(graph, terminal_groups, weight, tracker,
+                                  max_passes: int = 3):
+    """Bound-based reduction test: delete edges that reduced-cost fixing proves
+    are in **no** optimal solution, then cascade the degree-1/degree-2 reductions,
+    iterating to a fixpoint.
+
+    Only undirected graphs are reduced (directed problems skip preprocessing).
+    The degree reductions are recorded in ``tracker`` so the existing solution
+    back-mapping continues to work; deleted edges never appear in any solution,
+    so they need no tracking.  Every removed edge is provably non-optimal, so the
+    optimum is preserved; a connectivity check guards against numerical edge
+    cases by aborting the offending pass.
+
+    Returns the reduced graph (a copy; the input is never mutated).
+    """
+    from .graph_reducer import degree_one_reduction, degree_two_reduction
+
+    if isinstance(graph, nx.DiGraph):
+        return graph
+    all_terms = {t for g in terminal_groups for t in g}
+    G = graph.copy()
+
+    for _ in range(max_passes):
+        view = _ProblemView(G, terminal_groups, weight)
+        da = dual_ascent(view, weight)
+        if not da.feasible or math.isinf(da.lower_bound) or math.isinf(da.upper_bound):
+            break
+        fixing = reduced_cost_fixing(view, da)
+        if not fixing.fix_x_edges:
+            break
+
+        snapshot = G.copy()
+        before = (G.number_of_nodes(), G.number_of_edges())
+        for e in list(G.edges()):
+            if e in fixing.fix_x_edges or (e[1], e[0]) in fixing.fix_x_edges:
+                G.remove_edge(*e)
+        if not _terminals_connected(G, terminal_groups):
+            return snapshot  # defensive: should never happen for sound fixing
+
+        # Cascade the structural reductions enabled by the removals.
+        G = degree_one_reduction(G, all_terms, tracker)
+        G = degree_two_reduction(G, all_terms, weight, tracker)
+        if (G.number_of_nodes(), G.number_of_edges()) == before:
+            break
+
+    return G
