@@ -8,6 +8,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Heavy graph reductions** (opt-in `heavy=True`, or granular
+  `special_distance=` / `long_edge=`): two classic alternative-based
+  edge-deletion reduction tests that shrink the graph before the solve.
+  *Special Distance* (bottleneck Steiner distance; Rehfeldt & Koch 2023, Thm 1)
+  deletes edges with a cheaper terminal-hopping detour through the terminal
+  distance network (Steiner **tree** only). *Long-edge / alternative-path* deletes
+  any edge with a strictly cheaper detour in `G \ e` (Steiner **tree** and
+  **forest**). Both only delete edges provably in no optimal solution, cascade
+  the degree-1/degree-2 reductions to a fixpoint, **preserve the optimum** (with
+  a connectivity guard), and compose with `da_reduce=True` / `dual_ascent=True`.
+  Require `preprocess=True`, undirected graphs, and no `budget`/`max_degree`
+  modifier. Validated with a brute-force exact solver over thousands of random
+  tree and forest instances. Off by default.
+- **Heuristic-only mode** (`get_solution(exact=False)`): returns the dual-ascent
+  primal directly with **no ILP** — much faster (networkx-`steiner_tree` speed
+  class) and, unlike a pure heuristic, the returned `Solution.gap` is a *valid*
+  optimality gap (`0.0` ⇒ provably optimal; a positive gap bounds how far the
+  tree could be from the optimum). Supported for plain Steiner tree/forest and
+  directed problems; raises `NotImplementedError` for budget/degree-constrained
+  variants. Default stays `exact=True` (solve to optimality).
+
+### Changed
+- **Faster heavy reductions** (no API or result change beyond nearest-terminal
+  tie-breaking): the Special Distance test now builds the terminal distance
+  network with a single multi-source Dijkstra (terminal Voronoi diagram) plus
+  Mehlhorn's (1988) Voronoi-boundary MST instead of one Dijkstra *per terminal*
+  and an O(|T|^2) complete-graph MST — `O(m + n log n)` overall. The long-edge
+  test now runs one bounded Dijkstra *per vertex* (Rehfeldt & Koch 2023, Sec. 2.3)
+  instead of one *per edge*. Measured speedups grow with size/terminal count:
+  ~5-10x on the Special Distance test and ~3-5x on the long-edge test for
+  graphs with hundreds of nodes and tens-to-hundreds of terminals. Reduction
+  power is unchanged (verified: identical long-edge deletions; combined
+  edge-deletion within tie-breaking noise) and the optimum is still preserved
+  (brute-force verified over thousands of random instances).
+- **Leaner dual-ascent accelerator** (no API or result change): (1) the
+  multi-root pass now stops as soon as a root closes the bound (`LB==UB`),
+  instead of always running all 8 candidate roots — output-identical, but it
+  removes the ~6-9× wasted work on instances that early-exit without an ILP;
+  (2) the Wong ascent inner loop was rewritten to maintain the saturation graph
+  incrementally (saturated-arc adjacency + hand-rolled BFS) rather than
+  rebuilding a `networkx` graph and recomputing `ancestors`/`descendants` every
+  iteration (Duin/Pajor-style efficient implementation), roughly 2-4× faster per
+  ascent. Both changes are exact — same lower bound, reduced costs, cuts, and
+  optimum.
 - **Dual-ascent accelerator** (opt-in `dual_ascent=True`): a Wong (1984)
   dual-ascent procedure computes a lower bound, a primal heuristic, and reduced
   costs, then applies reduced-cost variable fixing (Leitner et al. 2018) to
@@ -15,6 +59,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tight. Supported for Steiner tree, forest (multi-root) and directed problems;
   off by default and returns the same optimum as the baseline. New module
   `steinerpy.dual_ascent`.
+- **Cut initialization** for the dual-ascent accelerator: the Steiner cuts found
+  during dual ascent are now reused to warm-start the ILP cut loop (seeded as
+  initial constraints) instead of being rediscovered one re-solve at a time, and
+  the primal value is supplied as an objective cutoff (HiGHS and Gurobi). This
+  collapses cut-loop rounds even on instances where the bound is too loose for
+  reduced-cost fixing to help, and never changes the optimum (the seeded cuts are
+  valid Steiner cuts). Active automatically whenever `dual_ascent=True`.
+- **Multi-start primal** for the dual-ascent accelerator: the primal heuristic
+  (and dual ascent) now run from several candidate roots and keep the cheapest
+  feasible upper bound (and the tightest lower bound). Because the lower bound is
+  usually already optimal, the tighter upper bound lets many more instances be
+  solved entirely by dual ascent with no ILP, and strengthens reduced-cost
+  fixing on the rest. The multi-root pass is applied per group for forests too;
+  it never changes the optimum. Active automatically whenever `dual_ascent=True`.
+- **Dual-ascent graph reduction** (opt-in `da_reduce=True`): a bound-based
+  reduction test that deletes edges proven (by the dual-ascent reduced costs) to
+  be in no optimal solution and then cascades the existing degree-1/degree-2
+  reductions to a fixpoint, shrinking the graph before the solve. Undirected
+  problems only, requires `preprocess=True`, and is skipped under a
+  `budget`/`max_degree` modifier; the optimum is preserved (guarded by a
+  connectivity check) and solutions still map back to the original graph.
 - `benchmarks/` harness: SteinLib `.stp` parser, known-optima validation, and an
   HPC-friendly (resumable, parallel) runner comparing baseline vs accelerator.
 

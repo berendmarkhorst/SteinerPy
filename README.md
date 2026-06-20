@@ -131,6 +131,73 @@ solution = SteinerProblem(graph, terminal_groups).get_solution(dual_ascent=True)
 
 It is **off by default** and returns the same optimum as the baseline.  Supported for Steiner **tree**, **forest** (multi-root), and **directed** (`DirectedSteinerProblem`) problems; it is skipped automatically when a `budget` or `max_degree` modifier is set, and for the prize-collecting / node-weighted variants.  See [`benchmarks/`](benchmarks/) for a SteinLib comparison harness.
 
+When enabled it additionally **warm-starts** the cut loop with the Steiner cuts found during dual ascent and runs a **multi-start primal** from several roots, so many instances are solved entirely by dual ascent with no ILP.
+
+### Bound-based graph reduction (opt-in)
+
+```python
+# Delete edges proven non-optimal by the dual-ascent reduced costs, then cascade
+# the degree reductions — shrinking the model before the solve.
+solution = SteinerProblem(graph, terminal_groups, da_reduce=True).get_solution()
+```
+
+`da_reduce` is a **reduction test**: it removes edges that the dual-ascent reduced costs prove cannot appear in any optimal solution and cascades the degree-1/degree-2 reductions to a fixpoint.  It requires `preprocess=True` (the default), applies to undirected problems only, is skipped under a `budget`/`max_degree` modifier, and **preserves the optimum** (solutions still map back to the original graph).  It composes with `dual_ascent=True`.
+
+### Heavy graph reductions (opt-in)
+
+```python
+# Special Distance + long-edge edge-deletion tests, interleaved with the degree
+# reductions to a fixpoint — heavier preprocessing for harder instances.
+solution = SteinerProblem(graph, terminal_groups, heavy=True).get_solution()
+
+# Fine-grained control (heavy=True turns on whichever applies):
+SteinerProblem(graph, terminal_groups, special_distance=True, long_edge=False)
+```
+
+`heavy=True` enables two classic **alternative-based reduction tests** from the
+Steiner-tree literature, both of which *only delete edges that are provably in
+no optimal solution* and then cascade the degree-1/degree-2 reductions:
+
+- **Special Distance (bottleneck Steiner distance) test** — deletes an edge
+  `e = {v, w}` when the bottleneck distance between `v` and `w` through the
+  *terminal distance network* is below `c(e)` (Rehfeldt & Koch, *Math. Prog. B*
+  197, 2023, Thm 1; surveyed in Ljubić, *Networks* 77, 2021, §4). Catches long
+  edges that have a cheaper terminal-hopping detour, which the degree reductions
+  miss. **Steiner tree only** (automatically skipped for the multi-group forest,
+  where terminal-hopping would be unsound).
+- **Long-edge / alternative-path test** — deletes an edge when a strictly
+  cheaper detour exists in `G \ e`. Valid for both Steiner **tree** and
+  **forest**.
+
+Both tests are implemented with the fast constructions used by state-of-the-art
+SPG solvers: the Special Distance test builds the terminal distance network from
+a single multi-source Dijkstra (terminal Voronoi diagram) and Mehlhorn's (1988)
+boundary MST — `O(m + n log n)` rather than one shortest-path tree per terminal —
+and the long-edge test runs one bounded Dijkstra per *vertex* rather than per
+*edge* (Rehfeldt & Koch 2023, §2.3). In practice this is several times faster on
+large, terminal-rich instances (≈5–10× for Special Distance, ≈3–5× for long-edge).
+
+Like `da_reduce`, `heavy` requires `preprocess=True` (the default), applies to
+undirected problems only, is skipped under a `budget`/`max_degree` modifier (those
+variants do not minimise edge cost), and **preserves the optimum** — solutions
+still map back to the original graph. It composes with `da_reduce=True` and
+`dual_ascent=True`; a good "throw everything at it" configuration is
+`SteinerProblem(graph, terminals, heavy=True, da_reduce=True, dual_ascent=True)`.
+
+## Heuristic-only mode (opt-in)
+
+An exact solver can't match a polynomial-time heuristic such as `networkx.steiner_tree` in general.  When you want that speed and can accept an approximate answer, pass `exact=False`:
+
+```python
+# Return the dual-ascent primal directly — no ILP is built or solved.
+solution = SteinerProblem(graph, terminal_groups).get_solution(exact=False)
+
+print(solution.objective)  # heuristic tree weight (an upper bound on the optimum)
+print(solution.gap)        # PROVEN optimality gap: 0.0 == provably optimal
+```
+
+Unlike a pure heuristic, the returned `Solution.gap` is a **valid optimality certificate**: `gap == 0.0` means the heuristic tree is provably optimal, and a positive gap bounds how far it could be from the optimum — something `networkx.steiner_tree` (which gives no lower bound) cannot provide.  It is **networkx-speed-class** (no ILP), supported for plain Steiner **tree**/**forest** and **directed** problems, and raises `NotImplementedError` for the budget/degree-constrained variants.  The default is `exact=True` (solve to optimality).
+
 ## Usage Examples
 
 See the `example.ipynb` notebook for detailed usage examples.
