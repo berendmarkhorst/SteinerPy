@@ -62,11 +62,35 @@ class BaseSteinerProblem:
         """
         self.original_graph = graph
         self.preprocess = preprocess
+        # Opt-in dual-ascent bound reduction (removes provably non-optimal edges
+        # then cascades the degree reductions). Requires preprocessing, an
+        # undirected graph, and no budget/degree modifier.
+        self.da_reduce = kwargs.get('da_reduce', False)
+        # Opt-in *heavy* graph reductions (sound edge-deletion tests from the
+        # Steiner reduction literature): the Special Distance / bottleneck
+        # Steiner distance test (Rehfeldt & Koch 2023, Thm 1; Steiner tree only)
+        # and the long-edge / alternative-path test (tree and forest). ``heavy``
+        # turns on whichever applies; ``special_distance`` / ``long_edge`` allow
+        # fine-grained control. Like ``da_reduce`` they require preprocessing, an
+        # undirected graph, and no budget/degree modifier (those variants do not
+        # minimise edge cost, so a "non-optimal edge" deletion would be unsound).
+        self.heavy_reduce = kwargs.get('heavy', False)
+        sd_opt = kwargs.get('special_distance', self.heavy_reduce)
+        le_opt = kwargs.get('long_edge', self.heavy_reduce)
 
         if preprocess:
             if isinstance(graph, nx.DiGraph):
                 raise ValueError("Graph preprocessing is not supported for directed graphs. Use preprocess=False.")
-            self.graph, self.reduction_tracker = preprocess_graph(graph, terminal_groups, weight)
+            _heavy_ok = kwargs.get('budget') is None and kwargs.get('max_degree') is None
+            self.graph, self.reduction_tracker = preprocess_graph(
+                graph, terminal_groups, weight,
+                special_distance=bool(sd_opt) and _heavy_ok,
+                long_edge=bool(le_opt) and _heavy_ok,
+            )
+            if self.da_reduce and kwargs.get('budget') is None and kwargs.get('max_degree') is None:
+                from .dual_ascent import reduce_graph_with_dual_ascent
+                self.graph = reduce_graph_with_dual_ascent(
+                    self.graph, terminal_groups, weight, self.reduction_tracker)
             stats = reduction_stats(self.original_graph, self.graph)
             logger.info(f"Graph reduced: {stats['nodes_removed']} nodes ({stats['node_reduction_percent']:.1f}%), "
                   f"{stats['edges_removed']} edges ({stats['edge_reduction_percent']:.1f}%) removed")
@@ -108,11 +132,60 @@ class BaseSteinerProblem:
             return False
         return True
 
+    def _solution_from_da(self, da, t0, gap) -> 'Solution':
+        """Build a :class:`Solution` from a dual-ascent result (no ILP).
+
+        Shared by the proven-optimal early-exit (``gap == 0.0``) and the
+        heuristic-only mode (``gap`` = the proven optimality gap).  Maps the
+        primal back to the original graph when preprocessing was used.
+        """
+        import time as _time
+        if self.preprocess:
+            original = map_solution_to_original(
+                da.primal_edges, self.reduction_tracker, self.graph)
+        else:
+            original = da.primal_edges
+        return Solution(
+            gap=gap, runtime=_time.time() - t0, objective=da.upper_bound,
+            selected_edges=da.primal_edges, original_selected_edges=original,
+            was_preprocessed=self.preprocess,
+        )
+
+    def _heuristic_solution(self) -> 'Solution':
+        """Return the dual-ascent primal directly, with no ILP.
+
+        Genuinely heuristic (the primal may be sub-optimal), but the returned
+        ``Solution.gap`` is a *valid* optimality gap: ``gap == 0.0`` certifies
+        the primal is provably optimal, and a positive gap bounds how far it
+        could be from optimum — neither of which a pure heuristic (e.g.
+        ``networkx.steiner_tree``) provides.
+        """
+        import time as _time, math as _math
+        if not self._da_eligible():
+            raise NotImplementedError(
+                "heuristic mode (exact=False) supports plain Steiner tree/forest "
+                "and directed problems only (not budget- or degree-constrained "
+                "variants)."
+            )
+        from .dual_ascent import dual_ascent as _run_da
+        t0 = _time.time()
+        da = _run_da(self, self.weight)
+        if not da.feasible or _math.isinf(da.upper_bound):
+            raise RuntimeError(
+                "dual-ascent heuristic found no feasible solution; the terminals "
+                "may be disconnected."
+            )
+        if _math.isinf(da.lower_bound):
+            gap = _math.inf
+        else:
+            gap = (da.upper_bound - da.lower_bound) / max(1.0, abs(da.upper_bound))
+        return self._solution_from_da(da, t0, gap)
+
     def __repr__(self):
         return f"Problem with a graph of {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges and {self.terminal_groups} as terminal groups."
 
     def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs",
-                     dual_ascent: bool = None) -> 'Solution':
+                     dual_ascent: bool = None, exact: bool = True) -> 'Solution':
         """
         Get the solution of the Steiner Problem.
 
@@ -130,6 +203,12 @@ class BaseSteinerProblem:
             ``"gurobi"``.  When ``"gurobi"`` is chosen the cut-based
             formulation is solved with Gurobi lazy-cut callbacks, which
             requires *gurobipy* and a valid Gurobi license to be installed.
+        :param exact: when ``True`` (default) solve to optimality.  When
+            ``False`` run *heuristic-only* mode: return the dual-ascent primal
+            with no ILP — much faster, and the returned ``Solution.gap`` is a
+            valid optimality gap (``0.0`` ⇒ provably optimal).  Supported for
+            plain Steiner tree/forest and directed problems only; raises
+            ``NotImplementedError`` for budget/degree-constrained variants.
         :return: :class:`Solution` (or :class:`BudgetSolution` when a budget is set).
         :raises ValueError: if an unknown solver name is provided.
         :raises ImportError: if ``solver="gurobi"`` but gurobipy is not installed.
@@ -139,6 +218,12 @@ class BaseSteinerProblem:
             raise ValueError(
                 f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'."
             )
+
+        # Heuristic-only mode: return the dual-ascent primal with no ILP. Much
+        # faster (no MIP), and unlike a pure heuristic it carries a proven
+        # optimality gap (gap == 0.0 ⇒ provably optimal).
+        if not exact:
+            return self._heuristic_solution()
 
         if self.budget is not None:
             # Budget-constrained path: only HiGHS is supported for this variant
@@ -181,41 +266,48 @@ class BaseSteinerProblem:
         use_da = self.dual_ascent if dual_ascent is None else dual_ascent
         fixing = None
         da_primal = None
+        da_cuts = None
+        da_ub = None
         if use_da and self._da_eligible():
             import time as _time
             import math as _math
             from .dual_ascent import (
-                dual_ascent as _run_da, reduced_cost_fixing,
+                dual_ascent as _run_da, reduced_cost_fixing, steiner_cuts,
             )
             _t0 = _time.time()
             da = _run_da(self, self.weight)
             if da.feasible and not _math.isinf(da.lower_bound) and not _math.isinf(da.upper_bound):
                 if abs(da.upper_bound - da.lower_bound) <= 1e-6 * max(1.0, abs(da.upper_bound)):
                     # Proven optimal by dual ascent — skip the ILP entirely.
-                    if self.preprocess:
-                        original = map_solution_to_original(da.primal_edges, self.reduction_tracker, self.graph)
-                    else:
-                        original = da.primal_edges
-                    return Solution(
-                        gap=0.0, runtime=_time.time() - _t0, objective=da.upper_bound,
-                        selected_edges=da.primal_edges, original_selected_edges=original,
-                        was_preprocessed=self.preprocess,
-                    )
+                    return self._solution_from_da(da, _t0, 0.0)
                 fixing = reduced_cost_fixing(self, da)
                 da_primal = da.primal_edges
+                # Warm-start the ILP cut loop with the Steiner cuts found during
+                # dual ascent, and supply the primal value as an objective cutoff.
+                da_cuts = steiner_cuts(da, self.roots)
+                da_ub = da.upper_bound
 
         if solver == "gurobi":
             model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file)
-            if fixing is not None:
-                from .dual_ascent import apply_fixes_gurobi
+            if da_cuts is not None:
+                from .dual_ascent import (
+                    apply_fixes_gurobi, seed_cuts_gurobi, set_gurobi_cutoff,
+                )
+                seed_cuts_gurobi(model, y2, z, da_cuts)
                 apply_fixes_gurobi(model, x, y1, y2, fixing)
+                set_gurobi_cutoff(model, da_ub)
             gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
-            if fixing is not None:
-                from .dual_ascent import apply_fixes_highs, set_highs_warm_start
+            if da_cuts is not None:
+                from .dual_ascent import (
+                    apply_fixes_highs, set_highs_warm_start,
+                    seed_cuts_highs, set_highs_cutoff,
+                )
+                seed_cuts_highs(model, y2, z, da_cuts)
                 apply_fixes_highs(model, x, y1, y2, fixing)
                 set_highs_warm_start(model, x, da_primal)
+                set_highs_cutoff(model, da_ub)
             gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
 
         # Map solution back to original graph if preprocessing was used
