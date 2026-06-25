@@ -281,11 +281,50 @@ def add_optional_flow_constraints(
     return model, f
 
 
+def _residual_source_set(residual, source, eps: float) -> Set:
+    """Nodes reachable from *source* in residual network *residual* over arcs
+    with strictly positive residual capacity (capacity - flow > eps).
+
+    This is the source side S of a minimum cut; the corresponding cut is the set
+    of outgoing arcs delta+(S).
+    """
+    seen = {source}
+    stack = [source]
+    while stack:
+        u = stack.pop()
+        for v in residual.successors(u):
+            attr = residual[u][v]
+            if v not in seen and attr["capacity"] - attr["flow"] > eps:
+                seen.add(v)
+                stack.append(v)
+    return seen
+
+
+def _residual_sink_set(residual, sink, eps: float) -> Set:
+    """Nodes that can reach *sink* in residual network *residual* over arcs with
+    strictly positive residual capacity (reverse traversal).
+
+    The back cut is the complement S_bar = V \\ (this set): a second minimum cut
+    that hugs the terminal side instead of the root side.
+    """
+    seen = {sink}
+    stack = [sink]
+    while stack:
+        v = stack.pop()
+        for u in residual.predecessors(v):
+            attr = residual[u][v]
+            if u not in seen and attr["capacity"] - attr["flow"] > eps:
+                seen.add(u)
+                stack.append(u)
+    return seen
+
+
 def find_violated_cuts_from_values(
     steiner_problem: 'SteinerProblem',
     y2_vals: Dict,
     z_vals: Dict,
     eps: float = 1e-6,
+    back_cuts: bool = True,
 ) -> List[Tuple[int, int, List[Tuple]]]:
     """
     Find violated directed cut constraints given pre-extracted variable values.
@@ -299,10 +338,17 @@ def find_violated_cuts_from_values(
     roots[group_id_k] to t is satisfied.  A cut is violated when the minimum
     cut value is strictly less than z[k, l].
 
+    Two acceleration techniques from Schmidt, Zey & Margot (2021), Sect. 4.1 are
+    applied: *creep flows* (the ``eps`` added to each arc capacity, which biases
+    the minimum cut towards cutting few arcs) and, when ``back_cuts`` is set, the
+    *back cut* — the second minimum cut on the terminal side, added alongside the
+    usual root-side cut.
+
     :param steiner_problem: SteinerProblem-object.
     :param y2_vals: per-group arc values {(group_id, arc): float}.
     :param z_vals: connectivity variable values {(k, l): float}.
     :param eps: numerical tolerance / creep-flow added to each arc capacity.
+    :param back_cuts: also emit the terminal-side (back) minimum cut.
     :return: list of (group_id_k, group_id_l, cut_arcs) for each violated cut.
     """
     # No terminals → nothing to check
@@ -321,8 +367,8 @@ def find_violated_cuts_from_values(
                 continue  # z = 0 → no connectivity required for this pair
 
             # Build a directed graph with y2 capacities for group k.
-            # A small eps is added to each capacity for numerical stability in
-            # the minimum-cut computation (prevents division-by-zero issues).
+            # A small eps is added to each capacity (creep flow): it keeps the
+            # min-cut numerically stable and prefers cuts that cut few arcs.
             digraph = nx.DiGraph()
             for (u, v) in steiner_problem.arcs:
                 capacity = y2_vals[(group_id_k, (u, v))] + eps
@@ -333,23 +379,39 @@ def find_violated_cuts_from_values(
                     continue
 
                 try:
-                    cut_value, partition = nx.minimum_cut(
-                        digraph, root_k, t, capacity="capacity"
+                    # value_only=True yields a residual whose reachable sets
+                    # define the minimum cut (the path nx.minimum_cut uses) and
+                    # avoids a min()-on-empty edge case in preflow_push's second
+                    # phase when called directly.
+                    residual = nx.algorithms.flow.preflow_push(
+                        digraph, root_k, t, capacity="capacity", value_only=True
                     )
+                    cut_value = residual.graph["flow_value"]
+                    # Source side S (root side) -> delta+(S).
+                    source_sets = [_residual_source_set(residual, root_k, eps)]
+                    if back_cuts:
+                        # Back cut: complement of the terminal-reaching set.
+                        sink_set = _residual_sink_set(residual, t, eps)
+                        source_sets.append(set(digraph.nodes) - sink_set)
                 except nx.NetworkXError:
-                    # No path exists — treat as a zero-capacity cut
+                    # No path exists — treat as a zero-capacity cut.
                     cut_value = 0.0
-                    partition = (
-                        {root_k},
-                        set(steiner_problem.nodes) - {root_k},
-                    )
+                    source_sets = [{root_k}]
 
-                if cut_value < z_val - eps:
+                if cut_value >= z_val - eps:
+                    continue  # cut satisfied
+
+                seen_arc_sets: Set = set()
+                for side in source_sets:
                     cut_arcs = [
                         (u, v)
                         for (u, v) in steiner_problem.arcs
-                        if u in partition[0] and v in partition[1]
+                        if u in side and v not in side
                     ]
+                    key = frozenset(cut_arcs)
+                    if key in seen_arc_sets:
+                        continue  # duplicate of an already-emitted cut
+                    seen_arc_sets.add(key)
                     if not cut_arcs:
                         logging.warning(
                             f"Empty cut for group_k={group_id_k}, group_l={group_id_l}, "
@@ -367,6 +429,7 @@ def find_violated_cuts(
     z: Dict,
     model: hp.HighsModel,
     eps: float = 1e-6,
+    back_cuts: bool = True,
 ) -> List[Tuple[int, int, List[Tuple]]]:
     """
     Find violated directed cut constraints for the current HiGHS LP/MIP solution.
@@ -379,13 +442,14 @@ def find_violated_cuts(
     :param z: connectivity variables {(k, l): var}.
     :param model: HiGHS model (used to read current variable values).
     :param eps: numerical tolerance / creep-flow added to each arc capacity.
+    :param back_cuts: also emit the terminal-side (back) minimum cut.
     :return: list of (group_id_k, group_id_l, cut_arcs) for each violated cut.
     """
     group_indices = range(len(steiner_problem.terminal_groups))
     y2_vals = {(group_id, a): model.variableValue(y2[(group_id, a)])
                for group_id in group_indices for a in steiner_problem.arcs}
     z_vals = {key: model.variableValue(var) for key, var in z.items()}
-    return find_violated_cuts_from_values(steiner_problem, y2_vals, z_vals, eps)
+    return find_violated_cuts_from_values(steiner_problem, y2_vals, z_vals, eps, back_cuts)
 
 
 def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType]:
@@ -884,19 +948,26 @@ def run_model_gurobi(
     model._group_indices = group_indices
 
     def _cut_callback(cb_model, where):
-        if where != GRB.Callback.MIPSOL:
+        # Lazy cuts at integer solutions; user cuts at fractional LP nodes.
+        if where == GRB.Callback.MIPSOL:
+            get_val = cb_model.cbGetSolution
+            add_cut = cb_model.cbLazy
+            kind = "lazy"
+        elif (where == GRB.Callback.MIPNODE
+              and cb_model.cbGet(GRB.Callback.MIPNODE_STATUS) == GRB.OPTIMAL):
+            get_val = cb_model.cbGetNodeRel
+            add_cut = cb_model.cbCut
+            kind = "user"
+        else:
             return
 
-        # Extract current integer solution values
+        # Extract the current solution (integer at MIPSOL, fractional at MIPNODE)
         y2_vals = {
-            (group_id, a): cb_model.cbGetSolution(cb_model._y2[(group_id, a)])
+            (group_id, a): get_val(cb_model._y2[(group_id, a)])
             for group_id in cb_model._group_indices
             for a in cb_model._steiner_problem.arcs
         }
-        z_vals = {
-            key: cb_model.cbGetSolution(var)
-            for key, var in cb_model._z.items()
-        }
+        z_vals = {key: get_val(var) for key, var in cb_model._z.items()}
 
         violated = find_violated_cuts_from_values(
             cb_model._steiner_problem, y2_vals, z_vals
@@ -907,10 +978,10 @@ def run_model_gurobi(
                 gp.quicksum(cb_model._y2[(group_id_k, a)] for a in cut_arcs)
                 if cut_arcs else 0
             )
-            cb_model.cbLazy(lhs >= cb_model._z[(group_id_k, group_id_l)])
+            add_cut(lhs >= cb_model._z[(group_id_k, group_id_l)])
 
         if violated:
-            logging.info(f"Gurobi callback: added {len(violated)} lazy cut(s).")
+            logging.info(f"Gurobi callback: added {len(violated)} {kind} cut(s).")
 
     start_time = time.time()
     model.optimize(_cut_callback)
@@ -1090,14 +1161,22 @@ def solve_sap_gurobi(view, time_limit: float = 300, logfile: str = "",
     model._xa = xa
 
     def _cb(cb_model, where):
-        if where != GRB.Callback.MIPSOL:
+        # Lazy cuts at integer solutions; user cuts at fractional LP nodes.
+        if where == GRB.Callback.MIPSOL:
+            get_val = cb_model.cbGetSolution
+            add_cut = cb_model.cbLazy
+        elif (where == GRB.Callback.MIPNODE
+              and cb_model.cbGet(GRB.Callback.MIPNODE_STATUS) == GRB.OPTIMAL):
+            get_val = cb_model.cbGetNodeRel
+            add_cut = cb_model.cbCut
+        else:
             return
-        xa_vals = {(0, a): cb_model.cbGetSolution(cb_model._xa[a])
+        xa_vals = {(0, a): get_val(cb_model._xa[a])
                    for a in cb_model._view.arcs}
         violated = find_violated_cuts_from_values(cb_model._view, xa_vals, {(0, 0): 1.0})
         for (_k, _l, cut_arcs) in violated:
             if cut_arcs:
-                cb_model.cbLazy(gp.quicksum(cb_model._xa[a] for a in cut_arcs) >= 1)
+                add_cut(gp.quicksum(cb_model._xa[a] for a in cut_arcs) >= 1)
 
     start = time.time()
     model.optimize(_cb)
