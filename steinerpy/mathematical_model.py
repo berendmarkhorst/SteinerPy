@@ -927,3 +927,183 @@ def run_model_gurobi(
     objective = model.ObjVal
 
     return gap, runtime, objective, selected_edges
+
+
+# ---------------------------------------------------------------------------
+# Single-group Steiner-arborescence (SAP) directed-cut solver
+# ---------------------------------------------------------------------------
+#
+# Used by the prize-collecting / MWCSP -> SAP transform path
+# (steinerpy.pc_transform). Unlike build_model/run_model, which models an
+# *undirected* problem by bidirecting each edge and would double-count a
+# bidirected arc's cost (two x-columns per edge), this is a pure arc-based
+# directed-cut formulation: one binary x(a) per arc, objective sum c(a) x(a),
+# indegree <= 1 per non-root vertex, and connectivity enforced lazily by the same
+# minimum-cut separation as the undirected model (find_violated_cuts_from_values
+# applied to a single group). It directly implements Formulation 1 (DCut) of both
+# Rehfeldt & Koch papers and is exactly the directed setting dual ascent works on,
+# so the reduced costs / Steiner cuts / cutoff from dual ascent apply unchanged.
+
+
+def _sap_indegree_into(view) -> Dict:
+    into: Dict = {}
+    for a in view.arcs:
+        into.setdefault(a[1], []).append(a)
+    return into
+
+
+def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
+                    fixing=None, da_cuts=None, da_ub=None, primal=None
+                    ) -> Tuple[float, float, float, List[Tuple]]:
+    """Solve a single-group SAP by HiGHS + iterative directed-cut generation.
+
+    ``view`` is any object exposing ``graph`` (DiGraph), ``arcs``, ``nodes``,
+    ``roots`` (``[r']``), ``terminal_groups`` (``[[r', t1', ...]]``) and
+    ``weight`` — e.g. a :class:`steinerpy.objects.DirectedSteinerProblem`.
+
+    Optional dual-ascent acceleration (all best-effort): ``fixing`` (a
+    :class:`steinerpy.dual_ascent.FixingResult`; its ``fix_y1_arcs`` are fixed to
+    0), ``da_cuts`` (triples from :func:`steinerpy.dual_ascent.steiner_cuts`,
+    seeded as initial cuts), ``da_ub`` (objective cutoff), and ``primal`` (a list
+    of arcs used as a MIP warm start).
+
+    :returns: ``(gap, runtime, objective, selected_arcs)``.
+    """
+    model = make_model(time_limit, logfile)
+    arcs = list(view.arcs)
+    root = view.roots[0]
+
+    xa = {a: model.addVariable(0, 1, name=f"xa[{a}]") for a in arcs}
+    for col in range(model.getNumCol()):
+        model.changeColIntegrality(col, hp.HighsVarType.kInteger)
+
+    # Indegree <= 1 for every non-root vertex (yields an arborescence).
+    for v, in_arcs in _sap_indegree_into(view).items():
+        if v == root:
+            continue
+        model.addConstr(sum(xa[a] for a in in_arcs) <= 1)
+
+    # Dual-ascent reduced-cost fixing: arcs in no optimal solution -> 0.
+    if fixing is not None:
+        for a in getattr(fixing, "fix_y1_arcs", ()):
+            if a in xa:
+                model.changeColBounds(xa[a].index, 0, 0)
+
+    # Seed the dual-ascent Steiner cuts (sum of entering arcs >= 1).
+    if da_cuts:
+        for (_k, _l, cut_arcs) in da_cuts:
+            terms = [xa[a] for a in cut_arcs if a in xa]
+            if terms:
+                model.addConstr(sum(terms) >= 1)
+
+    # MIP warm start from the dual-ascent primal.
+    if primal:
+        try:
+            import numpy as np
+            sel = set(primal)
+            idx = [xa[a].index for a in arcs]
+            val = [1.0 if a in sel else 0.0 for a in arcs]
+            model.setSolution(len(idx), np.array(idx, dtype=np.int32),
+                              np.array(val, dtype=np.float64))
+        except Exception:
+            pass
+
+    if da_ub is not None:
+        try:
+            model.setOptionValue("objective_bound", float(da_ub))
+        except Exception:
+            pass
+
+    obj = sum(xa[a] * view.graph.edges[a][view.weight] for a in arcs)
+
+    start = time.time()
+    while True:
+        model.minimize(obj)
+        xa_vals = {(0, a): model.variableValue(xa[a]) for a in arcs}
+        violated = find_violated_cuts_from_values(view, xa_vals, {(0, 0): 1.0})
+        if not violated:
+            break
+        for (_k, _l, cut_arcs) in violated:
+            if cut_arcs:
+                model.addConstr(sum(xa[a] for a in cut_arcs) >= 1)
+    runtime = time.time() - start
+
+    selected = [a for a in arcs if model.variableValue(xa[a]) > 0.5]
+    gap = model.getInfo().mip_gap
+    objective = model.getObjectiveValue()
+    return gap, runtime, objective, selected
+
+
+def solve_sap_gurobi(view, time_limit: float = 300, logfile: str = "",
+                     fixing=None, da_cuts=None, da_ub=None, primal=None
+                     ) -> Tuple[float, float, float, List[Tuple]]:
+    """Gurobi branch-and-cut counterpart of :func:`solve_sap_highs`.
+
+    Connectivity is separated lazily inside a callback, mirroring
+    :func:`run_model_gurobi`.
+    """
+    _check_gurobipy()
+    import gurobipy as gp
+    from gurobipy import GRB
+
+    env = gp.Env(empty=True)
+    env.setParam("OutputFlag", 0)
+    env.setParam("TimeLimit", time_limit)
+    if logfile:
+        env.setParam("LogFile", logfile)
+    env.start()
+    model = gp.Model(env=env)
+
+    arcs = list(view.arcs)
+    root = view.roots[0]
+    xa = {a: model.addVar(vtype=GRB.BINARY, name=f"xa[{a}]") for a in arcs}
+    model.update()
+
+    for v, in_arcs in _sap_indegree_into(view).items():
+        if v == root:
+            continue
+        model.addConstr(gp.quicksum(xa[a] for a in in_arcs) <= 1)
+
+    if fixing is not None:
+        for a in getattr(fixing, "fix_y1_arcs", ()):
+            if a in xa:
+                xa[a].UB = 0
+    if da_cuts:
+        for (_k, _l, cut_arcs) in da_cuts:
+            terms = [xa[a] for a in cut_arcs if a in xa]
+            if terms:
+                model.addConstr(gp.quicksum(terms) >= 1)
+    if primal:
+        sel = set(primal)
+        for a in arcs:
+            xa[a].Start = 1.0 if a in sel else 0.0
+    if da_ub is not None:
+        model.Params.Cutoff = float(da_ub)
+    model.update()
+
+    model.setObjective(
+        gp.quicksum(xa[a] * view.graph.edges[a][view.weight] for a in arcs),
+        GRB.MINIMIZE,
+    )
+    model.Params.LazyConstraints = 1
+    model._view = view
+    model._xa = xa
+
+    def _cb(cb_model, where):
+        if where != GRB.Callback.MIPSOL:
+            return
+        xa_vals = {(0, a): cb_model.cbGetSolution(cb_model._xa[a])
+                   for a in cb_model._view.arcs}
+        violated = find_violated_cuts_from_values(cb_model._view, xa_vals, {(0, 0): 1.0})
+        for (_k, _l, cut_arcs) in violated:
+            if cut_arcs:
+                cb_model.cbLazy(gp.quicksum(cb_model._xa[a] for a in cut_arcs) >= 1)
+
+    start = time.time()
+    model.optimize(_cb)
+    runtime = time.time() - start
+
+    if model.SolCount == 0:
+        return float("inf"), runtime, float("inf"), []
+    selected = [a for a in arcs if xa[a].X > 0.5]
+    return model.MIPGap, runtime, model.ObjVal, selected

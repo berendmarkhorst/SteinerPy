@@ -370,6 +370,14 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             )
         kwargs['preprocess'] = False
 
+        # Opt-in accelerators (mirror the dual_ascent=/da_reduce=/heavy= pattern):
+        #   pc_transform — solve via the classic PCSTP/MWCSP -> SAP transformation
+        #     and the existing dual-ascent + directed-cut machinery (exact path).
+        #   pc_reduce    — prize-safe edge deletion (prize-constrained distance).
+        # Both default off; the default path remains the penalty/Big-M flow ILP.
+        self.pc_transform = kwargs.pop('pc_transform', False)
+        self.pc_reduce = kwargs.pop('pc_reduce', False)
+
         # Initialize base Steiner problem first
         super().__init__(graph, terminal_groups, **kwargs)
 
@@ -377,9 +385,198 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         self.node_prizes = node_prizes
         self.penalty_cost = penalty_cost
         self.penalty_budget = penalty_budget
+
+        # For a native classic PCSTP (penalty_cost == 0) the stored graph *is* the
+        # PCSTP graph, so the prize-safe PCD reduction can shrink it in place,
+        # accelerating both the penalty ILP and the transform path. MWCS uses its
+        # own transformed graph (penalty_cost != 0) and reduces inside
+        # _build_pc_transform instead.
+        self._pc_reduced = False
+        if self.pc_reduce and self.penalty_cost == 0 and self._pc_eligible():
+            from .pc_reductions import reduce_pcstp_graph
+            self.graph = reduce_pcstp_graph(self.graph, self.node_prizes, self.weight)
+            self.edges = list(self.graph.edges())
+            self.arcs = self.edges + [(v, u) for (u, v) in self.edges]
+            self.nodes = list(self.graph.nodes())
+            all_terms = {t for grp in self.terminal_groups for t in grp}
+            self.steiner_points = set(self.nodes) - all_terms
+            self._pc_reduced = True
         
-    def get_solution(self, time_limit: float = 300, log_file: str = "") -> 'PrizeCollectingSolution':
-        """Override to use prize collecting model (HiGHS only)."""
+    # ------------------------------------------------------------------
+    # Opt-in SAP-transformation fast path (classic forgo-prize PCSTP / MWCSP)
+    # ------------------------------------------------------------------
+
+    def _pc_eligible(self) -> bool:
+        """Whether the classic PCSTP -> SAP transformation is *sound* here.
+
+        The transformation and the dual-ascent bound model the classic
+        forgo-prize PCSTP objective ``sum c(e) + sum_{v not in S} p(v)``. That is
+        equivalent to SteinerPy's penalty model only when there are no extra
+        modifiers and ``penalty_cost == 0`` (the prize is the only incentive). The
+        MWCS subclass overrides this with its own exact mapping.
+        """
+        if getattr(self, 'penalty_budget', None) is not None:
+            return False
+        if getattr(self, 'budget', None) is not None:
+            return False
+        if getattr(self, 'max_degree', None) is not None:
+            return False
+        if len(self.terminal_groups) != 1:
+            return False
+        if self.penalty_cost != 0:
+            return False
+        return True
+
+    def _classic_pcstp(self):
+        """Return ``(graph, prizes, mwcsp_const)`` for the classic PCSTP form.
+
+        Native PCSTP uses the stored graph and prizes (``mwcsp_const`` is None).
+        :class:`MaxWeightConnectedSubgraph` overrides this to return the
+        transformed PCSTP graph and the constant needed to recover the MWCSP
+        weight.
+        """
+        return self.graph, self.node_prizes, None
+
+    def _build_pc_transform(self):
+        """Build the PCSTP -> SAP transform context (optionally PCD-reduced)."""
+        from .pc_transform import transform_pcstp_to_sap
+        graph, prizes, mwcsp_const = self._classic_pcstp()
+        if self.pc_reduce and not self._pc_reduced:
+            from .pc_reductions import reduce_pcstp_graph
+            graph = reduce_pcstp_graph(graph, prizes, self.weight)
+        ctx = transform_pcstp_to_sap(graph, prizes, self.weight)
+        ctx.mwcsp_const = mwcsp_const
+        return ctx
+
+    def _pc_make_solution(self, ctx, edges, nodes, pcstp_obj, gap, runtime) -> 'PrizeCollectingSolution':
+        """Build a PrizeCollectingSolution from a back-mapped PCSTP solution."""
+        total_prize = sum(ctx.node_prizes.get(v, 0) for v in nodes)
+        edge_cost = sum(
+            ctx._orig_graph.get_edge_data(u, v).get(self.weight, 1) for (u, v) in edges
+        )
+        return PrizeCollectingSolution(
+            gap=gap, runtime=runtime, objective=pcstp_obj,
+            selected_edges=edges, original_selected_edges=edges,
+            selected_nodes=nodes, penalties={}, total_prize=total_prize,
+            edge_cost=edge_cost, was_preprocessed=False,
+        )
+
+    def _pc_finalize(self, ctx, edges, nodes, pcstp_obj, gap, runtime) -> 'PrizeCollectingSolution':
+        """Compare with the best trivial (single-vertex/empty) solution, then build.
+
+        The SAP can represent neither the empty tree nor a single non-proper /
+        Steiner vertex, so the optimum might be one of those — compare explicitly.
+        """
+        from .pc_transform import best_trivial_pcstp
+        triv_nodes, triv_obj = best_trivial_pcstp(ctx.node_prizes)
+        if triv_obj < pcstp_obj - 1e-9:
+            edges, nodes, pcstp_obj = [], triv_nodes, triv_obj
+        return self._pc_make_solution(ctx, edges, nodes, pcstp_obj, gap, runtime)
+
+    def _pc_exact_solution(self, time_limit, log_file, solver) -> 'PrizeCollectingSolution':
+        """Exact solve via the SAP transformation + dual-ascent-accelerated ILP."""
+        import time as _time, math as _math
+        from .pc_transform import map_sap_solution_to_pcstp
+        from .dual_ascent import dual_ascent as _run_da, reduced_cost_fixing, steiner_cuts
+        from .mathematical_model import solve_sap_highs, solve_sap_gurobi
+
+        ctx = self._build_pc_transform()
+        view = DirectedSteinerProblem(ctx.sap_graph, ctx.root, ctx.terminals, weight=ctx.weight)
+
+        t0 = _time.time()
+        da = _run_da(view, ctx.weight)
+        fixing = da_primal = da_cuts = da_ub = None
+        if da.feasible and not _math.isinf(da.lower_bound) and not _math.isinf(da.upper_bound):
+            if abs(da.upper_bound - da.lower_bound) <= 1e-6 * max(1.0, abs(da.upper_bound)):
+                # Proven optimal by dual ascent — skip the ILP entirely.
+                edges, nodes, pcstp_obj = map_sap_solution_to_pcstp(ctx, da.primal_edges)
+                return self._pc_finalize(ctx, edges, nodes, pcstp_obj, 0.0, _time.time() - t0)
+            fixing = reduced_cost_fixing(view, da)
+            da_primal = da.primal_edges
+            da_cuts = steiner_cuts(da, view.roots)
+            da_ub = da.upper_bound
+
+        solve = solve_sap_gurobi if solver == "gurobi" else solve_sap_highs
+        gap, _rt, _sap_obj, sap_arcs = solve(
+            view, time_limit=time_limit, logfile=log_file,
+            fixing=fixing, da_cuts=da_cuts, da_ub=da_ub, primal=da_primal,
+        )
+
+        edges, nodes, pcstp_obj = map_sap_solution_to_pcstp(ctx, sap_arcs)
+        return self._pc_finalize(ctx, edges, nodes, pcstp_obj, gap, _time.time() - t0)
+
+    def _pc_heuristic_solution(self) -> 'PrizeCollectingSolution':
+        """Heuristic-only mode: the dual-ascent SAP primal, no ILP, valid gap.
+
+        ``gap == 0.0`` certifies the primal is provably optimal; a positive gap
+        bounds how far it could be from the optimum.
+        """
+        import time as _time, math as _math
+        from .pc_transform import map_sap_solution_to_pcstp, best_trivial_pcstp
+        from .dual_ascent import dual_ascent as _run_da
+
+        ctx = self._build_pc_transform()
+        view = DirectedSteinerProblem(ctx.sap_graph, ctx.root, ctx.terminals, weight=ctx.weight)
+        t0 = _time.time()
+        da = _run_da(view, ctx.weight)
+        if not da.feasible or _math.isinf(da.upper_bound):
+            raise RuntimeError(
+                "dual-ascent heuristic found no feasible solution for the transformed SAP."
+            )
+        edges, nodes, pcstp_obj = map_sap_solution_to_pcstp(ctx, da.primal_edges)
+        triv_nodes, triv_obj = best_trivial_pcstp(ctx.node_prizes)
+        if triv_obj < pcstp_obj - 1e-9:
+            edges, nodes, pcstp_obj = [], triv_nodes, triv_obj
+
+        if _math.isinf(da.lower_bound):
+            gap = _math.inf
+        else:
+            lb = da.lower_bound - ctx.offset
+            gap = max(0.0, (pcstp_obj - lb) / max(1.0, abs(pcstp_obj)))
+        return self._pc_make_solution(ctx, edges, nodes, pcstp_obj, gap, _time.time() - t0)
+
+    def get_solution(self, time_limit: float = 300, log_file: str = "",
+                     solver: str = "highs", pc_transform: bool = None,
+                     exact: bool = True) -> 'PrizeCollectingSolution':
+        """Solve the prize-collecting problem.
+
+        By default uses the penalty/Big-M flow ILP (HiGHS only). Two opt-in fast
+        paths route through the classic PCSTP/MWCSP -> SAP transformation and the
+        existing dual-ascent + directed-cut machinery:
+
+        * ``exact=False`` — heuristic-only mode: return the dual-ascent SAP primal
+          with no ILP; the ``Solution.gap`` is a *valid* optimality gap
+          (``0.0`` certifies provable optimality).
+        * ``pc_transform=True`` — exact solve via the SAP transformation with
+          dual-ascent lower bound, reduced-cost fixing, cut-seeding, warm-start
+          and proven-optimal early-exit.
+
+        Both require the instance to be a classic forgo-prize PCSTP (or an MWCSP);
+        otherwise a clear ``NotImplementedError`` is raised. ``solver`` selects
+        ``"highs"`` (default) or ``"gurobi"`` for the transform path's ILP.
+        """
+        solver = solver.lower()
+        use_transform = self.pc_transform if pc_transform is None else pc_transform
+
+        if not exact:
+            if not self._pc_eligible():
+                raise NotImplementedError(
+                    "heuristic mode (exact=False) supports classic forgo-prize "
+                    "PCSTP and MWCSP only; not penalty_budget / multi-group / "
+                    "penalty_cost != 0 variants."
+                )
+            return self._pc_heuristic_solution()
+
+        if use_transform:
+            if not self._pc_eligible():
+                raise NotImplementedError(
+                    "pc_transform=True supports classic forgo-prize PCSTP and "
+                    "MWCSP only; not penalty_budget / multi-group / penalty_cost "
+                    "!= 0 variants."
+                )
+            return self._pc_exact_solution(time_limit, log_file, solver)
+
+        # Default: the existing penalty/Big-M flow ILP (HiGHS only), unchanged.
         model, x, y1, y2, z, f, node_vars, penalty_vars = build_prize_collecting_model(
             self, time_limit=time_limit, logfile=log_file
         )
@@ -588,6 +785,8 @@ class MaxWeightConnectedSubgraph(PrizeCollectingProblem):
         if root is None:
             root = max(graph.nodes(), key=lambda v: node_weights.get(v, 0))
         self.mwcs_root = root
+        # Kept for the (opt-in) exact MWCSP -> PCSTP -> SAP transform path.
+        self._mwcs_node_weights = dict(node_weights)
 
         # Nodes with positive weight become optional terminals with prizes.
         # Negative-weight nodes are left as Steiner points (no prize).
@@ -609,6 +808,39 @@ class MaxWeightConnectedSubgraph(PrizeCollectingProblem):
             penalty_cost=penalty_cost,
             weight=weight,
             **kwargs,
+        )
+
+    # --- Opt-in transform path: MWCSP -> classic PCSTP -> SAP (exact mapping) ---
+
+    def _pc_eligible(self) -> bool:
+        """MWCSP maps exactly to a classic PCSTP, so the penalty_cost check that
+        applies to native PCSTP does not apply here. Only the structural modifiers
+        (budget / degree) would break the single-rooted SAP."""
+        if getattr(self, 'budget', None) is not None:
+            return False
+        if getattr(self, 'max_degree', None) is not None:
+            return False
+        return True
+
+    def _classic_pcstp(self):
+        """MWCSP -> classic PCSTP (report Sec. 2.2)."""
+        from .pc_transform import transform_mwcsp_to_pcstp
+        pc_graph, prizes, mwcsp_const = transform_mwcsp_to_pcstp(
+            self.original_graph, self._mwcs_node_weights, self.weight
+        )
+        return pc_graph, prizes, mwcsp_const
+
+    def _pc_make_solution(self, ctx, edges, nodes, pcstp_obj, gap, runtime) -> 'PrizeCollectingSolution':
+        """Report the MWCSP weight (sum of original node weights over the chosen
+        connected subgraph) rather than the PCSTP objective."""
+        mwcs_weight = ctx.mwcsp_const - pcstp_obj
+        nw = self._mwcs_node_weights
+        total_prize = sum(max(0.0, nw.get(v, 0.0)) for v in nodes)
+        return PrizeCollectingSolution(
+            gap=gap, runtime=runtime, objective=mwcs_weight,
+            selected_edges=edges, original_selected_edges=edges,
+            selected_nodes=nodes, penalties={}, total_prize=total_prize,
+            edge_cost=0.0, was_preprocessed=False,
         )
 
 

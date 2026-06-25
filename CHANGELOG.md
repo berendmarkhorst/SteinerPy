@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Prize-collecting / MWCSP acceleration via SAP transformation** (opt-in
+  `pc_transform=True`, `exact=False`, `pc_reduce=True` on
+  `PrizeCollectingProblem` / `MaxWeightConnectedSubgraph`). Adapts the
+  *change-the-problem-class* approach of Rehfeldt & Koch (MWCSP 2019; PCSTP
+  ZIB 20-11, 2020): the classic forgo-prize PCSTP (and the MWCSP, via the
+  `c(e):=-w0`, `p(v):=w(v)-w0` reduction) is transformed to a rooted Steiner
+  arborescence (Transformation 2, with cost-shifting on non-proper potential
+  terminals) and solved with the existing dual-ascent lower bound, reduced-cost
+  variable fixing, Steiner-cut seeding, primal warm-start, and a proven-optimal
+  early-exit, on a dedicated arc-based directed-cut model.
+  - `pc_transform=True` — **exact** solve through the transformation (often
+    proves optimality without an ILP).
+  - `exact=False` — **heuristic-only** mode returning the dual-ascent primal with
+    a *valid* optimality gap (`0.0` ⇒ provably optimal).
+  - `pc_reduce=True` — the **prize-constrained distance** (PCD) edge-deletion test
+    (PCSTP report Thm 6 / Algorithm 1): a sound, **prize-safe** (edge-only)
+    reduction that shrinks the graph for both the new path and the penalty ILP.
+  All three are **off by default** (the penalty/Big-M flow ILP remains the
+  default solver) and gated to the classic forgo-prize PCSTP / MWCSP — a
+  `penalty_budget`, multiple terminal groups, or a non-zero `penalty_cost` raises
+  a clear `NotImplementedError`. Validated against an independent brute-force
+  PCSTP/MWCSP oracle over hundreds of random instances.
 - **Heavy graph reductions** (opt-in `heavy=True`, or granular
   `special_distance=` / `long_edge=`): two classic alternative-based
   edge-deletion reduction tests that shrink the graph before the solve.

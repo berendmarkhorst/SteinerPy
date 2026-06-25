@@ -198,6 +198,26 @@ print(solution.gap)        # PROVEN optimality gap: 0.0 == provably optimal
 
 Unlike a pure heuristic, the returned `Solution.gap` is a **valid optimality certificate**: `gap == 0.0` means the heuristic tree is provably optimal, and a positive gap bounds how far it could be from the optimum — something `networkx.steiner_tree` (which gives no lower bound) cannot provide.  It is **networkx-speed-class** (no ILP), supported for plain Steiner **tree**/**forest** and **directed** problems, and raises `NotImplementedError` for the budget/degree-constrained variants.  The default is `exact=True` (solve to optimality).
 
+## Prize-collecting / MWCSP acceleration (opt-in)
+
+`PrizeCollectingProblem` and `MaxWeightConnectedSubgraph` default to a penalty/Big-M flow ILP.  For the **classic forgo-prize PCSTP** (and the MWCSP) you can opt into a much faster path that — following Rehfeldt & Koch (MWCSP 2019; PCSTP 2020) — transforms the problem to a rooted Steiner arborescence and reuses the dual-ascent + directed-cut machinery:
+
+```python
+# Exact, accelerated (often proves optimality without any ILP):
+sol = PrizeCollectingProblem(graph, [[root]], node_prizes, penalty_cost=0).get_solution(pc_transform=True)
+
+# Heuristic-only: dual-ascent primal, no ILP, with a PROVEN optimality gap:
+sol = PrizeCollectingProblem(graph, [[root]], node_prizes, penalty_cost=0).get_solution(exact=False)
+
+# Prize-safe edge reduction (prize-constrained distance) before solving:
+sol = PrizeCollectingProblem(graph, [[root]], node_prizes, penalty_cost=0, pc_reduce=True).get_solution(pc_transform=True)
+
+# MWCSP uses the exact MWCSP -> PCSTP -> SAP mapping:
+sol = MaxWeightConnectedSubgraph(graph, node_weights).get_solution(pc_transform=True)
+```
+
+All three flags are **off by default** (the penalty ILP is unchanged) and gated to the classic forgo-prize objective: a `penalty_budget`, multiple terminal groups, or a non-zero `penalty_cost` raises `NotImplementedError` (use the default penalty ILP for those).  `pc_reduce` deletes only edges provably in no optimal solution and removes no nodes, so every prize is preserved.
+
 ## Usage Examples
 
 See the `example.ipynb` notebook for detailed usage examples.

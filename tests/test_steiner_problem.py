@@ -673,6 +673,102 @@ def test_mwcs_get_solution():
 
 
 # ---------------------------------------------------------------------------
+# Opt-in SAP-transformation fast path (pc_transform / pc_reduce / exact=False)
+# ---------------------------------------------------------------------------
+
+def _simple_pcstp():
+    g = nx.Graph()
+    g.add_edge(0, 1, weight=1)
+    g.add_edge(1, 2, weight=1)
+    g.add_edge(2, 3, weight=1)
+    prizes = {0: 1, 1: 100, 2: 10, 3: 40}
+    return g, prizes
+
+
+def test_pc_transform_default_is_off():
+    """Without flags, get_solution still uses the penalty ILP (unchanged API)."""
+    g, prizes = _simple_pcstp()
+    prob = PrizeCollectingProblem(g, [[2]], prizes, penalty_cost=100)
+    sol = prob.get_solution()
+    assert isinstance(sol, PrizeCollectingSolution)
+
+
+def test_pc_transform_flag_eligible_solves():
+    g, prizes = _simple_pcstp()
+    sol = PrizeCollectingProblem(g, [[2]], prizes, penalty_cost=0).get_solution(pc_transform=True)
+    assert isinstance(sol, PrizeCollectingSolution)
+    assert sol.gap < 1e-6  # solved to optimality
+
+
+def test_pc_transform_constructor_flag():
+    """pc_transform=True can also be set at construction time."""
+    g, prizes = _simple_pcstp()
+    sol = PrizeCollectingProblem(g, [[2]], prizes, penalty_cost=0, pc_transform=True).get_solution()
+    assert isinstance(sol, PrizeCollectingSolution)
+
+
+def test_pc_transform_rejects_nonzero_penalty():
+    g, prizes = _simple_pcstp()
+    prob = PrizeCollectingProblem(g, [[2]], prizes, penalty_cost=5)
+    with pytest.raises(NotImplementedError):
+        prob.get_solution(pc_transform=True)
+    with pytest.raises(NotImplementedError):
+        prob.get_solution(exact=False)
+
+
+def test_pc_transform_rejects_penalty_budget():
+    g, prizes = _simple_pcstp()
+    prob = PrizeCollectingProblem(g, [[2]], prizes, penalty_cost=0, penalty_budget=2)
+    with pytest.raises(NotImplementedError):
+        prob.get_solution(pc_transform=True)
+
+
+def test_pc_transform_rejects_multiple_groups():
+    g, prizes = _simple_pcstp()
+    prob = PrizeCollectingProblem(g, [[0], [3]], prizes, penalty_cost=0)
+    with pytest.raises(NotImplementedError):
+        prob.get_solution(pc_transform=True)
+
+
+def test_pc_reduce_preserves_objective():
+    """pc_reduce shrinks the native PCSTP graph without changing the optimum."""
+    g = nx.Graph()
+    # Triangle 0-1-2 with a redundant long edge 0-2, plus a prize leaf at 1.
+    g.add_edge(0, 1, weight=2)
+    g.add_edge(1, 2, weight=2)
+    g.add_edge(0, 2, weight=9)
+    prizes = {0: 0, 1: 5, 2: 0}
+    plain = PrizeCollectingProblem(g.copy(), [[0]], prizes, penalty_cost=0)
+    reduced = PrizeCollectingProblem(g.copy(), [[0]], prizes, penalty_cost=0, pc_reduce=True)
+    assert reduced.graph.number_of_edges() <= plain.graph.number_of_edges()
+    s1 = plain.get_solution(pc_transform=True)
+    s2 = reduced.get_solution(pc_transform=True)
+    assert abs(s1.objective - s2.objective) < 1e-6
+
+
+def test_mwcs_transform_matches_default_selection():
+    """MWCS transform path selects the same positive-weight subgraph."""
+    g = nx.Graph()
+    g.add_edge('A', 'B', weight=0)
+    g.add_edge('B', 'C', weight=0)
+    g.add_edge('C', 'D', weight=0)
+    w = {'A': 2, 'B': 3, 'C': 1, 'D': -10}
+    sol = MaxWeightConnectedSubgraph(g, w).get_solution(pc_transform=True)
+    assert 'D' not in sol.selected_nodes
+    assert sol.total_prize >= 6.0
+
+
+def test_mwcs_heuristic_mode_valid_gap():
+    g = nx.Graph()
+    g.add_edge('A', 'B', weight=0)
+    g.add_edge('B', 'C', weight=0)
+    w = {'A': 2, 'B': 3, 'C': 1}
+    sol = MaxWeightConnectedSubgraph(g, w).get_solution(exact=False)
+    assert sol.gap >= -1e-9
+    assert isinstance(sol, PrizeCollectingSolution)
+
+
+# ---------------------------------------------------------------------------
 # Degree-Constrained Steiner Tree tests
 # ---------------------------------------------------------------------------
 
