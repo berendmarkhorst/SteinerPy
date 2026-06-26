@@ -635,6 +635,10 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
     if getattr(steiner_problem, 'max_degree', None) is not None:
         add_degree_constraints(model, steiner_problem, x)
 
+    # Add hop constraint if hop_limit is specified (directed problems)
+    if getattr(steiner_problem, 'hop_limit', None) is not None:
+        add_hop_constraint(model, steiner_problem, y1)
+
     # End tracking compilation time
     end_time = time.time()
     compilation_time = end_time - start_time
@@ -729,6 +733,23 @@ def add_degree_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProble
         incident = [x[e] for e in steiner_problem.edges if v in e]
         if incident:
             model.addConstr(sum(incident) <= max_degree)
+
+
+def add_hop_constraint(model: hp.HighsModel, steiner_problem: 'SteinerProblem', y1: Dict) -> None:
+    """
+    Add a hop-limit constraint to the directed model (thesis Ch. 5.8).
+
+    The number of arcs in the arborescence equals ``sum(y1[a])``; bounding it by
+    ``hop_limit`` enforces ``|A(S)| <= H``.  Used by the hop-constrained directed
+    Steiner tree problem (:class:`steinerpy.objects.HopConstrainedSteinerProblem`).
+    :param model: HiGHS model.
+    :param steiner_problem: SteinerProblem-object with a ``hop_limit`` attribute.
+    :param y1: global arc-selection decision variables.
+    """
+    arcs = [y1[a] for a in steiner_problem.arcs if a in y1]
+    if arcs:
+        model.addConstr(sum(arcs) <= steiner_problem.hop_limit)
+
 
 def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time_limit: float = 300, logfile: str = "", threads=None) -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType]]:
     """
@@ -1073,6 +1094,12 @@ def build_model_gurobi(
             if incident:
                 model.addConstr(gp.quicksum(incident) <= max_degree)
 
+    # Optional hop constraint (directed problems, thesis Ch. 5.8)
+    if getattr(steiner_problem, 'hop_limit', None) is not None:
+        hop_arcs = [y1[a] for a in steiner_problem.arcs if a in y1]
+        if hop_arcs:
+            model.addConstr(gp.quicksum(hop_arcs) <= steiner_problem.hop_limit)
+
     model.update()
 
     compilation_time = time.time() - start_time
@@ -1375,3 +1402,180 @@ def solve_sap_gurobi(view, time_limit: float = 300, logfile: str = "",
         return float("inf"), runtime, float("inf"), []
     selected = [a for a in arcs if xa[a].X > 0.5]
     return model.MIPGap, runtime, model.ObjVal, selected
+
+
+# ---------------------------------------------------------------------------
+# Max-weight connected subgraph with a vertex-cost budget (MWCSPB) — Ch. 5.6
+# ---------------------------------------------------------------------------
+#
+# Rooted directed model: an arborescence from the (always-selected) root, with one
+# binary node[v] per vertex tied to its single entering arc, optional per-positive-node
+# connectivity via the existing optional-flow constraints, a vertex-cost budget, and a
+# node-weight-maximising objective.  Connectivity is modelled with flow (added upfront)
+# rather than lazy cuts, so the identical formulation solves directly on both HiGHS and
+# Gurobi.  Mirrors the structure of build_budget_model.
+
+
+def _undirected_from_arcs(used_arcs: List[Tuple]) -> List[Tuple]:
+    """Collapse a list of directed arcs to deduplicated undirected edges."""
+    seen: Set = set()
+    edges: List[Tuple] = []
+    for (u, v) in used_arcs:
+        key = frozenset((u, v))
+        if key not in seen:
+            seen.add(key)
+            edges.append((u, v))
+    return edges
+
+
+def build_mwcsb_model(steiner_problem, time_limit: float = 300, logfile: str = "",
+                      threads=None) -> Tuple:
+    """Build the HiGHS MWCSPB model (see module note above).
+
+    :param steiner_problem: a :class:`BudgetedMaxWeightConnectedSubgraph` exposing
+        ``node_costs``, ``node_budget`` and ``_mwcs_node_weights``.
+    :return: ``(model, x, y1, y2, z, node_vars)``.
+    """
+    model, x, y1, y2, z = build_model(steiner_problem, time_limit, logfile, threads=threads)
+    root = steiner_problem.roots[0]
+
+    node_vars = {
+        v: model.addVariable(0, 1, hp.HighsVarType.kInteger, name=f"node[{v}]")
+        for v in steiner_problem.nodes
+    }
+    # The root is always part of the subgraph; every other selected node has exactly
+    # one entering arc, so node[v] equals its indegree in the arborescence.
+    model.addConstr(node_vars[root] == 1)
+    for v in steiner_problem.nodes:
+        if v == root:
+            continue
+        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        model.addConstr(node_vars[v] == (sum(in_arcs) if in_arcs else 0))
+
+    # Optional reachability for each positive node, scaled by its node variable.
+    connection_vars = {
+        (0, t): node_vars[t]
+        for t in steiner_problem.terminal_groups[0] if t != root
+    }
+    model, _f = add_optional_flow_constraints(model, steiner_problem, y2, connection_vars)
+
+    # Vertex-cost budget over the whole chosen subgraph.
+    node_costs = steiner_problem.node_costs
+    model.addConstr(
+        sum(node_costs.get(v, 0) * node_vars[v] for v in steiner_problem.nodes)
+        <= steiner_problem.node_budget
+    )
+
+    return model, x, y1, y2, z, node_vars
+
+
+def run_mwcsb_model(model, steiner_problem, y1: Dict, node_vars: Dict) -> Tuple:
+    """Solve the HiGHS MWCSPB model and extract the connected subgraph.
+
+    :return: ``(gap, runtime, mwcs_weight, selected_edges, selected_nodes)`` where
+        ``mwcs_weight`` is the sum of node weights over the chosen subgraph.
+    """
+    nw = steiner_problem._mwcs_node_weights
+    # Maximise total node weight == minimise its negation.
+    objective_expr = sum(-nw.get(v, 0.0) * node_vars[v] for v in steiner_problem.nodes)
+    model.minimize(objective_expr)
+
+    status = model.getModelStatus()
+    if status in (
+        hp.HighsModelStatus.kInfeasible,
+        hp.HighsModelStatus.kUnbounded,
+        hp.HighsModelStatus.kUnboundedOrInfeasible,
+    ) or not model.getSolution().value_valid:
+        return float("inf"), model.getRunTime(), float("-inf"), [], []
+
+    selected_nodes = [v for v in steiner_problem.nodes if model.variableValue(node_vars[v]) > 0.5]
+    used_arcs = [a for a in steiner_problem.arcs if model.variableValue(y1[a]) > 0.5]
+    selected_edges = _undirected_from_arcs(used_arcs)
+    mwcs_weight = sum(nw.get(v, 0.0) for v in selected_nodes)
+
+    return model.getInfo().mip_gap, model.getRunTime(), mwcs_weight, selected_edges, selected_nodes
+
+
+def build_mwcsb_model_gurobi(steiner_problem, time_limit: float = 300, logfile: str = "",
+                             threads=None) -> Tuple:
+    """Gurobi counterpart of :func:`build_mwcsb_model`."""
+    _check_gurobipy()
+    import gurobipy as gp
+
+    model, x, y1, y2, z = build_model_gurobi(steiner_problem, time_limit, logfile, threads=threads)
+    from gurobipy import GRB
+    root = steiner_problem.roots[0]
+    non_root = [t for t in steiner_problem.terminal_groups[0] if t != root]
+
+    node_vars = {v: model.addVar(vtype=GRB.BINARY, name=f"node[{v}]")
+                 for v in steiner_problem.nodes}
+    model.update()
+
+    model.addConstr(node_vars[root] == 1)
+    for v in steiner_problem.nodes:
+        if v == root:
+            continue
+        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        model.addConstr(node_vars[v] == (gp.quicksum(in_arcs) if in_arcs else 0))
+
+    # Optional flow for each positive node, scaled by its node variable.
+    f = {(t, a): model.addVar(vtype=GRB.BINARY, name=f"f[{t},{a}]")
+         for t in non_root for a in steiner_problem.arcs}
+    model.update()
+    for v in steiner_problem.nodes:
+        out_arcs = [a for a in steiner_problem.arcs if a[0] == v]
+        in_arcs = [a for a in steiner_problem.arcs if a[1] == v]
+        for t in non_root:
+            if v == root:
+                demand = node_vars[t]
+            elif v == t:
+                demand = -node_vars[t]
+            else:
+                if not out_arcs and not in_arcs:
+                    continue
+                demand = 0
+            model.addConstr(
+                gp.quicksum(f[t, a] for a in out_arcs)
+                - gp.quicksum(f[t, a] for a in in_arcs) == demand
+            )
+    for t in non_root:
+        for a in steiner_problem.arcs:
+            model.addConstr(f[t, a] <= y2[(0, a)])
+        out_arcs = [a for a in steiner_problem.arcs if a[0] == t]
+        if out_arcs:
+            model.addConstr(gp.quicksum(f[t, a] for a in out_arcs) == 0)
+
+    node_costs = steiner_problem.node_costs
+    model.addConstr(
+        gp.quicksum(node_costs.get(v, 0) * node_vars[v] for v in steiner_problem.nodes)
+        <= steiner_problem.node_budget
+    )
+    model.update()
+
+    return model, x, y1, y2, z, node_vars
+
+
+def run_mwcsb_model_gurobi(model, steiner_problem, y1: Dict, node_vars: Dict) -> Tuple:
+    """Gurobi counterpart of :func:`run_mwcsb_model`."""
+    _check_gurobipy()
+    import gurobipy as gp
+    from gurobipy import GRB
+
+    nw = steiner_problem._mwcs_node_weights
+    model.setObjective(
+        gp.quicksum(-nw.get(v, 0.0) * node_vars[v] for v in steiner_problem.nodes),
+        GRB.MINIMIZE,
+    )
+    start = time.time()
+    model.optimize()
+    runtime = time.time() - start
+
+    if model.SolCount == 0:
+        return float("inf"), runtime, float("-inf"), [], []
+
+    selected_nodes = [v for v in steiner_problem.nodes if node_vars[v].X > 0.5]
+    used_arcs = [a for a in steiner_problem.arcs if y1[a].X > 0.5]
+    selected_edges = _undirected_from_arcs(used_arcs)
+    mwcs_weight = sum(nw.get(v, 0.0) for v in selected_nodes)
+
+    return model.MIPGap, runtime, mwcs_weight, selected_edges, selected_nodes

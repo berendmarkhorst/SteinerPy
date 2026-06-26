@@ -110,9 +110,13 @@ class BaseSteinerProblem:
         self.steiner_points = set(self.nodes) - set([t for group in terminal_groups for t in group])
         self.roots = [group[0] for group in self.terminal_groups]
 
-        # Extract global modifiers like max_degree or budget from kwargs
+        # Extract global modifiers like max_degree, budget or hop_limit from kwargs
         self.max_degree = kwargs.get('max_degree', None)
         self.budget = kwargs.get('budget', None)
+        # Hop limit for the hop-constrained directed variant (thesis Ch. 5.8):
+        # bounds the number of arcs in the arborescence. Read here so the model
+        # builders can add the constraint generically, like max_degree/budget.
+        self.hop_limit = kwargs.get('hop_limit', None)
         # Opt-in dual-ascent accelerator (lower bound + primal heuristic +
         # reduced-cost variable fixing). Off by default; see steinerpy.dual_ascent.
         self.dual_ascent = kwargs.get('dual_ascent', False)
@@ -129,6 +133,8 @@ class BaseSteinerProblem:
         if self.budget is not None:
             return False
         if getattr(self, 'max_degree', None) is not None:
+            return False
+        if getattr(self, 'hop_limit', None) is not None:
             return False
         return True
 
@@ -510,6 +516,216 @@ class Solution:
 
 class SteinerProblem(BaseSteinerProblem):
     pass
+
+
+# ---------------------------------------------------------------------------
+# Partial / Full Terminal Steiner Tree Problem (PTSTP / FTSTP) — thesis Ch. 5.1
+# ---------------------------------------------------------------------------
+
+class PartialTerminalSteinerProblem(SteinerProblem):
+    """
+    Partial Terminal Steiner Tree Problem (PTSTP), thesis Ch. 5.1.
+
+    A Steiner tree problem with the extra requirement that a designated subset of the
+    terminals — the *partial terminals* — must be **leaves** of the solution tree.
+
+    Solved by the transformation to a plain Steiner tree problem (thesis Sec. 5.1):
+
+    1. remove every edge whose *both* endpoints are partial terminals, and
+    2. add a large constant ``M`` (the sum of all edge weights) to every edge incident
+       to a partial terminal, so no optimal Steiner tree routes *through* one.
+
+    Each partial terminal is then a leaf in an optimal solution, so exactly one
+    ``+M`` edge is incident to it; the constant is subtracted back out of the reported
+    objective.  No partial-terminal Steiner tree need exist — an infeasible instance
+    raises :class:`RuntimeError`.
+
+    Follows the thesis assumption of at least three terminals; with one or two
+    terminals the problem is trivial and the leaf requirement is vacuous.
+    """
+
+    def __init__(self, graph: nx.Graph, terminal_groups: List[List], partial_terminals,
+                 weight: str = "weight", **kwargs):
+        if isinstance(graph, nx.DiGraph):
+            raise ValueError("PartialTerminalSteinerProblem requires an undirected graph.")
+        self.partial_terminals = set(partial_terminals)
+        all_terminals = {t for group in terminal_groups for t in group}
+        missing = self.partial_terminals - all_terminals
+        if missing:
+            raise ValueError(
+                f"partial_terminals must be terminals; unknown: {sorted(map(str, missing))}"
+            )
+
+        transformed = nx.Graph()
+        transformed.add_nodes_from(graph.nodes())
+        big_m = sum(data.get(weight, 1) for _, _, data in graph.edges(data=True))
+        for u, v, data in graph.edges(data=True):
+            if u in self.partial_terminals and v in self.partial_terminals:
+                continue  # (1) drop edges between two partial terminals
+            c = data.get(weight, 1)
+            if u in self.partial_terminals or v in self.partial_terminals:
+                c = c + big_m  # (2) add M to edges incident to a partial terminal
+            transformed.add_edge(u, v, **{weight: c})
+
+        self._ptstp_big_m = big_m
+        super().__init__(transformed, terminal_groups, weight=weight, **kwargs)
+
+    def get_solution(self, *args, **kwargs) -> 'Solution':
+        import math as _math
+        # When dropping the partial-partial edges leaves nothing to connect the
+        # terminals, the instance is infeasible (and an empty edge set would make the
+        # underlying solver choke on a constant objective).
+        total_terminals = sum(len(g) for g in self.terminal_groups)
+        if total_terminals >= 2 and self.graph.number_of_edges() == 0:
+            raise RuntimeError(
+                "No partial-terminal Steiner tree exists for this instance "
+                "(the transformed Steiner tree problem is infeasible)."
+            )
+        sol = super().get_solution(*args, **kwargs)
+        if sol.objective is None or _math.isinf(sol.objective):
+            raise RuntimeError(
+                "No partial-terminal Steiner tree exists for this instance "
+                "(the transformed Steiner tree problem is infeasible)."
+            )
+        # Each partial terminal is a leaf, so every solution edge incident to one
+        # carries exactly one +M penalty; subtract them back out.
+        n_penalised = sum(
+            1 for (u, v) in sol.original_selected_edges
+            if u in self.partial_terminals or v in self.partial_terminals
+        )
+        sol.objective = sol.objective - self._ptstp_big_m * n_penalised
+        return sol
+
+
+class FullTerminalSteinerProblem(PartialTerminalSteinerProblem):
+    """
+    Full Terminal Steiner Tree Problem (FTSTP), thesis Ch. 5.1 — the special case of
+    :class:`PartialTerminalSteinerProblem` in which *every* terminal must be a leaf.
+    """
+
+    def __init__(self, graph: nx.Graph, terminal_groups: List[List],
+                 weight: str = "weight", **kwargs):
+        all_terminals = [t for group in terminal_groups for t in group]
+        super().__init__(graph, terminal_groups, partial_terminals=all_terminals,
+                         weight=weight, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Group Steiner Tree Problem (GSTP) — thesis Ch. 5.7
+# ---------------------------------------------------------------------------
+
+class GroupSteinerProblem(SteinerProblem):
+    """
+    Group Steiner Tree Problem (GSTP), thesis Ch. 5.7.
+
+    Given vertex *groups*, find a minimum-cost tree that contains at least one vertex
+    from each group.  Solved by the Voss (1988) transformation to a plain Steiner tree
+    problem: add one artificial super-terminal per group, connected by zero-cost edges
+    to every vertex of that group, then solve the Steiner tree problem whose terminals
+    are the super-terminals.  The zero-cost connector edges are stripped from the
+    reported solution (they contribute nothing to the objective).
+    """
+
+    def __init__(self, graph: nx.Graph, groups: List[List], weight: str = "weight", **kwargs):
+        if isinstance(graph, nx.DiGraph):
+            raise ValueError("GroupSteinerProblem requires an undirected graph.")
+        if not groups or any(len(g) == 0 for g in groups):
+            raise ValueError("Each group must contain at least one vertex.")
+
+        augmented = graph.copy()
+        existing = set(graph.nodes())
+        super_terminals = []
+        for i, grp in enumerate(groups):
+            g_node = self._fresh_label(f"__group_{i}__", existing)
+            existing.add(g_node)
+            super_terminals.append(g_node)
+            augmented.add_node(g_node)
+            for v in grp:
+                if v not in graph:
+                    raise ValueError(f"group vertex {v!r} is not in the graph.")
+                augmented.add_edge(g_node, v, **{weight: 0})
+
+        self._gstp_super_terminals = set(super_terminals)
+        super().__init__(augmented, [super_terminals], weight=weight, **kwargs)
+
+    @staticmethod
+    def _fresh_label(base, existing):
+        if base not in existing:
+            return base
+        i = 0
+        while f"{base}{i}" in existing:
+            i += 1
+        return f"{base}{i}"
+
+    def get_solution(self, *args, **kwargs) -> 'Solution':
+        import math as _math
+        sol = super().get_solution(*args, **kwargs)
+        if sol.objective is None or _math.isinf(sol.objective):
+            raise RuntimeError(
+                "Group Steiner instance is infeasible (the groups cannot be connected)."
+            )
+        # Strip the zero-cost connector edges incident to a super-terminal. The
+        # objective already excludes them (they cost 0).
+        st = self._gstp_super_terminals
+        real = [
+            (u, v) for (u, v) in sol.original_selected_edges
+            if u not in st and v not in st
+        ]
+        sol.original_selected_edges = real
+        sol.selected_edges = real
+        return sol
+
+
+# ---------------------------------------------------------------------------
+# Rectilinear Steiner Minimum Tree (RSMT) via the Hanan grid — thesis Ch. 5.4
+# ---------------------------------------------------------------------------
+
+class RectilinearSolution(Solution):
+    """Solution for the Rectilinear Steiner Minimum Tree problem."""
+
+    def __init__(self, segments: Optional[List] = None, steiner_points: Optional[List] = None, **kwargs):
+        super().__init__(**kwargs)
+        self.segments = segments or []
+        self.steiner_points = steiner_points or []
+
+    def __repr__(self):
+        return (f"RectilinearSolution(length={self.objective:.4g}, "
+                f"segments={len(self.segments)}, steiner_points={len(self.steiner_points)})")
+
+
+class RectilinearSteinerProblem(SteinerProblem):
+    """
+    Rectilinear Steiner Minimum Tree (RSMT), thesis Ch. 5.4.
+
+    Given points in the plane, find a minimum-total-length tree that uses only
+    horizontal and vertical segments (the L1 / Manhattan metric), allowing extra
+    Steiner points.  Reduced exactly to a Steiner tree problem on the Hanan grid
+    (Hanan 1966); the reported objective is the total rectilinear length.  Practical
+    for modest point counts (the grid has up to ``k^2`` nodes for ``k`` points).
+
+    Nodes of the underlying graph are ``(x, y)`` coordinate tuples.
+    """
+
+    def __init__(self, points, weight: str = "weight", **kwargs):
+        from .rectilinear import hanan_grid
+        self.points = [(float(x), float(y)) for (x, y) in points]
+        grid, terminals = hanan_grid(self.points, weight=weight)
+        self._rsmt_terminals = set(terminals)
+        super().__init__(grid, [terminals], weight=weight, **kwargs)
+
+    def get_solution(self, *args, **kwargs) -> 'RectilinearSolution':
+        sol = super().get_solution(*args, **kwargs)
+        segments = list(sol.original_selected_edges)
+        used = {p for seg in segments for p in seg}
+        steiner_points = sorted(used - self._rsmt_terminals)
+        return RectilinearSolution(
+            gap=sol.gap, runtime=sol.runtime, objective=sol.objective,
+            selected_edges=sol.selected_edges,
+            original_selected_edges=sol.original_selected_edges,
+            was_preprocessed=sol.was_preprocessed,
+            segments=segments, steiner_points=steiner_points,
+        )
+
 
 class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem instead of BaseSteinerProblem
     def __init__(self, graph, terminal_groups, node_prizes, penalty_cost=1000, penalty_budget=None, **kwargs):
@@ -1009,6 +1225,71 @@ class MaxWeightConnectedSubgraph(PrizeCollectingProblem):
         )
 
 
+class BudgetedMaxWeightConnectedSubgraph(MaxWeightConnectedSubgraph):
+    """
+    Maximum-Weight Connected Subgraph with a vertex-cost Budget (MWCSPB), thesis Ch. 5.6.
+
+    Like :class:`MaxWeightConnectedSubgraph`, but every chosen vertex consumes a
+    vertex *cost* and the total cost of the chosen connected subgraph may not exceed a
+    ``node_budget``.  Maximises the total node weight subject to that budget.
+
+    Solved by a rooted directed model with optional per-vertex connectivity and a
+    node-cost budget constraint (the existing ``budget=`` kwarg is an *edge*-cost
+    budget that maximises connected terminals — a different problem).  Supports both
+    the ``"highs"`` and ``"gurobi"`` backends.  This variant does not use the
+    SAP-transform / dual-ascent accelerators (same opt-out convention as the
+    budget/degree variants).
+    """
+
+    def __init__(self, graph: nx.Graph, node_weights: Dict, node_costs: Dict,
+                 node_budget: float, root=None, weight: str = "weight", **kwargs):
+        """
+        :param graph: networkx undirected graph.
+        :param node_weights: dict node -> weight (positive or negative).
+        :param node_costs: dict node -> non-negative vertex cost.
+        :param node_budget: maximum total vertex cost of the chosen subgraph.
+        :param root: optional root; defaults to the highest-weight node.
+        :param weight: edge attribute name (edges are not part of the objective).
+        """
+        # Stored before super().__init__ so they are not interpreted as base kwargs.
+        self.node_costs = dict(node_costs)
+        self.node_budget = node_budget
+        super().__init__(graph, node_weights, root=root, weight=weight, **kwargs)
+
+    def get_solution(self, time_limit: float = 300, log_file: str = "",
+                     solver: str = "highs", threads: int = None) -> 'PrizeCollectingSolution':
+        from .mathematical_model import (
+            build_mwcsb_model, run_mwcsb_model,
+            build_mwcsb_model_gurobi, run_mwcsb_model_gurobi,
+        )
+        solver = solver.lower()
+        if solver not in ("highs", "gurobi"):
+            raise ValueError(f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'.")
+
+        if solver == "gurobi":
+            model, x, y1, y2, z, node_vars = build_mwcsb_model_gurobi(
+                self, time_limit=time_limit, logfile=log_file, threads=threads
+            )
+            gap, runtime, mwcs_weight, selected_edges, selected_nodes = run_mwcsb_model_gurobi(
+                model, self, y1, node_vars
+            )
+        else:
+            model, x, y1, y2, z, node_vars = build_mwcsb_model(
+                self, time_limit=time_limit, logfile=log_file, threads=threads
+            )
+            gap, runtime, mwcs_weight, selected_edges, selected_nodes = run_mwcsb_model(
+                model, self, y1, node_vars
+            )
+
+        total_prize = sum(max(0.0, self._mwcs_node_weights.get(v, 0.0)) for v in selected_nodes)
+        return PrizeCollectingSolution(
+            gap=gap, runtime=runtime, objective=mwcs_weight,
+            selected_edges=selected_edges, original_selected_edges=selected_edges,
+            selected_nodes=selected_nodes, penalties={}, total_prize=total_prize,
+            edge_cost=0.0, was_preprocessed=False,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Degree-Constrained Steiner Tree Problem
 # ---------------------------------------------------------------------------
@@ -1124,3 +1405,46 @@ class DirectedSteinerProblem(BaseSteinerProblem):
         kwargs['preprocess'] = False
 
         super().__init__(graph, [terminal_group], weight=weight, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Hop-Constrained Directed Steiner Tree Problem (HCDSTP) — thesis Ch. 5.8
+# ---------------------------------------------------------------------------
+
+class HopConstrainedSteinerProblem(DirectedSteinerProblem):
+    """
+    Hop-Constrained Directed Steiner Tree Problem (HCDSTP), thesis Ch. 5.8.
+
+    A Steiner arborescence in which the number of arcs (hops) is bounded by
+    ``hop_limit`` and no terminal (other than the root) has outgoing arcs.
+
+    Built on :class:`DirectedSteinerProblem`: the outgoing arcs of every non-root
+    terminal are removed from the graph, and the directed-cut model adds the hop
+    constraint ``sum(y1) <= hop_limit`` (see
+    :func:`steinerpy.mathematical_model.add_hop_constraint`).  The dual-ascent
+    accelerator is skipped automatically because ``hop_limit`` is set.
+    """
+
+    def __init__(self, graph: nx.DiGraph, root, terminals: List, hop_limit: int,
+                 weight: str = "weight", **kwargs):
+        """
+        :param graph: networkx DiGraph.
+        :param root: root node of the arborescence.
+        :param terminals: terminal nodes that must be reachable from root.
+        :param hop_limit: maximum number of arcs allowed in the arborescence.
+        :param weight: edge attribute for arc weights.
+        """
+        if not isinstance(graph, nx.DiGraph):
+            raise ValueError("HopConstrainedSteinerProblem requires a directed graph (nx.DiGraph).")
+
+        # Drop outgoing arcs of every non-root terminal (thesis: delta^+_S(t) = 0).
+        non_root_terminals = {t for t in terminals if t != root}
+        pruned = nx.DiGraph()
+        pruned.add_nodes_from(graph.nodes())
+        for u, v, data in graph.edges(data=True):
+            if u in non_root_terminals:
+                continue
+            pruned.add_edge(u, v, **data)
+
+        super().__init__(pruned, root, terminals, weight=weight,
+                         hop_limit=hop_limit, **kwargs)

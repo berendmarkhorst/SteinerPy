@@ -72,6 +72,36 @@ Every variant below can be solved as a **Steiner Tree** (a single group of termi
 | **Node-Weighted Steiner Tree / Forest** | `NodeWeightedSteinerProblem` | Nodes carry costs instead of (or in addition to) edges.  Internally uses a node-splitting transformation to convert the problem to a standard edge-weighted formulation. |
 | **Maximum-Weight Connected Subgraph** | `MaxWeightConnectedSubgraph` | Finds a connected subgraph maximising the total node weight.  Nodes with negative weights are included only when they are needed as connectors.  Convenience subclass of `PrizeCollectingProblem`. |
 | **Directed Steiner Tree (Arborescence)** | `DirectedSteinerProblem` | The graph is directed (`nx.DiGraph`) and a designated root node must reach every terminal via directed paths. |
+| **Partial / Full Terminal Steiner Tree** | `PartialTerminalSteinerProblem`, `FullTerminalSteinerProblem` | Designated terminals (or *all* terminals, for the full variant) must be **leaves** of the tree.  Transformed to a plain Steiner tree problem (Rehfeldt thesis §5.1). |
+| **Group Steiner Tree** | `GroupSteinerProblem` | Connect at least one vertex from each of several vertex *groups*.  Voss (1988) super-terminal transformation to a plain Steiner tree problem (thesis §5.7). |
+| **Hop-Constrained Directed Steiner Tree** | `HopConstrainedSteinerProblem` | Directed arborescence with a bound on the number of arcs (hops); terminals have no outgoing arcs (thesis §5.8). |
+| **Rectilinear Steiner Minimum Tree** | `RectilinearSteinerProblem` | Minimum-length tree of horizontal/vertical segments through a set of points (L1 metric), solved exactly on the Hanan grid (thesis §5.4). |
+| **Max-Weight Connected Subgraph with Budget** | `BudgetedMaxWeightConnectedSubgraph` | Maximise total node weight subject to a **vertex-cost budget** on the chosen subgraph (thesis §5.6).  Supports both `"highs"` and `"gurobi"`. |
+
+These five variants implement the "further related problems" of Chapter 5 of D. Rehfeldt's PhD thesis (*Faster algorithms for Steiner tree and related problems*, TU Berlin 2021), reusing the same directed-cut kernel by transformation.
+
+```python
+from steinerpy import (
+    PartialTerminalSteinerProblem, FullTerminalSteinerProblem, GroupSteinerProblem,
+    HopConstrainedSteinerProblem, RectilinearSteinerProblem,
+    BudgetedMaxWeightConnectedSubgraph,
+)
+
+# Partial-terminal (terminals B and D must be leaves):
+PartialTerminalSteinerProblem(G, [['A', 'B', 'D']], partial_terminals=['B', 'D']).get_solution()
+
+# Group Steiner tree (one vertex from each group):
+GroupSteinerProblem(G, [['A', 'B'], ['C', 'D']]).get_solution()
+
+# Hop-constrained directed Steiner tree (<= 3 arcs):
+HopConstrainedSteinerProblem(DG, root='r', terminals=['x', 'y'], hop_limit=3).get_solution()
+
+# Rectilinear Steiner minimum tree through points in the plane:
+RectilinearSteinerProblem([(0, 0), (2, 0), (0, 2)]).get_solution()
+
+# Max-weight connected subgraph with a vertex-cost budget:
+BudgetedMaxWeightConnectedSubgraph(G, node_weights, node_costs, node_budget=5).get_solution()
+```
 
 ### Optional Constraint Modifiers
 
