@@ -184,8 +184,149 @@ class BaseSteinerProblem:
     def __repr__(self):
         return f"Problem with a graph of {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges and {self.terminal_groups} as terminal groups."
 
+    # ------------------------------------------------------------------
+    # Biconnected-component decomposition (thesis Ch. 2.6) — single group
+    # ------------------------------------------------------------------
+
+    def _decompose_enabled(self) -> bool:
+        import os
+        val = os.environ.get("STEINERPY_DECOMPOSE")
+        return bool(val) and val not in ("0", "false", "False")
+
+    def _decomposable(self) -> bool:
+        """Plain single-group min-cost Steiner tree on an undirected graph.
+
+        The decomposition is exactness-preserving only for the plain edge-cost
+        objective; budget / degree / directed variants couple across blocks or do
+        not minimise edge cost, so they are excluded.
+        """
+        if isinstance(self.graph, nx.DiGraph):
+            return False
+        if self.budget is not None or getattr(self, 'max_degree', None) is not None:
+            return False
+        if len(self.terminal_groups) != 1:
+            return False
+        return len(self.terminal_groups[0]) >= 2
+
+    def _block_demanded_terminals(self, blocks, terminals):
+        """Per-block demanded terminal sets for single-group decomposition.
+
+        Builds the block-cut tree, roots it, and for every block returns the set
+        of vertices it must connect: its own terminals plus each incident cut
+        vertex whose *away* side (through the block-cut tree) still contains a
+        terminal.  A block with < 2 demanded vertices contributes nothing.
+        """
+        art = set(nx.articulation_points(self.graph))
+        # Block-cut tree: block nodes ('B', i) and cut-vertex nodes ('C', c).
+        T = nx.Graph()
+        node_block = {}  # non-cut vertex -> its (unique) block index
+        for i, B in enumerate(blocks):
+            bn = ('B', i)
+            T.add_node(bn)
+            for v in B:
+                if v in art:
+                    T.add_edge(bn, ('C', v))
+                else:
+                    node_block[v] = i
+
+        def loc(t):
+            return ('C', t) if t in art else ('B', node_block[t])
+
+        own_count = {}
+        for t in terminals:
+            n = loc(t)
+            own_count[n] = own_count.get(n, 0) + 1
+        total = len(terminals)
+
+        # Root the tree; compute parent pointers and subtree terminal counts.
+        if T.number_of_nodes() == 0:
+            return {}
+        root = next(iter(T.nodes()))
+        parent = {root: None}
+        order = [root]
+        stack = [root]
+        while stack:
+            u = stack.pop()
+            for v in T.neighbors(u):
+                if v not in parent:
+                    parent[v] = u
+                    order.append(v)
+                    stack.append(v)
+        subtree = {n: own_count.get(n, 0) for n in T.nodes()}
+        for n in reversed(order):
+            p = parent[n]
+            if p is not None:
+                subtree[p] += subtree[n]
+
+        demands = {}
+        for i, B in enumerate(blocks):
+            bn = ('B', i)
+            dem = set(t for t in terminals if t in B)  # own (incl. cut-vertex) terminals
+            for cn in T.neighbors(bn):
+                c = cn[1]
+                if parent.get(cn) == bn:
+                    away = subtree[cn]            # cut vertex is a child -> its subtree
+                else:
+                    away = total - subtree[bn]    # cut vertex is the parent -> the rest
+                if away > 0:
+                    dem.add(c)
+            demands[i] = dem
+        return demands
+
+    def _decompose_single_group(self, time_limit, log_file, solver, dual_ascent, threads):
+        """Solve a single-group Steiner tree by biconnected-component blocks.
+
+        Returns a :class:`Solution` (union of per-block optimal trees) or ``None``
+        when decomposition does not apply / does not help, in which case the
+        caller solves monolithically.
+        """
+        import time as _time
+        G = self.graph
+        terminals = set(self.terminal_groups[0])
+        blocks = [b for b in nx.biconnected_components(G)]
+        if len(blocks) <= 1:
+            return None  # 2-connected: nothing to gain
+
+        demands = self._block_demanded_terminals(blocks, terminals)
+
+        t0 = _time.time()
+        union = {}
+        worst_gap = 0.0
+        for i, B in enumerate(blocks):
+            dem = demands.get(i, set())
+            if len(dem) < 2:
+                continue  # this block connects nothing on its own
+            subG = nx.Graph()
+            subG.add_nodes_from(B)
+            for (u, v) in G.subgraph(B).edges():
+                subG.add_edge(u, v, **{self.weight: G.edges[u, v][self.weight]})
+            sub = SteinerProblem(subG, [sorted(dem, key=lambda n: str(n))],
+                                 weight=self.weight, preprocess=False)
+            sub_sol = sub.get_solution(
+                time_limit=time_limit, log_file=log_file, solver=solver,
+                dual_ascent=dual_ascent, exact=True, threads=threads,
+                decompose=False,
+            )
+            if sub_sol.gap is not None:
+                worst_gap = max(worst_gap, sub_sol.gap)
+            for (u, v) in sub_sol.selected_edges:
+                union[frozenset((u, v))] = (u, v)
+
+        selected_edges = list(union.values())
+        objective = sum(G.edges[e][self.weight] for e in selected_edges)
+        if self.preprocess:
+            original = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
+        else:
+            original = selected_edges
+        return Solution(
+            gap=worst_gap, runtime=_time.time() - t0, objective=objective,
+            selected_edges=selected_edges, original_selected_edges=original,
+            was_preprocessed=self.preprocess,
+        )
+
     def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs",
-                     dual_ascent: bool = None, exact: bool = True) -> 'Solution':
+                     dual_ascent: bool = None, exact: bool = True, threads: int = None,
+                     decompose: bool = None) -> 'Solution':
         """
         Get the solution of the Steiner Problem.
 
@@ -234,7 +375,7 @@ class BaseSteinerProblem:
                 )
             # Budget-constrained: maximise connected terminals
             model, x, y1, y2, z, f, penalty_vars = build_budget_model(
-                self, time_limit=time_limit, logfile=log_file
+                self, time_limit=time_limit, logfile=log_file, threads=threads
             )
             gap, runtime, connected_count, selected_edges, penalties = run_budget_model(
                 model, self, x, penalty_vars
@@ -260,6 +401,18 @@ class BaseSteinerProblem:
                 total_terminals=total_terminals,
                 penalties=penalties,
             )
+
+        # Optional biconnected-component decomposition (thesis Ch. 2.6): split a
+        # single-group Steiner tree at its articulation points, solve each block
+        # independently (smaller MIPs) and recombine. Exactness-preserving; opt-in
+        # via decompose=True or the STEINERPY_DECOMPOSE env var.
+        decompose_on = self._decompose_enabled() if decompose is None else decompose
+        if decompose_on and self._decomposable():
+            dec = self._decompose_single_group(
+                time_limit, log_file, solver, dual_ascent, threads
+            )
+            if dec is not None:
+                return dec
 
         # Optional dual-ascent accelerator: lower bound + primal heuristic +
         # reduced-cost variable fixing. Early-exits when proven optimal.
@@ -288,7 +441,7 @@ class BaseSteinerProblem:
                 da_ub = da.upper_bound
 
         if solver == "gurobi":
-            model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file)
+            model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
             if da_cuts is not None:
                 from .dual_ascent import (
                     apply_fixes_gurobi, seed_cuts_gurobi, set_gurobi_cutoff,
@@ -297,8 +450,14 @@ class BaseSteinerProblem:
                 apply_fixes_gurobi(model, x, y1, y2, fixing)
                 set_gurobi_cutoff(model, da_ub)
             gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
+            if da_cuts is not None and _math.isinf(objective):
+                # The dual-ascent acceleration (cutoff / fixing / seeded cuts)
+                # over-constrained the model into infeasibility although the
+                # instance is feasible; re-solve from a clean model.
+                model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
+                gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
         else:
-            model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
+            model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
             if da_cuts is not None:
                 from .dual_ascent import (
                     apply_fixes_highs, set_highs_warm_start,
@@ -309,6 +468,11 @@ class BaseSteinerProblem:
                 set_highs_warm_start(model, x, da_primal)
                 set_highs_cutoff(model, da_ub)
             gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
+            if da_cuts is not None and _math.isinf(objective):
+                # The acceleration over-constrained a feasible instance into
+                # infeasibility; re-solve from a clean, un-accelerated model.
+                model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
+                gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
@@ -473,7 +637,7 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             edges, nodes, pcstp_obj = [], triv_nodes, triv_obj
         return self._pc_make_solution(ctx, edges, nodes, pcstp_obj, gap, runtime)
 
-    def _pc_exact_solution(self, time_limit, log_file, solver) -> 'PrizeCollectingSolution':
+    def _pc_exact_solution(self, time_limit, log_file, solver, threads=None) -> 'PrizeCollectingSolution':
         """Exact solve via the SAP transformation + dual-ascent-accelerated ILP."""
         import time as _time, math as _math
         from .pc_transform import map_sap_solution_to_pcstp
@@ -500,6 +664,7 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         gap, _rt, _sap_obj, sap_arcs = solve(
             view, time_limit=time_limit, logfile=log_file,
             fixing=fixing, da_cuts=da_cuts, da_ub=da_ub, primal=da_primal,
+            threads=threads,
         )
 
         edges, nodes, pcstp_obj = map_sap_solution_to_pcstp(ctx, sap_arcs)
@@ -537,7 +702,7 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
 
     def get_solution(self, time_limit: float = 300, log_file: str = "",
                      solver: str = "highs", pc_transform: bool = None,
-                     exact: bool = True) -> 'PrizeCollectingSolution':
+                     exact: bool = True, threads: int = None) -> 'PrizeCollectingSolution':
         """Solve the prize-collecting problem.
 
         By default uses the penalty/Big-M flow ILP (HiGHS only). Two opt-in fast
@@ -574,11 +739,11 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
                     "MWCSP only; not penalty_budget / multi-group / penalty_cost "
                     "!= 0 variants."
                 )
-            return self._pc_exact_solution(time_limit, log_file, solver)
+            return self._pc_exact_solution(time_limit, log_file, solver, threads=threads)
 
         # Default: the existing penalty/Big-M flow ILP (HiGHS only), unchanged.
         model, x, y1, y2, z, f, node_vars, penalty_vars = build_prize_collecting_model(
-            self, time_limit=time_limit, logfile=log_file
+            self, time_limit=time_limit, logfile=log_file, threads=threads
         )
         
         gap, runtime, objective, selected_edges, selected_nodes, penalties = run_prize_collecting_model(
@@ -664,7 +829,7 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         super().__init__(transformed_graph, new_terminal_groups, weight=weight,
                          preprocess=False, **kwargs)
 
-    def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs") -> 'NodeWeightedSolution':
+    def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs", threads: int = None) -> 'NodeWeightedSolution':
         """Solve and map solution back to the original node-weighted graph."""
         from .mathematical_model import build_model, run_model, build_model_gurobi, run_model_gurobi
 
@@ -673,10 +838,10 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
             raise ValueError(f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'.")
 
         if solver == "gurobi":
-            model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file)
+            model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
             gap, runtime, objective, _ = run_model_gurobi(model, self, x, y2, z)
         else:
-            model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file)
+            model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
             gap, runtime, objective, _ = run_model(model, self, x, y2, z)
 
         # Use arc (y1) variables for the actual directed tree structure instead of edge

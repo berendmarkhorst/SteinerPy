@@ -147,6 +147,58 @@ def test_undirected_edge_fixed_only_when_both_directions_fixable():
         assert (u, v) in fixing.fix_y1_arcs and (v, u) in fixing.fix_y1_arcs
 
 
+def _seed7_instance():
+    """Random instance where multi-root ascent picks a root != the model root.
+
+    Reproduces the directional-arc-fixing soundness bug: the model is rooted at
+    ``roots[0]`` but multi-root ascent kept a different terminal as its root, so
+    its arc reduced costs certified the *wrong* orientation.  Applying that
+    directional y2 fix rendered the (feasible) ILP infeasible, and the cut loop
+    spun forever.
+    """
+    import random
+    random.seed(7)
+    g = nx.gnm_random_graph(40, 120, seed=7)
+    while not nx.is_connected(g):
+        cc = list(nx.connected_components(g))
+        g.add_edge(next(iter(cc[0])), next(iter(cc[1])))
+    for u, v in g.edges():
+        g[u][v]["weight"] = random.randint(1, 9)
+    terms = list(set(random.sample(list(g.nodes()), 5)))
+    return g, terms
+
+
+def test_fixing_sound_when_ascent_root_differs_from_model_root():
+    # The directional y2 fix must never forbid an arc of an optimal *model-root*
+    # arborescence when multi-root ascent chose a different root.
+    g, terms = _seed7_instance()
+    p = SteinerProblem(g.copy(), [terms], preprocess=True, da_reduce=True)
+    da = dual_ascent(p)
+    assert da.groups[0].root != p.roots[0]   # the bug-triggering condition
+
+    # Recover an optimal directed arborescence (model rooted at roots[0]).
+    baseline = SteinerProblem(g.copy(), [terms], preprocess=False).get_solution(
+        dual_ascent=False, decompose=False)
+    optimum = baseline.objective
+
+    fixing = reduced_cost_fixing(p, da)
+    # No fixed arc may coincide with an optimal-tree edge orientation reachable
+    # from the model root: the accelerated solve must still reach the optimum.
+    acc = p.get_solution(dual_ascent=True, decompose=False)
+    assert acc.objective == optimum
+
+
+def test_accelerated_solve_terminates_and_is_optimal():
+    # End-to-end guard against the infinite cut loop: the accelerated path must
+    # terminate and return the baseline optimum on the seed-7 instance.
+    g, terms = _seed7_instance()
+    base = SteinerProblem(g.copy(), [terms], preprocess=False).get_solution(
+        dual_ascent=False, decompose=False).objective
+    acc = SteinerProblem(g.copy(), [terms], preprocess=True, da_reduce=True).get_solution(
+        dual_ascent=True, decompose=False).objective
+    assert acc == base
+
+
 # ---------------------------------------------------------------------------
 # End-to-end: accelerator returns the SAME optimum as the baseline
 # ---------------------------------------------------------------------------

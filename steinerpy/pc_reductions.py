@@ -26,23 +26,19 @@ from typing import Dict, Set, Tuple
 
 import networkx as nx
 
+# Below this many edges the parallel PCD test isn't worth the process-pool /
+# adjacency-pickling overhead; run it serially instead.
+_PCD_PARALLEL_MIN_EDGES = 1500
 
-def _pcd_edge_deletable(
-    graph: nx.Graph,
-    vstart,
-    vend,
-    node_prizes: Dict,
-    weight: str,
-    eps: float,
-    max_settle: int,
-) -> bool:
-    """Report Algorithm 1: is edge ``{vstart, vend}`` redundant (deletable)?
+
+def _pcd_edge_deletable_adj(adj, vstart, vend, node_prizes, eps, max_settle) -> bool:
+    """Report Algorithm 1 on a dict-of-dict adjacency ``adj[v][w] = cost``.
 
     Runs the modified, prize-discounted Dijkstra from ``vstart`` over
     ``E \\ {vstart, vend}`` and returns ``True`` as soon as ``vend`` is reached by
     a prize-constrained walk of undiscounted cost ``<= c({vstart, vend})``.
     """
-    c0 = graph[vstart][vend].get(weight, 1)
+    c0 = adj[vstart][vend]
     dist: Dict = {vstart: 0.0}
     forbidden: Dict = {vstart: True}     # endpoints / consumed potential terminals
     counter = itertools.count()          # tiebreaker for non-comparable node labels
@@ -58,13 +54,12 @@ def _pcd_edge_deletable(
         if node_prizes.get(v, 0) > 0:
             forbidden[v] = True
 
-        for w, attr in graph[v].items():
+        for w, c_vw in adj[v].items():
             # Exclude the edge under test (walk lives in E \ {e}).
             if (v == vstart and w == vend) or (v == vend and w == vstart):
                 continue
             if forbidden.get(w, False):
                 continue
-            c_vw = attr.get(weight, 1)
             if dist[v] + c_vw > c0 + eps:        # undiscounted cost must stay <= c0
                 continue
             cand = dist[v] + c_vw - node_prizes.get(w, 0)
@@ -77,27 +72,43 @@ def _pcd_edge_deletable(
     return False
 
 
+def _pcd_for_edge(edge):
+    """Worker: is ``edge`` deletable?  Reads shared ``(adj, prizes, eps, ms)``."""
+    from ._parallel import get_shared
+    adj, node_prizes, eps, max_settle = get_shared()
+    u, v = edge
+    if _pcd_edge_deletable_adj(adj, u, v, node_prizes, eps, max_settle) or \
+       _pcd_edge_deletable_adj(adj, v, u, node_prizes, eps, max_settle):
+        return edge
+    return None
+
+
 def prize_constrained_distance_deletions(
     graph: nx.Graph,
     node_prizes: Dict,
     weight: str = "weight",
     eps: float = 1e-9,
     max_settle: int = 2000,
+    jobs: int = None,
 ) -> Set[Tuple]:
     """Edges deletable by the prize-constrained distance (PCD) test.
 
     Runs the restricted Algorithm 1 from *both* endpoints of each edge and marks
     the edge deletable if either direction finds a qualifying detour.  Edge-only
-    and prize-safe.
+    and prize-safe.  The per-edge tests are independent, so on large graphs they
+    run across worker processes (collect-then-apply); small graphs stay serial.
 
     :returns: a set of (u, v) edges that are in no optimal PCSTP solution.
     """
-    to_delete: Set[Tuple] = set()
-    for u, v in graph.edges():
-        if _pcd_edge_deletable(graph, u, v, node_prizes, weight, eps, max_settle) or \
-           _pcd_edge_deletable(graph, v, u, node_prizes, weight, eps, max_settle):
-            to_delete.add((u, v))
-    return to_delete
+    from ._parallel import reduce_jobs, pmap
+
+    adj = {v: {w: float(a.get(weight, 1)) for w, a in graph[v].items()}
+           for v in graph.nodes()}
+    edges = list(graph.edges())
+    njobs = reduce_jobs() if jobs is None else jobs
+    results = pmap(_pcd_for_edge, edges, njobs, (adj, node_prizes, eps, max_settle),
+                   min_items=_PCD_PARALLEL_MIN_EDGES)
+    return {e for e in results if e is not None}
 
 
 def reduce_pcstp_graph(

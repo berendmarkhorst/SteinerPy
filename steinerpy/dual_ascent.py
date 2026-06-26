@@ -23,8 +23,35 @@ import math
 
 import networkx as nx
 
+from ._fastgraph import HAS_SCIPY
+
+if HAS_SCIPY:  # pragma: no cover - both branches exercised in CI
+    import numpy as np
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import dijkstra as _sp_dijkstra
+
 EPS = 1e-9
 Arc = Tuple[Hashable, Hashable]
+
+
+# ---------------------------------------------------------------------------
+# scipy-accelerated shortest paths (with a networkx fallback)
+# ---------------------------------------------------------------------------
+
+def _index_nodes(nodes):
+    node_list = list(nodes)
+    return node_list, {v: i for i, v in enumerate(node_list)}
+
+
+def _build_cost_csr(arcs, costs, idx, n, reverse=False):
+    """csr_matrix of non-negative arc costs (optionally on the reversed graph)."""
+    tails = np.fromiter(((idx[a[1]] if reverse else idx[a[0]]) for a in arcs),
+                        dtype=np.int32, count=len(arcs))
+    heads = np.fromiter(((idx[a[0]] if reverse else idx[a[1]]) for a in arcs),
+                        dtype=np.int32, count=len(arcs))
+    data = np.fromiter((max(0.0, costs[a]) for a in arcs),
+                       dtype=np.float64, count=len(arcs))
+    return csr_matrix((data, (tails, heads)), shape=(n, n))
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +225,33 @@ def _candidate_roots(terminals, root, cap: int = MAX_ROOTS) -> List:
     return [root] + others[: max(0, cap - 1)]
 
 
+# Only engage process-parallel multi-root ascent above this arc count; below it
+# the serial early-exit path plus process/graph-pickling overhead would lose.
+_ASCENT_PARALLEL_MIN_ARCS = 4000
+
+
+def _ascent_primal_worker(r):
+    """Worker: full ascent + primal from root ``r`` (reads shared payload).
+
+    Shared payload is ``(graph, arcs, terminals, costs, weight, is_directed)``.
+    Returns ``(GroupAscent, primal_edges_or_None, upper_bound)`` — all picklable.
+    """
+    from ._parallel import get_shared
+    graph, arcs, terminals, costs, weight, is_directed = get_shared()
+    nodes = _node_universe(arcs, terminals, r)
+    ga = _ascent(list(arcs), r, terminals, costs, nodes)
+    sat = {a for a in arcs if ga.reduced_costs[a] <= EPS}
+    pe, ok = _primal_for_group(graph, arcs, r, terminals, sat, weight, is_directed)
+    ub = _edges_cost(graph, pe, weight) if ok else math.inf
+    return ga, (pe if ok else None), ub
+
+
+def _better_ga(ga_best, ga):
+    return (ga_best is None
+            or (math.isinf(ga_best.lower_bound) and not math.isinf(ga.lower_bound))
+            or (not math.isinf(ga.lower_bound) and ga.lower_bound > ga_best.lower_bound))
+
+
 def _multi_root_group(graph, arcs: List[Arc], terminals, costs: Dict[Arc, float],
                       candidate_roots: List, weight, is_directed: bool):
     """Multi-root / multi-start dual ascent for one group on initial *costs*.
@@ -213,15 +267,34 @@ def _multi_root_group(graph, arcs: List[Arc], terminals, costs: Dict[Arc, float]
       roots (any feasible primal is a valid upper bound, so the minimum is too).
       A tighter upper bound yields more early-exits and stronger fixing — this is
       the main win, because the lower bound is typically already very tight.
+
+    On large instances (and when ``STEINERPY_ASCENT_JOBS`` opts in) the per-root
+    ascents are independent and run across worker processes (thesis Ch. 6.3.1);
+    that forfeits the serial adaptive LB==UB early-exit, so it is gated on size.
     """
-    ga_best: Optional[GroupAscent] = None
+    from ._parallel import ascent_jobs
+
+    jobs = ascent_jobs()
+    if jobs > 1 and len(candidate_roots) >= 3 and len(arcs) >= _ASCENT_PARALLEL_MIN_ARCS:
+        from ._parallel import pmap
+        shared = (graph, arcs, terminals, costs, weight, is_directed)
+        results = pmap(_ascent_primal_worker, candidate_roots, jobs, shared,
+                       min_items=3)
+        ga_best: Optional[GroupAscent] = None
+        best_primal, best_ub = None, math.inf
+        for ga, pe, ub in results:
+            if _better_ga(ga_best, ga):
+                ga_best = ga
+            if pe is not None and ub < best_ub:
+                best_ub, best_primal = ub, pe
+        return ga_best, best_primal, best_ub
+
+    ga_best = None
     best_primal, best_ub = None, math.inf
     for r in candidate_roots:
         nodes = _node_universe(arcs, terminals, r)
         ga = _ascent(list(arcs), r, terminals, costs, nodes)
-        if ga_best is None \
-                or (math.isinf(ga_best.lower_bound) and not math.isinf(ga.lower_bound)) \
-                or (not math.isinf(ga.lower_bound) and ga.lower_bound > ga_best.lower_bound):
+        if _better_ga(ga_best, ga):
             ga_best = ga
         sat = {a for a in arcs if ga.reduced_costs[a] <= EPS}
         pe, ok = _primal_for_group(graph, arcs, r, terminals, sat, weight, is_directed)
@@ -251,27 +324,51 @@ def _primal_for_group(graph, arcs, root, terminals, sat: Set[Arc], weight,
     Returns (selected_edges_or_arcs, feasible).
     """
     nodes = _node_universe(arcs, terminals, root)
-    H = nx.DiGraph()
-    H.add_nodes_from(nodes)
-    for a in arcs:
-        w = 0.0 if a in sat else _edge_cost(graph, a[0], a[1], weight)
-        H.add_edge(a[0], a[1], w=w)
-
-    try:
-        _, paths = nx.single_source_dijkstra(H, root, weight="w")
-    except nx.NodeNotFound:
-        return [], False
-
     term_set = set(terminals)
     sel_arcs: Set[Arc] = set()
-    for t in terminals:
-        if t == root:
-            continue
-        path = paths.get(t)
-        if path is None:
-            return [], False  # terminal unreachable
-        for i in range(len(path) - 1):
-            sel_arcs.add((path[i], path[i + 1]))
+
+    if HAS_SCIPY:
+        node_list, idx = _index_nodes(nodes)
+        if root not in idx:
+            return [], False
+        costs = {a: (0.0 if a in sat else _edge_cost(graph, a[0], a[1], weight)) for a in arcs}
+        M = _build_cost_csr(arcs, costs, idx, len(node_list))
+        dist, pred = _sp_dijkstra(M, directed=True, indices=idx[root],
+                                  return_predecessors=True)
+        root_i = idx[root]
+        for t in terminals:
+            if t == root:
+                continue
+            ti = idx.get(t)
+            if ti is None or not np.isfinite(dist[ti]):
+                return [], False  # terminal unreachable
+            j = ti
+            while j != root_i:
+                p = int(pred[j])
+                if p < 0:
+                    return [], False
+                sel_arcs.add((node_list[p], node_list[j]))
+                j = p
+    else:
+        H = nx.DiGraph()
+        H.add_nodes_from(nodes)
+        for a in arcs:
+            w = 0.0 if a in sat else _edge_cost(graph, a[0], a[1], weight)
+            H.add_edge(a[0], a[1], w=w)
+
+        try:
+            _, paths = nx.single_source_dijkstra(H, root, weight="w")
+        except nx.NodeNotFound:
+            return [], False
+
+        for t in terminals:
+            if t == root:
+                continue
+            path = paths.get(t)
+            if path is None:
+                return [], False  # terminal unreachable
+            for i in range(len(path) - 1):
+                sel_arcs.add((path[i], path[i + 1]))
 
     # Prune non-terminal, non-root leaves (out-degree 0) to a fixpoint.
     tree = nx.DiGraph()
@@ -405,6 +502,13 @@ def dual_ascent(steiner_problem, weight: Optional[str] = None) -> DualAscentResu
 # ---------------------------------------------------------------------------
 
 def _dist_from_root(arcs, costs, root, nodes) -> Dict:
+    if HAS_SCIPY:
+        node_list, idx = _index_nodes(nodes)
+        if root not in idx:
+            return {}
+        M = _build_cost_csr(arcs, costs, idx, len(node_list))
+        d = _sp_dijkstra(M, directed=True, indices=idx[root])
+        return {node_list[i]: float(d[i]) for i in range(len(node_list)) if np.isfinite(d[i])}
     Gr = nx.DiGraph()
     Gr.add_nodes_from(nodes)
     for a in arcs:
@@ -414,6 +518,24 @@ def _dist_from_root(arcs, costs, root, nodes) -> Dict:
 
 def _dist_to_terminals(arcs, costs, terminals, nodes) -> Dict:
     """min_t d(j, t) for every node j, via a super-source on the reversed graph."""
+    if HAS_SCIPY:
+        node_list, idx = _index_nodes(nodes)
+        n = len(node_list)
+        # Reversed graph + a zero-cost super-source (index n) into every terminal:
+        # a single Dijkstra then gives min_t d(j, t) for every node j.
+        tails = [idx[a[1]] for a in arcs]
+        heads = [idx[a[0]] for a in arcs]
+        data = [max(0.0, costs[a]) for a in arcs]
+        for t in terminals:
+            if t in idx:
+                tails.append(n); heads.append(idx[t]); data.append(0.0)
+        M = csr_matrix(
+            (np.asarray(data, dtype=np.float64),
+             (np.asarray(tails, dtype=np.int32), np.asarray(heads, dtype=np.int32))),
+            shape=(n + 1, n + 1),
+        )
+        d = _sp_dijkstra(M, directed=True, indices=n)
+        return {node_list[i]: float(d[i]) for i in range(n) if np.isfinite(d[i])}
     Grev = nx.DiGraph()
     Grev.add_nodes_from(nodes)
     for a in arcs:
@@ -477,15 +599,41 @@ def reduced_cost_fixing(steiner_problem, da: DualAscentResult) -> FixingResult:
         # Single group / directed: tight arc-level fixing with arc reduced costs.
         ga = da.groups[0]
         fix_arcs = _fixable_arcs_single(arcs, ga.reduced_costs, ga.root, ga.terminals, lb, ub)
-        result.fix_y1_arcs = set(fix_arcs)
-        result.fix_y2 = {0: set(fix_arcs)}
         if da.is_directed:
+            # A genuinely directed instance has a fixed root that equals the
+            # ascent root, so the directional arc fix is sound as computed.
+            result.fix_y1_arcs = set(fix_arcs)
+            result.fix_y2 = {0: set(fix_arcs)}
             result.fix_x_edges = {e for e in edges if e in fix_arcs}
         else:
-            result.fix_x_edges = {
+            # Undirected: any optimal Steiner tree is an arborescence rooted at
+            # the *model's* root (``roots[0]``).  Multi-root ascent may have kept
+            # a different root for a tighter bound; its reduced costs then certify
+            # only the orientation of *that* root's arborescence.  Fixing a single
+            # directed arc y2[(0,(i,j))] is therefore sound only when the ascent
+            # root matches the model root.  The *edge* fix (both arc directions
+            # fixable) is root-agnostic-valid: if neither orientation appears in
+            # any optimal arborescence of the ascent's root, the undirected edge
+            # is in no optimal tree at all.  So always emit the edge fix, but use
+            # the stronger directional arc fix only when the roots coincide;
+            # otherwise forbid both orientations of each fully-fixed edge.
+            fix_x = {
                 e for e in edges
                 if (e[0], e[1]) in fix_arcs and (e[1], e[0]) in fix_arcs
             }
+            result.fix_x_edges = set(fix_x)
+            model_root = steiner_problem.roots[0]
+            if ga.root == model_root:
+                result.fix_y1_arcs = set(fix_arcs)
+                result.fix_y2 = {0: set(fix_arcs)}
+            else:
+                sym = set()
+                for e in fix_x:
+                    for a in ((e[0], e[1]), (e[1], e[0])):
+                        if a in arc_set:
+                            sym.add(a)
+                result.fix_y1_arcs = sym
+                result.fix_y2 = {0: set(sym)}
     else:
         # Forest: edge-level fixing with the (symmetric) final residual.
         fix_edges = _fixable_edges_forest(

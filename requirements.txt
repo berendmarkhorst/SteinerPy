@@ -1,2 +1,3 @@
 networkx
 highspy
+scipy>=1.10.1

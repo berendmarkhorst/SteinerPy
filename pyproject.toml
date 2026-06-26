@@ -37,6 +37,7 @@ requires-python = ">=3.8"
 dependencies = [
     "networkx",
     "highspy",
+    "scipy>=1.10.1",
 ]
 
 [project.optional-dependencies]

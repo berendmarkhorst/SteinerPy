@@ -466,8 +466,49 @@ def special_distance_deletions(G: nx.Graph, terminals: Set, weight: str = "weigh
     return to_delete
 
 
+# Below this many vertices the parallel long-edge test isn't worth the
+# process-pool / graph-pickling overhead; run it serially instead.
+_LONG_EDGE_PARALLEL_MIN_NODES = 1500
+
+
+def _long_edge_for_vertex(v0):
+    """Deletable incident edges of ``v0`` (worker; reads shared adjacency).
+
+    Shared payload is ``(adj, max_settle, eps)`` where ``adj[v]`` is a tuple of
+    ``(neighbour, cost)`` pairs.  Returns a list of ``(v0, w)`` edges.
+    """
+    import heapq
+    from ._parallel import get_shared
+    adj, max_settle, eps = get_shared()
+    nbrs = adj.get(v0, ())
+    if not nbrs:
+        return ()
+    cmax = max(c for _w, c in nbrs)
+    dist = {v0: 0.0}
+    pq = [(0.0, v0)]
+    settled = 0
+    while pq and settled < max_settle:
+        d, x = heapq.heappop(pq)
+        if d > dist.get(x, float("inf")):
+            continue
+        if d >= cmax:                       # no cheaper detour for any incident edge
+            break
+        settled += 1
+        for y, c in adj.get(x, ()):
+            nd = d + c
+            if nd < dist.get(y, float("inf")):
+                dist[y] = nd
+                heapq.heappush(pq, (nd, y))
+    out = []
+    for w, c in nbrs:
+        if dist.get(w, float("inf")) < c - eps:
+            out.append((v0, w))
+    return out
+
+
 def long_edge_deletions(G: nx.Graph, weight: str = "weight",
-                        max_settle: int = 2000, eps: float = 1e-9) -> Set[Tuple]:
+                        max_settle: int = 2000, eps: float = 1e-9,
+                        jobs: int = None) -> Set[Tuple]:
     """Edges deletable because a strictly cheaper detour exists in ``G \\ e``.
 
     If the shortest-path distance between the endpoints of ``e = {v, w}`` is below
@@ -484,34 +525,24 @@ def long_edge_deletions(G: nx.Graph, weight: str = "weight",
     largest incident edge cost (no cheaper detour for any incident edge can lie
     beyond it) and by ``max_settle`` nodes.  This is ``O(n)`` bounded Dijkstras
     instead of ``O(m)``, and stays valid for the Steiner *forest*.
+
+    The per-vertex tests are independent, so on large graphs they are run across
+    worker processes (thesis Ch. 6.3.1 collect-then-apply) and the deletable
+    edges unioned; small graphs stay serial.
     """
-    import heapq
+    from ._parallel import reduce_jobs, pmap
+
+    # Lightweight, picklable adjacency with pre-extracted float costs.
+    adj = {v: tuple((w, float(a.get(weight, 1))) for w, a in G[v].items())
+           for v in G.nodes()}
+    nodes = list(G.nodes())
+    njobs = reduce_jobs() if jobs is None else jobs
+    results = pmap(_long_edge_for_vertex, nodes, njobs, (adj, max_settle, eps),
+                   min_items=_LONG_EDGE_PARALLEL_MIN_NODES)
 
     to_delete: Set[Tuple] = set()
-    for v0 in G.nodes():
-        nbrs = G[v0]
-        if not nbrs:
-            continue
-        cmax = max(a.get(weight, 1) for a in nbrs.values())
-        dist = {v0: 0.0}
-        pq = [(0.0, v0)]
-        settled = 0
-        while pq and settled < max_settle:
-            d, x = heapq.heappop(pq)
-            if d > dist.get(x, float("inf")):
-                continue
-            if d >= cmax:                   # no cheaper detour for any incident edge
-                break
-            settled += 1
-            for y, attr in G[x].items():
-                nd = d + attr.get(weight, 1)
-                if nd < dist.get(y, float("inf")):
-                    dist[y] = nd
-                    heapq.heappush(pq, (nd, y))
-        for w, attr in nbrs.items():
-            c = attr.get(weight, 1)
-            if dist.get(w, float("inf")) < c - eps:
-                to_delete.add((v0, w))
+    for r in results:
+        to_delete.update(r)
     return to_delete
 
 def heavy_edge_deletions(G: nx.Graph, terminal_groups: List[List], weight: str = "weight",
