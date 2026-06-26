@@ -400,6 +400,44 @@ def _edges_cost(graph, edges, weight) -> float:
     return sum(_edge_cost(graph, u, v, weight) for (u, v) in edges)
 
 
+def refine_primal_mst(graph, primal_edges, terminals, weight) -> List[Tuple]:
+    """Kou-style cleanup of a feasible *undirected, single-group* Steiner tree.
+
+    The dual-ascent primal (:func:`_primal_for_group`) is a union of root->terminal
+    shortest paths, so it can carry redundant edges and miss cheaper chords. This
+    recomputes a minimum spanning tree over the subgraph **induced** by the
+    primal's vertices in ``graph`` (where those cheaper chords live), then prunes
+    non-terminal leaves to a fixpoint; the MST/prune is repeated until the tree
+    stops shrinking. The induced subgraph is connected (the input primal spans
+    it), so the MST exists and costs ``<=`` the input — exactly the refinement
+    step of Kou et al. (1981). Returns the refined edge list.
+
+    Only sound for a single connected tree spanning ``terminals`` (undirected);
+    the caller must not use it for forests or directed problems.
+    """
+    if not primal_edges:
+        return list(primal_edges)
+    term_set = set(terminals)
+    verts = {v for e in primal_edges for v in e}
+    edges = list(primal_edges)
+    for _ in range(len(verts) + 1):  # bounded fixpoint
+        tree = nx.minimum_spanning_tree(graph.subgraph(verts), weight=weight)
+        changed = True
+        while changed:  # prune non-terminal leaves
+            changed = False
+            leaves = [n for n in tree.nodes()
+                      if n not in term_set and tree.degree(n) <= 1]
+            if leaves:
+                tree.remove_nodes_from(leaves)
+                changed = True
+        new_verts = set(tree.nodes())
+        edges = list(tree.edges())
+        if new_verts == verts:
+            break
+        verts = new_verts
+    return edges
+
+
 # ---------------------------------------------------------------------------
 # Forest: sequential shared edge-budget dual ascent
 # ---------------------------------------------------------------------------

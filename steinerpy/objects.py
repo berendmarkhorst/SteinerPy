@@ -181,6 +181,21 @@ class BaseSteinerProblem:
                 "dual-ascent heuristic found no feasible solution; the terminals "
                 "may be disconnected."
             )
+        # Kou-style cleanup for the classic single-group undirected case: recompute
+        # an MST over the subgraph induced by the dual-ascent primal's vertices and
+        # prune non-terminal leaves. It never increases cost, so it tightens both
+        # the tree and the certified gap (lower_bound is unchanged). Scoped to this
+        # heuristic path only, so the exact solver's warm-start primal/cutoff and
+        # reduced-cost fixing — which consume the raw dual-ascent primal — are
+        # untouched.
+        if not da.is_directed and len(self.terminal_groups) == 1:
+            from .dual_ascent import refine_primal_mst, _edges_cost
+            refined = refine_primal_mst(
+                self.graph, da.primal_edges, self.terminal_groups[0], self.weight)
+            if refined:
+                rcost = _edges_cost(self.graph, refined, self.weight)
+                if rcost < da.upper_bound:
+                    da.primal_edges, da.upper_bound = refined, rcost
         if _math.isinf(da.lower_bound):
             gap = _math.inf
         else:
