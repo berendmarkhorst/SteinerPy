@@ -3,10 +3,13 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main ]
-    tags:
-      - 'v*' # <--- This will catch the tags created by the bump workflow
   pull_request:
     branches: [ main ]
+
+# Serialize release runs so two quick merges can't race on the version bump/push.
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -18,23 +21,23 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install uv
       uses: astral-sh/setup-uv@v4
       with:
         enable-cache: true
         version: "latest"
-    
+
     - name: Set up Python ${{ matrix.python-version }}
       run: uv python install ${{ matrix.python-version }}
-    
+
     - name: Install dependencies
       run: uv sync --dev
-    
+
     - name: Run tests
       run: |
         uv run pytest tests/ -v --cov=steinerpy --cov-report=xml --cov-report=html
-    
+
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
       with:
@@ -42,32 +45,64 @@ jobs:
         fail_ci_if_error: true
         token: ${{ secrets.CODECOV_TOKEN }}
 
-  publish:
+  release:
+    name: Bump version & publish to PyPI
     needs: test
-    # Only publish if we pushed a tag (not just a regular commit)
-    if: startsWith(github.ref, 'refs/tags/v') 
+    # Run only on a real merge/push to main. Skip PRs, and skip the bot's own
+    # bump commit (belt-and-suspenders: GITHUB_TOKEN pushes don't retrigger anyway).
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      !startsWith(github.event.head_commit.message, 'chore: bump version')
     runs-on: ubuntu-latest
-    
-    # These permissions are required for Trusted Publishing (OIDC)
+
+    # Dedicated environment for publishing — register this name on PyPI's
+    # trusted-publisher config (Publishing -> Add a pending publisher).
+    environment:
+      name: pypi
+      url: https://pypi.org/project/steinerpy/
+
     permissions:
-      id-token: write
-      contents: read
-    
+      contents: write   # push the bump commit + tag back to main
+      id-token: write   # OIDC trusted publishing to PyPI (no API token needed)
+
     steps:
     - uses: actions/checkout@v4
-    
+      with:
+        fetch-depth: 0
+
     - name: Install uv
       uses: astral-sh/setup-uv@v4
       with:
         version: "latest"
-    
+
     - name: Set up Python
       run: uv python install 3.11
-    
-    - name: Build package
+
+    - name: Configure Git
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Bump patch version
+      id: bump
+      run: |
+        BUMP_OUTPUT=$(uv version --bump patch)
+        NEW_VERSION=$(echo "$BUMP_OUTPUT" | awk '{print $NF}')
+        echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+        echo "Bumped to $NEW_VERSION"
+        uv lock
+
+    - name: Commit, tag, and push
+      run: |
+        git add pyproject.toml uv.lock
+        git commit -m "chore: bump version to ${{ steps.bump.outputs.version }}"
+        git tag -a "v${{ steps.bump.outputs.version }}" -m "Release ${{ steps.bump.outputs.version }}"
+        git push origin HEAD:main --follow-tags
+
+    - name: Build distributions
       run: uv build
-    
+
     - name: Publish to PyPI
-      # No secrets.PYPI_API_TOKEN needed! 
-      # uv detects the OIDC token automatically if permissions are set above.
+      # uv auto-detects the OIDC token from id-token: write — no PYPI_API_TOKEN.
       run: uv publish
