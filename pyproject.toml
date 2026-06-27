@@ -16,7 +16,7 @@ authors = [
     {name = "Rob van der Mei"},
 ]
 maintainers = [
-    {name = "Berend Markhorst", email = "your.email@example.com"},  # Replace with actual email
+    {name = "Berend Markhorst", email = "berend.markhorst@gmail.com"},
 ]
 keywords = ["steiner", "tree", "forest", "optimization", "graph", "networkx", "highs"]
 classifiers = [
@@ -37,6 +37,7 @@ requires-python = ">=3.8"
 dependencies = [
     "networkx",
     "highspy",
+    "scipy>=1.10.1",
 ]
 
 [project.optional-dependencies]

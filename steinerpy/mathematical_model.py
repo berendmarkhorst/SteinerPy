@@ -1,23 +1,78 @@
 import highspy as hp
 import logging
+import math
 import networkx as nx
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Set, Tuple, Dict, Union
+
+from ._fastgraph import HAS_SCIPY, get_arc_csr, min_cut_scipy, cpu_count
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-def make_model(time_limit: float, logfile: str = "") -> hp.HighsModel:
+
+def _resolve_threads(threads) -> int:
+    """Resolve a HiGHS/Gurobi thread count.
+
+    ``None`` -> read ``STEINERPY_THREADS`` env var, else 0 (solver default: all
+    cores).  ``0`` keeps the solver default.  A positive int is used verbatim.
+    """
+    if threads is None:
+        env = os.environ.get("STEINERPY_THREADS")
+        if env is not None:
+            try:
+                return max(0, int(env))
+            except ValueError:
+                return 0
+        return 0
+    try:
+        return max(0, int(threads))
+    except (TypeError, ValueError):
+        return 0
+
+
+# Separation parallelism: number of worker threads for the per-terminal min-cut
+# computations.  scipy's maximum_flow releases the GIL, so threads overlap.
+def _sep_thread_count() -> int:
+    env = os.environ.get("STEINERPY_SEP_THREADS")
+    if env is not None:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    return max(1, min(8, cpu_count()))
+
+
+# Below this many independent min-cut tasks per group it is not worth paying the
+# thread-pool dispatch overhead; run them serially instead.
+_SEP_PARALLEL_MIN_TASKS = 4
+
+
+def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsModel:
     """
     Creates a HiGHS model with the given time limit and logfile.
     :param time_limit: time limit in seconds for the HiGHS model.
     :param logfile: path to logfile.
+    :param threads: HiGHS thread count.  ``None`` -> ``STEINERPY_THREADS`` env or
+        the solver default (all cores); ``0`` -> solver default; positive int ->
+        that many threads.  Multithreading parallelises the MIP branch-and-bound.
     :return: HiGHS model.
     """
     # Create model
     model = hp.Highs()
     model.setOptionValue("time_limit", time_limit)
     model.setOptionValue("output_flag", False)  # Disable/enable console output
+
+    nthreads = _resolve_threads(threads)
+    try:
+        model.setOptionValue("threads", nthreads)
+        # Enable parallel MIP/simplex unless the caller pinned a single thread.
+        if nthreads != 1:
+            model.setOptionValue("parallel", "on")
+    except Exception:  # pragma: no cover - older highspy without the option
+        pass
 
     # Clear the logfile and start logging
     if logfile != "":
@@ -281,11 +336,172 @@ def add_optional_flow_constraints(
     return model, f
 
 
+def _residual_source_set(residual, source, eps: float) -> Set:
+    """Nodes reachable from *source* in residual network *residual* over arcs
+    with strictly positive residual capacity (capacity - flow > eps).
+
+    This is the source side S of a minimum cut; the corresponding cut is the set
+    of outgoing arcs delta+(S).
+    """
+    seen = {source}
+    stack = [source]
+    while stack:
+        u = stack.pop()
+        for v in residual.successors(u):
+            attr = residual[u][v]
+            if v not in seen and attr["capacity"] - attr["flow"] > eps:
+                seen.add(v)
+                stack.append(v)
+    return seen
+
+
+def _residual_sink_set(residual, sink, eps: float) -> Set:
+    """Nodes that can reach *sink* in residual network *residual* over arcs with
+    strictly positive residual capacity (reverse traversal).
+
+    The back cut is the complement S_bar = V \\ (this set): a second minimum cut
+    that hugs the terminal side instead of the root side.
+    """
+    seen = {sink}
+    stack = [sink]
+    while stack:
+        v = stack.pop()
+        for u in residual.predecessors(v):
+            attr = residual[u][v]
+            if u not in seen and attr["capacity"] - attr["flow"] > eps:
+                seen.add(u)
+                stack.append(u)
+    return seen
+
+
+def _emit_cuts_for_terminal(group_id_k, group_id_l, t, cut_value, z_val,
+                            source_sides, csr, eps, node_cuts):
+    """Build the (k, l, cut_arcs) tuples for one terminal's min cut.
+
+    ``source_sides`` is a list of root-side node sets (index sets when ``csr`` is
+    a fast :class:`ArcCSR`, node-name sets for the networkx fallback).
+    ``node_cuts`` selects which interpretation to use.  Returns a list of tuples
+    (possibly empty when the cut is already satisfied).
+    """
+    if cut_value >= z_val - eps:
+        return []  # cut satisfied
+    out = []
+    seen_arc_sets: Set = set()
+    for side in source_sides:
+        if node_cuts:
+            cut_arcs = [(u, v) for (u, v) in node_cuts if u in side and v not in side]
+        else:
+            cut_arcs = csr.cut_arcs(side)
+        key = frozenset(cut_arcs)
+        if key in seen_arc_sets:
+            continue  # duplicate of an already-emitted cut
+        seen_arc_sets.add(key)
+        if not cut_arcs:
+            logging.warning(
+                f"Empty cut for group_k={group_id_k}, group_l={group_id_l}, "
+                f"terminal={t}: no arc exists from the root side to the terminal "
+                f"side. Forcing z[{group_id_k},{group_id_l}] = 0."
+            )
+        out.append((group_id_k, group_id_l, cut_arcs))
+    return out
+
+
+def _group_cuts_scipy(steiner_problem, csr, group_id_k, tasks, y2_vals,
+                      eps, back_cuts, threads):
+    """Min-cut separation for one source group ``k`` using scipy max-flow.
+
+    ``tasks`` is a list of ``(group_id_l, terminal, z_val)`` to check from
+    ``roots[group_id_k]``.  The capacity CSR is built **once** for the whole
+    group (capacities depend only on ``k``); the per-terminal min cuts are
+    independent and run concurrently in a thread pool (scipy releases the GIL).
+    """
+    import numpy as np
+    root_k = steiner_problem.roots[group_id_k]
+    ni = csr.node_index
+    src_idx = ni.get(root_k)
+    if src_idx is None:
+        return []
+
+    cap = np.fromiter(
+        (y2_vals[(group_id_k, a)] + eps for a in csr.arcs),
+        dtype=np.float64, count=len(csr.arcs),
+    )
+    int_csr = csr.build_int_csr(cap)
+
+    def _solve(idx_task):
+        i, (group_id_l, t, z_val) = idx_task
+        sink_idx = ni.get(t)
+        if sink_idx is None or sink_idx == src_idx:
+            return i, None
+        flow_value, src_side, back_side = min_cut_scipy(int_csr, src_idx, sink_idx)
+        sides = [src_side]
+        if back_cuts and back_side != src_side:
+            sides.append(back_side)
+        return i, (group_id_l, t, flow_value, z_val, sides)
+
+    indexed = list(enumerate(tasks))
+    if threads > 1 and len(indexed) >= _SEP_PARALLEL_MIN_TASKS:
+        with ThreadPoolExecutor(max_workers=min(threads, len(indexed))) as ex:
+            results = list(ex.map(_solve, indexed))
+    else:
+        results = [_solve(it) for it in indexed]
+
+    # Re-assemble in task order for a deterministic constraint sequence.
+    results.sort(key=lambda r: r[0])
+    violated: List[Tuple[int, int, List[Tuple]]] = []
+    for _i, payload in results:
+        if payload is None:
+            continue
+        group_id_l, t, flow_value, z_val, sides = payload
+        violated.extend(_emit_cuts_for_terminal(
+            group_id_k, group_id_l, t, flow_value, z_val, sides, csr, eps,
+            node_cuts=None,
+        ))
+    return violated
+
+
+def _group_cuts_nx(steiner_problem, group_id_k, tasks, y2_vals, eps, back_cuts):
+    """networkx fallback min-cut separation for one source group ``k``.
+
+    The capacity digraph is built once per group (was previously rebuilt per
+    ``l``) and reused across all terminals.
+    """
+    root_k = steiner_problem.roots[group_id_k]
+    digraph = nx.DiGraph()
+    for (u, v) in steiner_problem.arcs:
+        digraph.add_edge(u, v, capacity=y2_vals[(group_id_k, (u, v))] + eps)
+    node_cuts = steiner_problem.arcs
+
+    violated: List[Tuple[int, int, List[Tuple]]] = []
+    for (group_id_l, t, z_val) in tasks:
+        if t == root_k:
+            continue
+        try:
+            residual = nx.algorithms.flow.preflow_push(
+                digraph, root_k, t, capacity="capacity", value_only=True
+            )
+            cut_value = residual.graph["flow_value"]
+            sides = [_residual_source_set(residual, root_k, eps)]
+            if back_cuts:
+                sink_set = _residual_sink_set(residual, t, eps)
+                sides.append(set(digraph.nodes) - sink_set)
+        except nx.NetworkXError:
+            cut_value = 0.0
+            sides = [{root_k}]
+        violated.extend(_emit_cuts_for_terminal(
+            group_id_k, group_id_l, t, cut_value, z_val, sides, None, eps,
+            node_cuts=node_cuts,
+        ))
+    return violated
+
+
 def find_violated_cuts_from_values(
     steiner_problem: 'SteinerProblem',
     y2_vals: Dict,
     z_vals: Dict,
     eps: float = 1e-6,
+    back_cuts: bool = True,
+    threads: int = None,
 ) -> List[Tuple[int, int, List[Tuple]]]:
     """
     Find violated directed cut constraints given pre-extracted variable values.
@@ -299,10 +515,24 @@ def find_violated_cuts_from_values(
     roots[group_id_k] to t is satisfied.  A cut is violated when the minimum
     cut value is strictly less than z[k, l].
 
+    The capacity graph for a fixed source group ``k`` is built **once** and
+    reused across every ``l >= k`` and every terminal (it depends only on ``k``).
+    Minimum cuts are computed with ``scipy.sparse.csgraph.maximum_flow`` (C, GIL
+    releasing) when scipy is available and run concurrently across terminals;
+    otherwise a networkx ``preflow_push`` fallback is used.
+
+    Two acceleration techniques from Schmidt, Zey & Margot (2021), Sect. 4.1 are
+    applied: *creep flows* (the ``eps`` added to each arc capacity, which biases
+    the minimum cut towards cutting few arcs) and, when ``back_cuts`` is set, the
+    *back cut* — the second minimum cut on the terminal side, added alongside the
+    usual root-side cut.
+
     :param steiner_problem: SteinerProblem-object.
     :param y2_vals: per-group arc values {(group_id, arc): float}.
     :param z_vals: connectivity variable values {(k, l): float}.
     :param eps: numerical tolerance / creep-flow added to each arc capacity.
+    :param back_cuts: also emit the terminal-side (back) minimum cut.
+    :param threads: separation worker threads (``None`` -> auto).
     :return: list of (group_id_k, group_id_l, cut_arcs) for each violated cut.
     """
     # No terminals → nothing to check
@@ -310,53 +540,35 @@ def find_violated_cuts_from_values(
         return []
 
     group_indices = range(len(steiner_problem.terminal_groups))
-    violated_cuts = []
+    nthreads = _sep_thread_count() if threads is None else max(1, int(threads))
+    use_scipy = HAS_SCIPY
+    csr = get_arc_csr(steiner_problem) if use_scipy else None
 
-    for group_id_l in group_indices:
-        for group_id_k in range(group_id_l + 1):  # k <= l
-            root_k = steiner_problem.roots[group_id_k]
+    violated_cuts: List[Tuple[int, int, List[Tuple]]] = []
+    for group_id_k in group_indices:
+        root_k = steiner_problem.roots[group_id_k]
+        # Collect the (l, terminal, z) tasks for this source group.
+        tasks: List[Tuple[int, object, float]] = []
+        for group_id_l in range(group_id_k, len(steiner_problem.terminal_groups)):
             z_val = z_vals[(group_id_k, group_id_l)]
-
             if z_val < eps:
-                continue  # z = 0 → no connectivity required for this pair
-
-            # Build a directed graph with y2 capacities for group k.
-            # A small eps is added to each capacity for numerical stability in
-            # the minimum-cut computation (prevents division-by-zero issues).
-            digraph = nx.DiGraph()
-            for (u, v) in steiner_problem.arcs:
-                capacity = y2_vals[(group_id_k, (u, v))] + eps
-                digraph.add_edge(u, v, capacity=capacity)
-
+                continue  # z = 0 -> no connectivity required for this pair
             for t in steiner_problem.terminal_groups[group_id_l]:
                 if t == root_k:
                     continue
+                tasks.append((group_id_l, t, z_val))
+        if not tasks:
+            continue
 
-                try:
-                    cut_value, partition = nx.minimum_cut(
-                        digraph, root_k, t, capacity="capacity"
-                    )
-                except nx.NetworkXError:
-                    # No path exists — treat as a zero-capacity cut
-                    cut_value = 0.0
-                    partition = (
-                        {root_k},
-                        set(steiner_problem.nodes) - {root_k},
-                    )
-
-                if cut_value < z_val - eps:
-                    cut_arcs = [
-                        (u, v)
-                        for (u, v) in steiner_problem.arcs
-                        if u in partition[0] and v in partition[1]
-                    ]
-                    if not cut_arcs:
-                        logging.warning(
-                            f"Empty cut for group_k={group_id_k}, group_l={group_id_l}, "
-                            f"terminal={t}: no arc exists from the root side to the terminal "
-                            f"side. Forcing z[{group_id_k},{group_id_l}] = 0."
-                        )
-                    violated_cuts.append((group_id_k, group_id_l, cut_arcs))
+        if use_scipy:
+            violated_cuts.extend(_group_cuts_scipy(
+                steiner_problem, csr, group_id_k, tasks, y2_vals,
+                eps, back_cuts, nthreads,
+            ))
+        else:
+            violated_cuts.extend(_group_cuts_nx(
+                steiner_problem, group_id_k, tasks, y2_vals, eps, back_cuts,
+            ))
 
     return violated_cuts
 
@@ -367,6 +579,7 @@ def find_violated_cuts(
     z: Dict,
     model: hp.HighsModel,
     eps: float = 1e-6,
+    back_cuts: bool = True,
 ) -> List[Tuple[int, int, List[Tuple]]]:
     """
     Find violated directed cut constraints for the current HiGHS LP/MIP solution.
@@ -379,16 +592,24 @@ def find_violated_cuts(
     :param z: connectivity variables {(k, l): var}.
     :param model: HiGHS model (used to read current variable values).
     :param eps: numerical tolerance / creep-flow added to each arc capacity.
+    :param back_cuts: also emit the terminal-side (back) minimum cut.
     :return: list of (group_id_k, group_id_l, cut_arcs) for each violated cut.
     """
     group_indices = range(len(steiner_problem.terminal_groups))
-    y2_vals = {(group_id, a): model.variableValue(y2[(group_id, a)])
-               for group_id in group_indices for a in steiner_problem.arcs}
-    z_vals = {key: model.variableValue(var) for key, var in z.items()}
-    return find_violated_cuts_from_values(steiner_problem, y2_vals, z_vals, eps)
+    # One bulk solution read instead of O(|groups| * |arcs|) variableValue calls.
+    try:
+        col_value = model.getSolution().col_value
+        y2_vals = {(group_id, a): col_value[y2[(group_id, a)].index]
+                   for group_id in group_indices for a in steiner_problem.arcs}
+        z_vals = {key: col_value[var.index] for key, var in z.items()}
+    except Exception:  # pragma: no cover - defensive fallback
+        y2_vals = {(group_id, a): model.variableValue(y2[(group_id, a)])
+                   for group_id in group_indices for a in steiner_problem.arcs}
+        z_vals = {key: model.variableValue(var) for key, var in z.items()}
+    return find_violated_cuts_from_values(steiner_problem, y2_vals, z_vals, eps, back_cuts)
 
 
-def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType]:
+def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logfile: str = "", threads=None) -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType]:
     """
     Returns the deterministic directed model without flow variables.
     Connectivity is enforced lazily via directed cut constraints added during
@@ -397,12 +618,13 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
     :param steiner_problem: SteinerProblem-object.
     :param time_limit: time limit in seconds for the HiGHS model. Default is 300 seconds.
     :param logfile: path to logfile.
+    :param threads: HiGHS thread count (see :func:`make_model`).
     :return: (model, x, y1, y2, z) – HiGHS model and decision variables.
     """
     # Create the model
     logging.info("Building the model.")
 
-    model = make_model(time_limit, logfile)
+    model = make_model(time_limit, logfile, threads=threads)
 
     # Start tracking compilation time
     start_time = time.time()
@@ -413,6 +635,10 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
     # Add degree constraints if max_degree is specified
     if getattr(steiner_problem, 'max_degree', None) is not None:
         add_degree_constraints(model, steiner_problem, x)
+
+    # Add hop constraint if hop_limit is specified (directed problems)
+    if getattr(steiner_problem, 'hop_limit', None) is not None:
+        add_hop_constraint(model, steiner_problem, y1)
 
     # End tracking compilation time
     end_time = time.time()
@@ -450,15 +676,50 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
         for e in steiner_problem.edges
     )
 
-    start_time = time.time()
+    # Bound the *total* cut-generation time. Each model.minimize() is already
+    # capped at the model's time_limit, but the loop can add many rounds of cuts,
+    # so without a global deadline the wall-clock is unbounded (the same flaw fixed
+    # in solve_sap_highs). Read the configured limit, then give each re-solve only
+    # the time remaining and stop once it is exhausted.
+    _tl = model.getOptionValue("time_limit")
+    total_tl = float(_tl[1] if isinstance(_tl, tuple) else _tl)
 
+    start_time = time.time()
+    converged = False
     while True:
+        remaining = total_tl - (time.time() - start_time)
+        if remaining <= 0:
+            break
+        model.setOptionValue("time_limit", remaining)
         model.minimize(objective_expr)
+
+        # If the model has no feasible/valid primal (e.g. an objective cutoff or
+        # variable fixing has rendered it infeasible), there is nothing to
+        # separate cuts from — reading the empty solution would yield spurious
+        # "violations" and loop forever.  Stop the cut loop instead of hanging.
+        status = model.getModelStatus()
+        if status in (
+            hp.HighsModelStatus.kInfeasible,
+            hp.HighsModelStatus.kObjectiveBound,
+            hp.HighsModelStatus.kUnbounded,
+            hp.HighsModelStatus.kUnboundedOrInfeasible,
+        ) or not model.getSolution().value_valid:
+            runtime = time.time() - start_time
+            logging.warning(
+                "Cut loop stopped early: model status %s with no valid primal "
+                "solution; returning no solution.", status,
+            )
+            return float("inf"), runtime, float("inf"), []
 
         violated_cuts = find_violated_cuts(steiner_problem, y2, z, model)
 
         if not violated_cuts:
-            break  # Solution is feasible with respect to all cut constraints
+            # Optimal only if this re-solve proved optimality. A time-limit-
+            # interrupted solve can return a connected but suboptimal incumbent
+            # with no violated cuts; treating it as converged would falsely report
+            # gap 0 (the false-optimal bug fixed in solve_sap_highs).
+            converged = status == hp.HighsModelStatus.kOptimal
+            break  # feasible w.r.t. all cut constraints
 
         # Add each violated cut as a new constraint: sum(y2[k,a] for a in cut) >= z[k,l]
         for group_id_k, group_id_l, cut_arcs in violated_cuts:
@@ -471,8 +732,14 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     logging.info(f"Runtime: {runtime:.2f} seconds")
 
     selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
-    gap = model.getInfo().mip_gap
     objective = model.getObjectiveValue()
+    if converged:
+        gap = model.getInfo().mip_gap
+    else:
+        # Global time limit hit before all connectivity cuts were separated:
+        # selected_edges may be disconnected and the relaxation objective is only a
+        # lower bound, so do not report a (spurious) ~0 MIP gap.
+        gap = float("inf")
 
     return gap, runtime, objective, selected_edges
 
@@ -491,12 +758,29 @@ def add_degree_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProble
         if incident:
             model.addConstr(sum(incident) <= max_degree)
 
-def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time_limit: float = 300, logfile: str = "") -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType]]:
+
+def add_hop_constraint(model: hp.HighsModel, steiner_problem: 'SteinerProblem', y1: Dict) -> None:
+    """
+    Add a hop-limit constraint to the directed model (thesis Ch. 5.8).
+
+    The number of arcs in the arborescence equals ``sum(y1[a])``; bounding it by
+    ``hop_limit`` enforces ``|A(S)| <= H``.  Used by the hop-constrained directed
+    Steiner tree problem (:class:`steinerpy.objects.HopConstrainedSteinerProblem`).
+    :param model: HiGHS model.
+    :param steiner_problem: SteinerProblem-object with a ``hop_limit`` attribute.
+    :param y1: global arc-selection decision variables.
+    """
+    arcs = [y1[a] for a in steiner_problem.arcs if a in y1]
+    if arcs:
+        model.addConstr(sum(arcs) <= steiner_problem.hop_limit)
+
+
+def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time_limit: float = 300, logfile: str = "", threads=None) -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType], Dict[str, hp.HighsVarType]]:
     """
     Build prize collecting model by extending the base Steiner model.
     """
     # Start with the base model (reuse existing code)
-    model, x, y1, y2, z = build_model(steiner_problem, time_limit, logfile)
+    model, x, y1, y2, z = build_model(steiner_problem, time_limit, logfile, threads=threads)
 
     # Prize-collecting needs explicit flow constraints for connectivity enforcement
     model, f = add_flow_constraints(model, steiner_problem, z, y2)
@@ -605,7 +889,7 @@ def run_prize_collecting_model(model: hp.HighsModel, steiner_problem: 'PrizeColl
     return gap, runtime, objective, selected_edges, selected_nodes, penalties
 
 
-def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float = 300, logfile: str = "") -> Tuple:
+def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float = 300, logfile: str = "", threads=None) -> Tuple:
     """
     Build a budget-constrained Steiner model.
     Objective: maximize connected terminals (minimize unconnected terminals).
@@ -613,9 +897,10 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
     :param steiner_problem: SteinerProblem-object with a ``budget`` attribute.
     :param time_limit: time limit in seconds.
     :param logfile: path to logfile.
+    :param threads: HiGHS thread count (see :func:`make_model`).
     :return: HiGHS model and decision variables.
     """
-    model = make_model(time_limit, logfile)
+    model = make_model(time_limit, logfile, threads=threads)
     group_indices = range(len(steiner_problem.terminal_groups))
 
     model, x, y1, y2, z = add_directed_constraints(model, steiner_problem)
@@ -705,6 +990,7 @@ def build_model_gurobi(
     steiner_problem: 'SteinerProblem',
     time_limit: float = 300,
     logfile: str = "",
+    threads=None,
 ) -> Tuple:
     """
     Build the cut-based Steiner model using Gurobi.
@@ -729,6 +1015,9 @@ def build_model_gurobi(
     env = gp.Env(empty=True)
     env.setParam("OutputFlag", 0)
     env.setParam("TimeLimit", time_limit)
+    _gthreads = _resolve_threads(threads)
+    if _gthreads > 0:
+        env.setParam("Threads", _gthreads)
     if logfile:
         env.setParam("LogFile", logfile)
     env.start()
@@ -829,6 +1118,12 @@ def build_model_gurobi(
             if incident:
                 model.addConstr(gp.quicksum(incident) <= max_degree)
 
+    # Optional hop constraint (directed problems, thesis Ch. 5.8)
+    if getattr(steiner_problem, 'hop_limit', None) is not None:
+        hop_arcs = [y1[a] for a in steiner_problem.arcs if a in y1]
+        if hop_arcs:
+            model.addConstr(gp.quicksum(hop_arcs) <= steiner_problem.hop_limit)
+
     model.update()
 
     compilation_time = time.time() - start_time
@@ -884,19 +1179,26 @@ def run_model_gurobi(
     model._group_indices = group_indices
 
     def _cut_callback(cb_model, where):
-        if where != GRB.Callback.MIPSOL:
+        # Lazy cuts at integer solutions; user cuts at fractional LP nodes.
+        if where == GRB.Callback.MIPSOL:
+            get_val = cb_model.cbGetSolution
+            add_cut = cb_model.cbLazy
+            kind = "lazy"
+        elif (where == GRB.Callback.MIPNODE
+              and cb_model.cbGet(GRB.Callback.MIPNODE_STATUS) == GRB.OPTIMAL):
+            get_val = cb_model.cbGetNodeRel
+            add_cut = cb_model.cbCut
+            kind = "user"
+        else:
             return
 
-        # Extract current integer solution values
+        # Extract the current solution (integer at MIPSOL, fractional at MIPNODE)
         y2_vals = {
-            (group_id, a): cb_model.cbGetSolution(cb_model._y2[(group_id, a)])
+            (group_id, a): get_val(cb_model._y2[(group_id, a)])
             for group_id in cb_model._group_indices
             for a in cb_model._steiner_problem.arcs
         }
-        z_vals = {
-            key: cb_model.cbGetSolution(var)
-            for key, var in cb_model._z.items()
-        }
+        z_vals = {key: get_val(var) for key, var in cb_model._z.items()}
 
         violated = find_violated_cuts_from_values(
             cb_model._steiner_problem, y2_vals, z_vals
@@ -907,10 +1209,10 @@ def run_model_gurobi(
                 gp.quicksum(cb_model._y2[(group_id_k, a)] for a in cut_arcs)
                 if cut_arcs else 0
             )
-            cb_model.cbLazy(lhs >= cb_model._z[(group_id_k, group_id_l)])
+            add_cut(lhs >= cb_model._z[(group_id_k, group_id_l)])
 
         if violated:
-            logging.info(f"Gurobi callback: added {len(violated)} lazy cut(s).")
+            logging.info(f"Gurobi callback: added {len(violated)} {kind} cut(s).")
 
     start_time = time.time()
     model.optimize(_cut_callback)
@@ -927,3 +1229,410 @@ def run_model_gurobi(
     objective = model.ObjVal
 
     return gap, runtime, objective, selected_edges
+
+
+# ---------------------------------------------------------------------------
+# Single-group Steiner-arborescence (SAP) directed-cut solver
+# ---------------------------------------------------------------------------
+#
+# Used by the prize-collecting / MWCSP -> SAP transform path
+# (steinerpy.pc_transform). Unlike build_model/run_model, which models an
+# *undirected* problem by bidirecting each edge and would double-count a
+# bidirected arc's cost (two x-columns per edge), this is a pure arc-based
+# directed-cut formulation: one binary x(a) per arc, objective sum c(a) x(a),
+# indegree <= 1 per non-root vertex, and connectivity enforced lazily by the same
+# minimum-cut separation as the undirected model (find_violated_cuts_from_values
+# applied to a single group). It directly implements Formulation 1 (DCut) of both
+# Rehfeldt & Koch papers and is exactly the directed setting dual ascent works on,
+# so the reduced costs / Steiner cuts / cutoff from dual ascent apply unchanged.
+
+
+def _sap_indegree_into(view) -> Dict:
+    into: Dict = {}
+    for a in view.arcs:
+        into.setdefault(a[1], []).append(a)
+    return into
+
+
+def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
+                    fixing=None, da_cuts=None, da_ub=None, primal=None,
+                    threads=None
+                    ) -> Tuple[float, float, float, List[Tuple]]:
+    """Solve a single-group SAP by HiGHS + iterative directed-cut generation.
+
+    ``view`` is any object exposing ``graph`` (DiGraph), ``arcs``, ``nodes``,
+    ``roots`` (``[r']``), ``terminal_groups`` (``[[r', t1', ...]]``) and
+    ``weight`` — e.g. a :class:`steinerpy.objects.DirectedSteinerProblem`.
+
+    Optional dual-ascent acceleration (all best-effort): ``fixing`` (a
+    :class:`steinerpy.dual_ascent.FixingResult`; its ``fix_y1_arcs`` are fixed to
+    0), ``da_cuts`` (triples from :func:`steinerpy.dual_ascent.steiner_cuts`,
+    seeded as initial cuts), ``da_ub`` (objective cutoff), and ``primal`` (a list
+    of arcs used as a MIP warm start).
+
+    :returns: ``(gap, runtime, objective, selected_arcs)``.
+    """
+    model = make_model(time_limit, logfile, threads=threads)
+    arcs = list(view.arcs)
+    root = view.roots[0]
+
+    xa = {a: model.addVariable(0, 1, name=f"xa[{a}]") for a in arcs}
+    for col in range(model.getNumCol()):
+        model.changeColIntegrality(col, hp.HighsVarType.kInteger)
+
+    # Indegree <= 1 for every non-root vertex (yields an arborescence).
+    for v, in_arcs in _sap_indegree_into(view).items():
+        if v == root:
+            continue
+        model.addConstr(sum(xa[a] for a in in_arcs) <= 1)
+
+    # Dual-ascent reduced-cost fixing: arcs in no optimal solution -> 0.
+    if fixing is not None:
+        for a in getattr(fixing, "fix_y1_arcs", ()):
+            if a in xa:
+                model.changeColBounds(xa[a].index, 0, 0)
+
+    # Seed the dual-ascent Steiner cuts (sum of entering arcs >= 1).
+    if da_cuts:
+        for (_k, _l, cut_arcs) in da_cuts:
+            terms = [xa[a] for a in cut_arcs if a in xa]
+            if terms:
+                model.addConstr(sum(terms) >= 1)
+
+    # MIP warm start from the dual-ascent primal.
+    if primal:
+        try:
+            import numpy as np
+            sel = set(primal)
+            idx = [xa[a].index for a in arcs]
+            val = [1.0 if a in sel else 0.0 for a in arcs]
+            model.setSolution(len(idx), np.array(idx, dtype=np.int32),
+                              np.array(val, dtype=np.float64))
+        except Exception:
+            pass
+
+    # NOTE: deliberately do NOT pass da_ub to HiGHS as `objective_bound`. Unlike
+    # Gurobi's `Params.Cutoff` (a true pruning cutoff), HiGHS treats objective_bound
+    # as a termination target inside the cut loop: a loose dual-ascent UB makes a
+    # re-solve stop kOptimal at a feasible-but-suboptimal incumbent, which the loop
+    # then reports as "proven optimal" (false-optimal bug observed on PCSPG P400).
+    # da_ub is still used below only to report an honest gap on a non-proven solve.
+
+    obj = sum(xa[a] * view.graph.edges[a][view.weight] for a in arcs)
+
+    start = time.time()
+    converged = False
+    _STOP = (
+        hp.HighsModelStatus.kInfeasible,
+        hp.HighsModelStatus.kObjectiveBound,
+        hp.HighsModelStatus.kUnbounded,
+        hp.HighsModelStatus.kUnboundedOrInfeasible,
+    )
+    while True:
+        # Bound the *total* cut-generation time, not just each individual re-solve.
+        # The loop can add many rounds of Steiner cuts, and each model.minimize()
+        # otherwise gets the full time_limit, so the wall-clock was unbounded — it
+        # hung on hard instances (e.g. PCSPG P400, where dual ascent fixes nothing
+        # and many cut rounds are needed). Give each solve only the time remaining
+        # and stop once it is exhausted.
+        remaining = time_limit - (time.time() - start)
+        if remaining <= 0:
+            break
+        model.setOptionValue("time_limit", remaining)
+        model.minimize(obj)
+        status = model.getModelStatus()
+        if status in _STOP or not model.getSolution().value_valid:
+            break
+        col_value = model.getSolution().col_value
+        xa_vals = {(0, a): col_value[xa[a].index] for a in arcs}
+        violated = find_violated_cuts_from_values(view, xa_vals, {(0, 0): 1.0})
+        if not violated:
+            # Optimal only if this re-solve actually *proved* optimality. A solve
+            # interrupted by the (shrinking) time limit can return a connected but
+            # suboptimal incumbent with no violated cuts; treating that as converged
+            # would stamp a non-optimal tree "proven optimal" (observed on P400).
+            converged = status == hp.HighsModelStatus.kOptimal
+            break
+        for (_k, _l, cut_arcs) in violated:
+            if cut_arcs:
+                model.addConstr(sum(xa[a] for a in cut_arcs) >= 1)
+    runtime = time.time() - start
+
+    selected = [a for a in arcs if model.variableValue(xa[a]) > 0.5]
+    objective = model.getObjectiveValue()
+    if converged:
+        gap = model.getInfo().mip_gap
+    else:
+        # Time limit hit before all connectivity cuts were separated: the model is
+        # a relaxation whose optimum is only a lower bound, so its MIP gap would be
+        # a spurious ~0. Report an honest gap against the dual-ascent feasible upper
+        # bound instead (the caller maps the best valid component of `selected`).
+        if da_ub is not None and math.isfinite(da_ub) and da_ub > 0:
+            gap = max(0.0, (da_ub - objective) / max(1.0, abs(da_ub)))
+        else:
+            gap = float("inf")
+    return gap, runtime, objective, selected
+
+
+def solve_sap_gurobi(view, time_limit: float = 300, logfile: str = "",
+                     fixing=None, da_cuts=None, da_ub=None, primal=None,
+                     threads=None
+                     ) -> Tuple[float, float, float, List[Tuple]]:
+    """Gurobi branch-and-cut counterpart of :func:`solve_sap_highs`.
+
+    Connectivity is separated lazily inside a callback, mirroring
+    :func:`run_model_gurobi`.
+    """
+    _check_gurobipy()
+    import gurobipy as gp
+    from gurobipy import GRB
+
+    env = gp.Env(empty=True)
+    env.setParam("OutputFlag", 0)
+    env.setParam("TimeLimit", time_limit)
+    _gthreads = _resolve_threads(threads)
+    if _gthreads > 0:
+        env.setParam("Threads", _gthreads)
+    if logfile:
+        env.setParam("LogFile", logfile)
+    env.start()
+    model = gp.Model(env=env)
+
+    arcs = list(view.arcs)
+    root = view.roots[0]
+    xa = {a: model.addVar(vtype=GRB.BINARY, name=f"xa[{a}]") for a in arcs}
+    model.update()
+
+    for v, in_arcs in _sap_indegree_into(view).items():
+        if v == root:
+            continue
+        model.addConstr(gp.quicksum(xa[a] for a in in_arcs) <= 1)
+
+    if fixing is not None:
+        for a in getattr(fixing, "fix_y1_arcs", ()):
+            if a in xa:
+                xa[a].UB = 0
+    if da_cuts:
+        for (_k, _l, cut_arcs) in da_cuts:
+            terms = [xa[a] for a in cut_arcs if a in xa]
+            if terms:
+                model.addConstr(gp.quicksum(terms) >= 1)
+    if primal:
+        sel = set(primal)
+        for a in arcs:
+            xa[a].Start = 1.0 if a in sel else 0.0
+    if da_ub is not None:
+        model.Params.Cutoff = float(da_ub)
+    model.update()
+
+    model.setObjective(
+        gp.quicksum(xa[a] * view.graph.edges[a][view.weight] for a in arcs),
+        GRB.MINIMIZE,
+    )
+    model.Params.LazyConstraints = 1
+    model._view = view
+    model._xa = xa
+
+    def _cb(cb_model, where):
+        # Lazy cuts at integer solutions; user cuts at fractional LP nodes.
+        if where == GRB.Callback.MIPSOL:
+            get_val = cb_model.cbGetSolution
+            add_cut = cb_model.cbLazy
+        elif (where == GRB.Callback.MIPNODE
+              and cb_model.cbGet(GRB.Callback.MIPNODE_STATUS) == GRB.OPTIMAL):
+            get_val = cb_model.cbGetNodeRel
+            add_cut = cb_model.cbCut
+        else:
+            return
+        xa_vals = {(0, a): get_val(cb_model._xa[a])
+                   for a in cb_model._view.arcs}
+        violated = find_violated_cuts_from_values(cb_model._view, xa_vals, {(0, 0): 1.0})
+        for (_k, _l, cut_arcs) in violated:
+            if cut_arcs:
+                add_cut(gp.quicksum(cb_model._xa[a] for a in cut_arcs) >= 1)
+
+    start = time.time()
+    model.optimize(_cb)
+    runtime = time.time() - start
+
+    if model.SolCount == 0:
+        return float("inf"), runtime, float("inf"), []
+    selected = [a for a in arcs if xa[a].X > 0.5]
+    return model.MIPGap, runtime, model.ObjVal, selected
+
+
+# ---------------------------------------------------------------------------
+# Max-weight connected subgraph with a vertex-cost budget (MWCSPB) — Ch. 5.6
+# ---------------------------------------------------------------------------
+#
+# Rooted directed model: an arborescence from the (always-selected) root, with one
+# binary node[v] per vertex tied to its single entering arc, optional per-positive-node
+# connectivity via the existing optional-flow constraints, a vertex-cost budget, and a
+# node-weight-maximising objective.  Connectivity is modelled with flow (added upfront)
+# rather than lazy cuts, so the identical formulation solves directly on both HiGHS and
+# Gurobi.  Mirrors the structure of build_budget_model.
+
+
+def _undirected_from_arcs(used_arcs: List[Tuple]) -> List[Tuple]:
+    """Collapse a list of directed arcs to deduplicated undirected edges."""
+    seen: Set = set()
+    edges: List[Tuple] = []
+    for (u, v) in used_arcs:
+        key = frozenset((u, v))
+        if key not in seen:
+            seen.add(key)
+            edges.append((u, v))
+    return edges
+
+
+def build_mwcsb_model(steiner_problem, time_limit: float = 300, logfile: str = "",
+                      threads=None) -> Tuple:
+    """Build the HiGHS MWCSPB model (see module note above).
+
+    :param steiner_problem: a :class:`BudgetedMaxWeightConnectedSubgraph` exposing
+        ``node_costs``, ``node_budget`` and ``_mwcs_node_weights``.
+    :return: ``(model, x, y1, y2, z, node_vars)``.
+    """
+    model, x, y1, y2, z = build_model(steiner_problem, time_limit, logfile, threads=threads)
+    root = steiner_problem.roots[0]
+
+    node_vars = {
+        v: model.addVariable(0, 1, hp.HighsVarType.kInteger, name=f"node[{v}]")
+        for v in steiner_problem.nodes
+    }
+    # The root is always part of the subgraph; every other selected node has exactly
+    # one entering arc, so node[v] equals its indegree in the arborescence.
+    model.addConstr(node_vars[root] == 1)
+    for v in steiner_problem.nodes:
+        if v == root:
+            continue
+        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        model.addConstr(node_vars[v] == (sum(in_arcs) if in_arcs else 0))
+
+    # Optional reachability for each positive node, scaled by its node variable.
+    connection_vars = {
+        (0, t): node_vars[t]
+        for t in steiner_problem.terminal_groups[0] if t != root
+    }
+    model, _f = add_optional_flow_constraints(model, steiner_problem, y2, connection_vars)
+
+    # Vertex-cost budget over the whole chosen subgraph.
+    node_costs = steiner_problem.node_costs
+    model.addConstr(
+        sum(node_costs.get(v, 0) * node_vars[v] for v in steiner_problem.nodes)
+        <= steiner_problem.node_budget
+    )
+
+    return model, x, y1, y2, z, node_vars
+
+
+def run_mwcsb_model(model, steiner_problem, y1: Dict, node_vars: Dict) -> Tuple:
+    """Solve the HiGHS MWCSPB model and extract the connected subgraph.
+
+    :return: ``(gap, runtime, mwcs_weight, selected_edges, selected_nodes)`` where
+        ``mwcs_weight`` is the sum of node weights over the chosen subgraph.
+    """
+    nw = steiner_problem._mwcs_node_weights
+    # Maximise total node weight == minimise its negation.
+    objective_expr = sum(-nw.get(v, 0.0) * node_vars[v] for v in steiner_problem.nodes)
+    model.minimize(objective_expr)
+
+    status = model.getModelStatus()
+    if status in (
+        hp.HighsModelStatus.kInfeasible,
+        hp.HighsModelStatus.kUnbounded,
+        hp.HighsModelStatus.kUnboundedOrInfeasible,
+    ) or not model.getSolution().value_valid:
+        return float("inf"), model.getRunTime(), float("-inf"), [], []
+
+    selected_nodes = [v for v in steiner_problem.nodes if model.variableValue(node_vars[v]) > 0.5]
+    used_arcs = [a for a in steiner_problem.arcs if model.variableValue(y1[a]) > 0.5]
+    selected_edges = _undirected_from_arcs(used_arcs)
+    mwcs_weight = sum(nw.get(v, 0.0) for v in selected_nodes)
+
+    return model.getInfo().mip_gap, model.getRunTime(), mwcs_weight, selected_edges, selected_nodes
+
+
+def build_mwcsb_model_gurobi(steiner_problem, time_limit: float = 300, logfile: str = "",
+                             threads=None) -> Tuple:
+    """Gurobi counterpart of :func:`build_mwcsb_model`."""
+    _check_gurobipy()
+    import gurobipy as gp
+
+    model, x, y1, y2, z = build_model_gurobi(steiner_problem, time_limit, logfile, threads=threads)
+    from gurobipy import GRB
+    root = steiner_problem.roots[0]
+    non_root = [t for t in steiner_problem.terminal_groups[0] if t != root]
+
+    node_vars = {v: model.addVar(vtype=GRB.BINARY, name=f"node[{v}]")
+                 for v in steiner_problem.nodes}
+    model.update()
+
+    model.addConstr(node_vars[root] == 1)
+    for v in steiner_problem.nodes:
+        if v == root:
+            continue
+        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        model.addConstr(node_vars[v] == (gp.quicksum(in_arcs) if in_arcs else 0))
+
+    # Optional flow for each positive node, scaled by its node variable.
+    f = {(t, a): model.addVar(vtype=GRB.BINARY, name=f"f[{t},{a}]")
+         for t in non_root for a in steiner_problem.arcs}
+    model.update()
+    for v in steiner_problem.nodes:
+        out_arcs = [a for a in steiner_problem.arcs if a[0] == v]
+        in_arcs = [a for a in steiner_problem.arcs if a[1] == v]
+        for t in non_root:
+            if v == root:
+                demand = node_vars[t]
+            elif v == t:
+                demand = -node_vars[t]
+            else:
+                if not out_arcs and not in_arcs:
+                    continue
+                demand = 0
+            model.addConstr(
+                gp.quicksum(f[t, a] for a in out_arcs)
+                - gp.quicksum(f[t, a] for a in in_arcs) == demand
+            )
+    for t in non_root:
+        for a in steiner_problem.arcs:
+            model.addConstr(f[t, a] <= y2[(0, a)])
+        out_arcs = [a for a in steiner_problem.arcs if a[0] == t]
+        if out_arcs:
+            model.addConstr(gp.quicksum(f[t, a] for a in out_arcs) == 0)
+
+    node_costs = steiner_problem.node_costs
+    model.addConstr(
+        gp.quicksum(node_costs.get(v, 0) * node_vars[v] for v in steiner_problem.nodes)
+        <= steiner_problem.node_budget
+    )
+    model.update()
+
+    return model, x, y1, y2, z, node_vars
+
+
+def run_mwcsb_model_gurobi(model, steiner_problem, y1: Dict, node_vars: Dict) -> Tuple:
+    """Gurobi counterpart of :func:`run_mwcsb_model`."""
+    _check_gurobipy()
+    import gurobipy as gp
+    from gurobipy import GRB
+
+    nw = steiner_problem._mwcs_node_weights
+    model.setObjective(
+        gp.quicksum(-nw.get(v, 0.0) * node_vars[v] for v in steiner_problem.nodes),
+        GRB.MINIMIZE,
+    )
+    start = time.time()
+    model.optimize()
+    runtime = time.time() - start
+
+    if model.SolCount == 0:
+        return float("inf"), runtime, float("-inf"), [], []
+
+    selected_nodes = [v for v in steiner_problem.nodes if node_vars[v].X > 0.5]
+    used_arcs = [a for a in steiner_problem.arcs if y1[a].X > 0.5]
+    selected_edges = _undirected_from_arcs(used_arcs)
+    mwcs_weight = sum(nw.get(v, 0.0) for v in selected_nodes)
+
+    return model.MIPGap, runtime, mwcs_weight, selected_edges, selected_nodes

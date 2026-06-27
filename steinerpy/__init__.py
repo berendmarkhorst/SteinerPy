@@ -17,6 +17,13 @@ from .objects import (
     BudgetConstrainedSteinerProblem,
     BudgetSolution,
     DirectedSteinerProblem,
+    PartialTerminalSteinerProblem,
+    FullTerminalSteinerProblem,
+    GroupSteinerProblem,
+    HopConstrainedSteinerProblem,
+    RectilinearSteinerProblem,
+    RectilinearSolution,
+    BudgetedMaxWeightConnectedSubgraph,
 )
 from .mathematical_model import build_model, run_model, build_model_gurobi, run_model_gurobi
 from ._version import __version__
@@ -35,6 +42,13 @@ __all__ = [
     "BudgetConstrainedSteinerProblem",
     "BudgetSolution",
     "DirectedSteinerProblem",
+    "PartialTerminalSteinerProblem",
+    "FullTerminalSteinerProblem",
+    "GroupSteinerProblem",
+    "HopConstrainedSteinerProblem",
+    "RectilinearSteinerProblem",
+    "RectilinearSolution",
+    "BudgetedMaxWeightConnectedSubgraph",
     "build_model",
     "run_model",
     "build_model_gurobi",
