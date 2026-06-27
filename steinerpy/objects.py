@@ -171,9 +171,14 @@ class BaseSteinerProblem:
             try:
                 tree = steiner_tree(graph, terminals, weight=self.weight,
                                     method=method)
-                out.append(list(tree.edges()))
             except Exception:
-                pass
+                continue
+            # Some networkx versions return a degenerate empty tree instead of
+            # raising when a terminal is absent from the graph; skip any tree
+            # that doesn't actually span every requested terminal.
+            if not all(t in tree for t in terminals):
+                continue
+            out.append(list(tree.edges()))
         return out
 
     def _heuristic_solution(self) -> 'Solution':
