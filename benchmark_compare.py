@@ -103,7 +103,7 @@ def _record(result, key, obj, runtime, opt, cgap=None):
 # Runner
 # ---------------------------------------------------------------------------
 
-def run_case(stp_path, optima, time_limit, solver):
+def run_case(stp_path, optima, time_limit, solver, heuristics_only=False):
     graph, tg = read_stp(stp_path)
     stats = instance_stats(graph, tg)
     name = os.path.splitext(os.path.basename(stp_path))[0]
@@ -132,19 +132,21 @@ def run_case(stp_path, optima, time_limit, solver):
             rt = time.perf_counter() - t0
             _record(result, key, tree.size(weight="weight"), rt, opt)
 
-        # ---- steinerpy exact ILP (no dual-ascent) ----
-        t0 = time.perf_counter()
-        sol = SteinerProblem(graph.copy(), [terminals], preprocess=True).get_solution(
-            time_limit=time_limit, solver=solver, dual_ascent=False)
-        _record(result, "sp_exact", sol.objective, time.perf_counter() - t0, opt,
-                cgap=sol.gap)
+        # ---- exact ILP runs (skipped in --heuristics-only mode) ----
+        if not heuristics_only:
+            # steinerpy exact ILP (no dual-ascent)
+            t0 = time.perf_counter()
+            sol = SteinerProblem(graph.copy(), [terminals], preprocess=True).get_solution(
+                time_limit=time_limit, solver=solver, dual_ascent=False)
+            _record(result, "sp_exact", sol.objective, time.perf_counter() - t0, opt,
+                    cgap=sol.gap)
 
-        # ---- steinerpy exact ILP + dual-ascent accelerator ----
-        t0 = time.perf_counter()
-        sol = SteinerProblem(graph.copy(), [terminals], preprocess=True).get_solution(
-            time_limit=time_limit, solver=solver, dual_ascent=True)
-        _record(result, "sp_da", sol.objective, time.perf_counter() - t0, opt,
-                cgap=sol.gap)
+            # steinerpy exact ILP + dual-ascent accelerator
+            t0 = time.perf_counter()
+            sol = SteinerProblem(graph.copy(), [terminals], preprocess=True).get_solution(
+                time_limit=time_limit, solver=solver, dual_ascent=True)
+            _record(result, "sp_da", sol.objective, time.perf_counter() - t0, opt,
+                    cgap=sol.gap)
 
         # ---- steinerpy heuristic-only (exact=False): dual-ascent primal, no ILP ----
         t0 = time.perf_counter()
@@ -185,20 +187,20 @@ def _fmt_pct(v):
     return f"{p:>6.2f}"
 
 
-def _build_header():
+def _build_header(methods):
     head = f"{'Instance':<10} {'|V|':>4} {'|E|':>5} {'k':>3} {'opt':>6} |"
-    for _, hdr in METHODS:
+    for _, hdr in methods:
         head += f" {hdr + ' t':>8} {'gap%':>6} |"
     head += f" {'heur cgap%':>10}"
     return head
 
 
-def print_row(r):
+def print_row(r, methods):
     line = (
         f"{r['label']:<10} {r['n']:>4} {r['edges']:>5} {r['k']:>3} "
         f"{(r['opt'] if r['opt'] is not None else '-')!s:>6} |"
     )
-    for key, _ in METHODS:
+    for key, _ in methods:
         line += f" {_fmt_time(r.get(f'{key}_time'))} {_fmt_pct(r.get(f'{key}_gap'))} |"
     # SteinerPy heuristic's certified optimality bound (networkx has none).
     line += f" {_fmt_pct(r.get('sp_heur_cgap')):>10}"
@@ -225,7 +227,13 @@ def main(argv=None):
                     help="seconds per SteinerPy solve (default: 60)")
     ap.add_argument("--solver", default="gurobi", choices=["highs", "gurobi"],
                     help="MIP solver for the exact runs (default: gurobi)")
+    ap.add_argument("--heuristics-only", action="store_true",
+                    help="skip the exact ILP runs; compare only the heuristics "
+                         "(NX-kou, NX-meh, SP-heur) — scales to large instances")
     args = ap.parse_args(argv)
+
+    methods = [m for m in METHODS
+               if not (args.heuristics_only and m[0] in ("sp_exact", "sp_da"))]
 
     optima = load_optima(args.optima)
     paths = sorted(
@@ -235,13 +243,15 @@ def main(argv=None):
     if not paths:
         ap.error(f"no .stp instances found in {args.instances!r}")
 
-    header = _build_header()
+    header = _build_header(methods)
     sep = "-" * len(header)
 
+    mode = "heuristics only" if args.heuristics_only else "heuristics + exact"
     print("\n" + "=" * len(header))
     print("SteinerPy vs NetworkX — Steiner Tree on literature instances")
     print("=" * len(header))
     print(f"\nInstances : {args.instances}  ({len(paths)} files)")
+    print(f"Mode      : {mode}")
     print(f"Solver    : {args.solver}   time-limit: {args.time_limit:g}s/solve")
     print("""
 Columns:
@@ -263,9 +273,10 @@ marks an instance with no published optimum (gap is vs. the best exact value).
 
     all_results = []
     for path in paths:
-        r = run_case(path, optima, args.time_limit, args.solver)
+        r = run_case(path, optima, args.time_limit, args.solver,
+                     heuristics_only=args.heuristics_only)
         all_results.append(r)
-        print_row(r)
+        print_row(r, methods)
 
     print(sep)
 
@@ -273,7 +284,7 @@ marks an instance with no published optimum (gap is vs. the best exact value).
     print("\nSummary (averages over instances where the method ran):")
     print(f"  {'method':<10} {'avg time':>10} {'avg gap%':>9} {'#optimal':>9}")
     n_inst = len(all_results)
-    for key, hdr in METHODS:
+    for key, hdr in methods:
         avg_t = _avg(r.get(f"{key}_time") for r in all_results)
         avg_g = _avg(r.get(f"{key}_gap") for r in all_results)
         n_opt = sum(

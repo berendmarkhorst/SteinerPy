@@ -400,26 +400,15 @@ def _edges_cost(graph, edges, weight) -> float:
     return sum(_edge_cost(graph, u, v, weight) for (u, v) in edges)
 
 
-def refine_primal_mst(graph, primal_edges, terminals, weight) -> List[Tuple]:
-    """Kou-style cleanup of a feasible *undirected, single-group* Steiner tree.
+def _refine_component_mst(graph, verts, term_set, weight) -> List[Tuple]:
+    """MST-over-induced-subgraph + leaf-prune for one connected component.
 
-    The dual-ascent primal (:func:`_primal_for_group`) is a union of root->terminal
-    shortest paths, so it can carry redundant edges and miss cheaper chords. This
-    recomputes a minimum spanning tree over the subgraph **induced** by the
-    primal's vertices in ``graph`` (where those cheaper chords live), then prunes
-    non-terminal leaves to a fixpoint; the MST/prune is repeated until the tree
-    stops shrinking. The induced subgraph is connected (the input primal spans
-    it), so the MST exists and costs ``<=`` the input — exactly the refinement
-    step of Kou et al. (1981). Returns the refined edge list.
-
-    Only sound for a single connected tree spanning ``terminals`` (undirected);
-    the caller must not use it for forests or directed problems.
+    The component's vertices induce a connected subgraph of ``graph`` (the input
+    primal spans them), so the MST exists and costs ``<=`` the component's share
+    of the primal; pruning non-terminal leaves can only reduce it further. Iterate
+    to a fixpoint, since pruning may expose further savings on the smaller vertex
+    set. Returns the component's refined edge list.
     """
-    if not primal_edges:
-        return list(primal_edges)
-    term_set = set(terminals)
-    verts = {v for e in primal_edges for v in e}
-    edges = list(primal_edges)
     for _ in range(len(verts) + 1):  # bounded fixpoint
         tree = nx.minimum_spanning_tree(graph.subgraph(verts), weight=weight)
         changed = True
@@ -433,9 +422,37 @@ def refine_primal_mst(graph, primal_edges, terminals, weight) -> List[Tuple]:
         new_verts = set(tree.nodes())
         edges = list(tree.edges())
         if new_verts == verts:
-            break
+            return edges
         verts = new_verts
     return edges
+
+
+def refine_primal_mst(graph, primal_edges, terminals, weight) -> List[Tuple]:
+    """Kou-style cleanup of a feasible *undirected* Steiner tree or forest.
+
+    The dual-ascent primal (:func:`_primal_for_group`) is a union of root->terminal
+    shortest paths, so it can carry redundant edges and miss cheaper chords. This
+    refines it **per connected component**: for each component, recompute a minimum
+    spanning tree over the subgraph induced by its vertices in ``graph`` (where the
+    cheaper chords live) and prune non-terminal leaves to a fixpoint — the
+    refinement step of Kou et al. (1981).
+
+    Components are vertex-disjoint, so every terminal group that was connected in
+    the primal stays connected (forest feasibility is preserved), and each
+    component's MST costs ``<=`` its share of the primal — so the union costs
+    ``<=`` the input. ``terminals`` is the full terminal set (all groups). Sound
+    for any undirected tree/forest; the caller must not use it for directed
+    problems (whose feasibility is an arborescence, not an undirected MST).
+    """
+    if not primal_edges:
+        return list(primal_edges)
+    term_set = set(terminals)
+    forest = nx.Graph()
+    forest.add_edges_from((u, v) for (u, v) in primal_edges)
+    refined: List[Tuple] = []
+    for comp in nx.connected_components(forest):
+        refined.extend(_refine_component_mst(graph, set(comp), term_set, weight))
+    return refined
 
 
 # ---------------------------------------------------------------------------
