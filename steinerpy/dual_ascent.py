@@ -858,12 +858,17 @@ def seed_cuts_gurobi(model, y2, z, cuts: List[Tuple[int, int, List[Arc]]]) -> in
 
 
 def set_highs_cutoff(model, ub: float) -> bool:
-    """Best-effort objective cutoff for HiGHS. Returns True on success."""
-    try:
-        model.setOptionValue("objective_bound", float(ub))
-        return True
-    except Exception:
-        return False
+    """No-op: HiGHS has no safe objective cutoff for the cut-generation loop.
+
+    HiGHS's ``objective_bound`` is not a pruning cutoff like Gurobi's
+    ``Params.Cutoff``; inside the iterative cut loop a loose dual-ascent upper
+    bound makes a re-solve terminate ``kOptimal`` at a feasible-but-suboptimal
+    incumbent, which is then falsely reported as proven optimal (observed on
+    PCSPG P400). We therefore do not apply any cutoff for HiGHS; the seeded cuts
+    and warm start still accelerate the solve. Kept for call-site symmetry with
+    :func:`set_gurobi_cutoff` (whose cutoff *is* sound).
+    """
+    return False
 
 
 def set_gurobi_cutoff(model, ub: float) -> bool:

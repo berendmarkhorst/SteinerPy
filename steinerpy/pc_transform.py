@@ -286,6 +286,104 @@ def map_sap_solution_to_pcstp(
     return best_edges, best_nodes, best_obj
 
 
+def pcstp_steiner_candidate(graph, node_prizes: Dict,
+                            weight: str = "weight") -> Optional[Tuple[List, List]]:
+    """A "connect every prize node, then prune" PCSTP construction candidate.
+
+    Builds a Steiner tree spanning *all* prize-bearing nodes (Mehlhorn 1988 via
+    networkx) — strong on instances where most prizes are worth collecting (the
+    P-type JMP set), exactly where the dual-ascent SAP primal is weakest. The
+    caller feeds it to :func:`refine_pcstp_tree`, whose pruning then drops any
+    prize whose connection cost exceeds its value. Returns ``(edges, nodes)`` or
+    ``None`` when there are <2 prize nodes or the graph is disconnected.
+    """
+    terms = [v for v, p in node_prizes.items() if p > 0 and graph.has_node(v)]
+    if len(terms) < 2:
+        return None
+    if any(d.get(weight, 1) < 0 for _, _, d in graph.edges(data=True)):
+        return None  # Mehlhorn (shortest paths) needs nonnegative edge costs
+    from networkx.algorithms.approximation import steiner_tree
+    try:
+        tree = steiner_tree(graph, terms, weight=weight, method="mehlhorn")
+    except Exception:
+        return None
+    return list(tree.edges()), list(tree.nodes())
+
+
+def refine_pcstp_tree(graph, edges, nodes, node_prizes: Dict,
+                      weight: str = "weight") -> Tuple[List[Tuple], List, float]:
+    """Local-search cleanup of a feasible PCSTP tree (forgo-prize objective).
+
+    The dual-ascent SAP primal is often weak — it can both carry redundant edges
+    *and* miss profitable prizes. Three cost-monotone moves, looped to a fixpoint
+    on the objective ``sum_{e} c(e) + (sum_all p - sum_{v in tree} p(v))``:
+
+    * **insertion** — connect any prize node ``v`` whose prize exceeds its
+      shortest-path distance to the current tree (collecting it lowers the
+      objective by ``p(v) - dist`` and is the move that *adds* missing prizes);
+    * **MST** — recompute a minimum spanning tree over the spanned vertices so
+      cheaper chords replace the path-union's redundant edges;
+    * **leaf pruning** — drop any leaf whose prize is below its connection cost
+      (non-prize Steiner leaves always qualify).
+
+    Every move is non-increasing in the objective, so the result is never worse
+    than the input tree. ``edges``/``nodes`` are the current tree (in ``graph``);
+    returns the refined ``(edges, nodes, objective)``.
+    """
+    total = sum(p for p in node_prizes.values() if p > 0)
+
+    def objective(es, ns):
+        ec = sum(graph[u][v].get(weight, 1) for (u, v) in es)
+        return ec + (total - sum(node_prizes.get(n, 0) for n in ns))
+
+    verts = set(nodes) | {v for e in edges for v in e}
+    if not verts and node_prizes:  # seed construction from the best single node
+        seed = max(node_prizes, key=lambda v: node_prizes.get(v, 0))
+        if node_prizes.get(seed, 0) > 0 and graph.has_node(seed):
+            verts = {seed}
+    if not verts:
+        return [], [], total
+
+    # Greedy insertion needs shortest paths, so it is only sound with nonnegative
+    # edge costs (true for classic PCSTP). The MWCS->PCSTP transform yields some
+    # negative-cost edges; there we keep only the MST + leaf-prune moves, which are
+    # valid for any signs.
+    has_neg = any(d.get(weight, 1) < 0 for _, _, d in graph.edges(data=True))
+
+    cur_edges = [e for e in edges if e[0] in verts and e[1] in verts]
+    cur_obj = objective(cur_edges, verts)
+    for _ in range(2 * graph.number_of_nodes() + 2):  # bounded fixpoint
+        # 1) greedy insertion of profitable prize nodes (nonnegative costs only)
+        if not has_neg:
+            dist, paths = nx.multi_source_dijkstra(graph, set(verts), weight=weight)
+            for v, p in node_prizes.items():
+                if p <= 0 or v in verts:
+                    continue
+                d = dist.get(v)
+                if d is not None and p > d + 1e-12:
+                    verts.update(paths[v])
+        # 2) MST over the spanned vertices (single node -> empty tree)
+        tree = nx.minimum_spanning_tree(graph.subgraph(verts), weight=weight)
+        # 3) prune unprofitable leaves to a fixpoint
+        changed = True
+        while changed:
+            changed = False
+            for v in list(tree.nodes()):
+                if tree.degree(v) == 1:
+                    u = next(iter(tree[v]))
+                    if node_prizes.get(v, 0) < tree[u][v].get(weight, 1) - 1e-12:
+                        tree.remove_node(v)
+                        changed = True
+        verts = set(tree.nodes())
+        cur_edges = list(tree.edges())
+        new_obj = objective(cur_edges, verts)
+        if new_obj < cur_obj - 1e-9:
+            cur_obj = new_obj
+        else:
+            break
+    return cur_edges, sorted(verts, key=str), objective(cur_edges, verts)
+
+
 def best_trivial_pcstp(node_prizes: Dict) -> Tuple[List, float]:
     """Best single-vertex / empty PCSTP solution.
 

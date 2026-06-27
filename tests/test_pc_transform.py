@@ -26,6 +26,8 @@ from steinerpy.pc_transform import (
     transform_mwcsp_to_pcstp,
     map_sap_solution_to_pcstp,
     best_trivial_pcstp,
+    pcstp_steiner_candidate,
+    refine_pcstp_tree,
 )
 
 logging.disable(logging.CRITICAL)
@@ -218,3 +220,97 @@ def test_best_trivial_pcstp():
     assert nodes == [0] and abs(obj - 3) < 1e-9   # keep best node 0, forgo 1 (3)
     nodes, obj = best_trivial_pcstp({0: 0, 1: 0})
     assert nodes == [] and abs(obj) < 1e-9        # empty tree
+
+
+def test_best_trivial_pcstp_empty_prizes():
+    # no prizes at all -> empty tree, zero objective
+    assert best_trivial_pcstp({}) == ([], 0.0)
+
+
+# ---------------------------------------------------------------------------
+# transform_mwcsp_to_pcstp edge cases
+# ---------------------------------------------------------------------------
+
+def test_transform_mwcsp_requires_node_weights():
+    with pytest.raises(ValueError):
+        transform_mwcsp_to_pcstp(nx.Graph(), {})
+
+
+# ---------------------------------------------------------------------------
+# pcstp_steiner_candidate
+# ---------------------------------------------------------------------------
+
+def test_pcstp_steiner_candidate_spans_prize_nodes():
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=1)
+    g.add_edge("B", "C", weight=1)
+    edges, nodes = pcstp_steiner_candidate(g, {"A": 5, "C": 5})
+    # connecting A and C must route through B
+    assert set(nodes) == {"A", "B", "C"}
+    assert {frozenset(e) for e in edges} == {frozenset(("A", "B")),
+                                             frozenset(("B", "C"))}
+
+
+def test_pcstp_steiner_candidate_fewer_than_two_prizes():
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=1)
+    assert pcstp_steiner_candidate(g, {"A": 5}) is None
+    assert pcstp_steiner_candidate(g, {}) is None
+
+
+def test_pcstp_steiner_candidate_rejects_negative_edges():
+    # Mehlhorn (shortest paths) needs nonnegative costs -> bail out
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=-1)
+    assert pcstp_steiner_candidate(g, {"A": 5, "B": 5}) is None
+
+
+def test_pcstp_steiner_candidate_swallows_steiner_tree_errors(monkeypatch):
+    # The networkx call is wrapped defensively; a failure yields None.
+    import networkx.algorithms.approximation as approx
+
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(approx, "steiner_tree", boom)
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=1)
+    g.add_edge("B", "C", weight=1)
+    assert pcstp_steiner_candidate(g, {"A": 5, "C": 5}) is None
+
+
+# ---------------------------------------------------------------------------
+# refine_pcstp_tree
+# ---------------------------------------------------------------------------
+
+def test_refine_pcstp_tree_no_profitable_vertex():
+    # No positive prizes and empty seed tree -> empty tree, objective == sum(prizes).
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=1)
+    edges, nodes, obj = refine_pcstp_tree(g, [], [], {"A": 0, "B": 0})
+    assert edges == [] and nodes == [] and abs(obj) < 1e-9
+
+
+def test_refine_pcstp_tree_inserts_profitable_prize():
+    # Start from a single-node tree; the profitable prize at C (5 > path cost 2)
+    # should be inserted and the objective should drop accordingly.
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=1)
+    g.add_edge("B", "C", weight=1)
+    edges, nodes, obj = refine_pcstp_tree(g, [], ["A"], {"A": 5, "C": 5})
+    assert set(nodes) == {"A", "B", "C"}
+    # cost = 2 edges, all prize collected (total 10) -> 2 + (10 - 10) = 2
+    assert abs(obj - 2.0) < 1e-9
+
+
+def test_refine_pcstp_tree_prunes_unprofitable_leaf():
+    # Tree A-B-C where C's prize (1) is below its connection cost (5): prune C.
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=1)
+    g.add_edge("B", "C", weight=5)
+    edges, nodes, obj = refine_pcstp_tree(
+        g, [("A", "B"), ("B", "C")], ["A", "B", "C"], {"A": 10, "B": 10, "C": 1}
+    )
+    assert "C" not in nodes
+    # cost 1 (A-B) + forgone prize C (1) = 2
+    assert abs(obj - 2.0) < 1e-9

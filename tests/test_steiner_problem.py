@@ -1160,6 +1160,37 @@ def test_gurobi_solver_matches_highs():
     )
 
 
+def test_gurobi_pc_sap_matches_highs():
+    """Prize-collecting exact solve via the SAP transform: Gurobi == HiGHS.
+
+    Exercises the Gurobi branch-and-cut SAP backend (``solve_sap_gurobi``).
+    """
+    import importlib
+
+    if importlib.util.find_spec("gurobipy") is None:
+        pytest.skip("gurobipy is not installed.")
+    try:
+        import gurobipy as gp
+        env = gp.Env(empty=True)
+        env.setParam("OutputFlag", 0)
+        env.start()
+        gp.Model(env=env).dispose()
+        env.dispose()
+    except Exception:
+        pytest.skip("Gurobi license not available.")
+
+    g = nx.cycle_graph(6)
+    for a, b in g.edges:
+        g.edges[a, b]["weight"] = 2
+    prizes = {0: 0, 1: 5, 2: 0, 3: 5, 4: 0, 5: 5}
+
+    sol_highs = PrizeCollectingProblem(g.copy(), [[1]], prizes, penalty_cost=0).get_solution(
+        solver="highs", time_limit=30, pc_transform=True)
+    sol_gurobi = PrizeCollectingProblem(g.copy(), [[1]], prizes, penalty_cost=0).get_solution(
+        solver="gurobi", time_limit=30, pc_transform=True)
+    assert sol_gurobi.objective == pytest.approx(sol_highs.objective)
+
+
 def test_gurobi_solver_node_weighted():
     """NodeWeightedSteinerProblem accepts solver parameter without error."""
     import importlib
@@ -1188,6 +1219,106 @@ def test_gurobi_solver_node_weighted():
     problem = NodeWeightedSteinerProblem(G, [['A', 'C']], node_weights)
     solution = problem.get_solution(time_limit=30, solver="gurobi")
     assert isinstance(solution, NodeWeightedSolution)
+
+
+# ---------------------------------------------------------------------------
+# Biconnected-block decomposition for single-group Steiner trees.
+# ---------------------------------------------------------------------------
+
+def _two_blocks_graph():
+    # Two triangles sharing articulation vertex 2 -> two biconnected blocks.
+    g = nx.Graph()
+    for a, b in [(0, 1), (1, 2), (0, 2), (2, 3), (3, 4), (2, 4)]:
+        g.add_edge(a, b, weight=1)
+    return g
+
+
+def test_decompose_matches_monolithic_solution():
+    g = _two_blocks_graph()
+    dec = SteinerProblem(g, [[0, 4]], preprocess=False).get_solution(
+        decompose=True, time_limit=30)
+    mono = SteinerProblem(g, [[0, 4]], preprocess=False).get_solution(
+        decompose=False, time_limit=30)
+    assert dec.objective == pytest.approx(mono.objective)
+    assert _connected_per_group(dec.edges, [[0, 4]])
+
+
+def test_decompose_skipped_when_two_connected():
+    # A single biconnected block -> _decompose_single_group bails out (None) and
+    # the caller solves monolithically; the answer is still correct.
+    g = nx.cycle_graph(4)
+    for a, b in g.edges:
+        g.edges[a, b]["weight"] = 1
+    prob = SteinerProblem(g, [[0, 2]], preprocess=False)
+    assert prob._decompose_single_group(30, "", "highs", None, None) is None
+    assert prob.get_solution(decompose=True, time_limit=30).objective == pytest.approx(2.0)
+
+
+def test_decomposable_excludes_unsupported_variants():
+    g = _two_blocks_graph()
+    # plain single-group tree with >= 2 terminals: decomposable
+    assert SteinerProblem(g, [[0, 4]], preprocess=False)._decomposable()
+    # single terminal: nothing to connect
+    assert not SteinerProblem(g, [[0]], preprocess=False)._decomposable()
+    # multiple groups (Steiner forest): blocks couple across groups
+    assert not SteinerProblem(g, [[0, 1], [3, 4]], preprocess=False)._decomposable()
+    # budget-constrained: objective is not plain edge cost
+    assert not SteinerProblem(g, [[0, 4]], preprocess=False, budget=10.0)._decomposable()
+    # directed variant
+    dg = nx.DiGraph()
+    dg.add_edge("A", "B", weight=1)
+    assert not DirectedSteinerProblem(dg, root="A", terminals=["B"])._decomposable()
+
+
+def _connected_per_group(edges, groups):
+    h = nx.Graph()
+    h.add_edges_from((u, v) for (u, v) in edges)
+    for grp in groups:
+        present = [t for t in grp if t in h]
+        if len(present) < len(grp):
+            return False
+        comp = nx.node_connected_component(h, present[0])
+        if any(t not in comp for t in present):
+            return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Cut-generation loops bound total wall-clock time and report honest gaps when
+# the global deadline is hit before all connectivity cuts are separated.
+# ---------------------------------------------------------------------------
+
+def test_run_model_exhausted_time_limit_reports_infinite_gap():
+    from steinerpy.mathematical_model import build_model, run_model
+
+    g = nx.cycle_graph(8)  # connectivity cuts matter on a cycle
+    for a, b in g.edges:
+        g.edges[a, b]["weight"] = 1
+    prob = SteinerProblem(g, [[0, 3, 6]], preprocess=False)
+
+    model, x, y1, y2, z = build_model(prob, time_limit=0.0, logfile="", threads=None)
+    gap, _runtime, _obj, edges = run_model(model, prob, x, y2, z)
+    # Deadline hit before any cut round -> not proven optimal -> no spurious ~0 gap.
+    assert gap == float("inf")
+    assert edges == []
+
+
+def test_solve_sap_highs_exhausted_time_limit_gap():
+    from steinerpy.mathematical_model import solve_sap_highs
+
+    g = nx.cycle_graph(8)
+    for a, b in g.edges:
+        g.edges[a, b]["weight"] = 1
+    prizes = {v: 5 for v in g.nodes()}
+    ctx = PrizeCollectingProblem(g, [[0]], prizes, penalty_cost=0)._build_pc_transform()
+    view = DirectedSteinerProblem(ctx.sap_graph, ctx.root, ctx.terminals, weight=ctx.weight)
+
+    # With a dual-ascent upper bound, report an honest gap against it...
+    gap_ub, *_ = solve_sap_highs(view, time_limit=0.0, da_ub=10.0)
+    assert gap_ub == pytest.approx(1.0)   # (10 - 0) / max(1, 10)
+    # ...without one, the relaxation gap would be spurious, so report inf.
+    gap_none, *_ = solve_sap_highs(view, time_limit=0.0)
+    assert gap_none == float("inf")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import highspy as hp
 import logging
+import math
 import networkx as nx
 import os
 import time
@@ -675,9 +676,21 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
         for e in steiner_problem.edges
     )
 
-    start_time = time.time()
+    # Bound the *total* cut-generation time. Each model.minimize() is already
+    # capped at the model's time_limit, but the loop can add many rounds of cuts,
+    # so without a global deadline the wall-clock is unbounded (the same flaw fixed
+    # in solve_sap_highs). Read the configured limit, then give each re-solve only
+    # the time remaining and stop once it is exhausted.
+    _tl = model.getOptionValue("time_limit")
+    total_tl = float(_tl[1] if isinstance(_tl, tuple) else _tl)
 
+    start_time = time.time()
+    converged = False
     while True:
+        remaining = total_tl - (time.time() - start_time)
+        if remaining <= 0:
+            break
+        model.setOptionValue("time_limit", remaining)
         model.minimize(objective_expr)
 
         # If the model has no feasible/valid primal (e.g. an objective cutoff or
@@ -701,7 +714,12 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
         violated_cuts = find_violated_cuts(steiner_problem, y2, z, model)
 
         if not violated_cuts:
-            break  # Solution is feasible with respect to all cut constraints
+            # Optimal only if this re-solve proved optimality. A time-limit-
+            # interrupted solve can return a connected but suboptimal incumbent
+            # with no violated cuts; treating it as converged would falsely report
+            # gap 0 (the false-optimal bug fixed in solve_sap_highs).
+            converged = status == hp.HighsModelStatus.kOptimal
+            break  # feasible w.r.t. all cut constraints
 
         # Add each violated cut as a new constraint: sum(y2[k,a] for a in cut) >= z[k,l]
         for group_id_k, group_id_l, cut_arcs in violated_cuts:
@@ -714,8 +732,14 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     logging.info(f"Runtime: {runtime:.2f} seconds")
 
     selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
-    gap = model.getInfo().mip_gap
     objective = model.getObjectiveValue()
+    if converged:
+        gap = model.getInfo().mip_gap
+    else:
+        # Global time limit hit before all connectivity cuts were separated:
+        # selected_edges may be disconnected and the relaxation objective is only a
+        # lower bound, so do not report a (spurious) ~0 MIP gap.
+        gap = float("inf")
 
     return gap, runtime, objective, selected_edges
 
@@ -1287,24 +1311,47 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         except Exception:
             pass
 
-    if da_ub is not None:
-        try:
-            model.setOptionValue("objective_bound", float(da_ub))
-        except Exception:
-            pass
+    # NOTE: deliberately do NOT pass da_ub to HiGHS as `objective_bound`. Unlike
+    # Gurobi's `Params.Cutoff` (a true pruning cutoff), HiGHS treats objective_bound
+    # as a termination target inside the cut loop: a loose dual-ascent UB makes a
+    # re-solve stop kOptimal at a feasible-but-suboptimal incumbent, which the loop
+    # then reports as "proven optimal" (false-optimal bug observed on PCSPG P400).
+    # da_ub is still used below only to report an honest gap on a non-proven solve.
 
     obj = sum(xa[a] * view.graph.edges[a][view.weight] for a in arcs)
 
     start = time.time()
+    converged = False
+    _STOP = (
+        hp.HighsModelStatus.kInfeasible,
+        hp.HighsModelStatus.kObjectiveBound,
+        hp.HighsModelStatus.kUnbounded,
+        hp.HighsModelStatus.kUnboundedOrInfeasible,
+    )
     while True:
+        # Bound the *total* cut-generation time, not just each individual re-solve.
+        # The loop can add many rounds of Steiner cuts, and each model.minimize()
+        # otherwise gets the full time_limit, so the wall-clock was unbounded — it
+        # hung on hard instances (e.g. PCSPG P400, where dual ascent fixes nothing
+        # and many cut rounds are needed). Give each solve only the time remaining
+        # and stop once it is exhausted.
+        remaining = time_limit - (time.time() - start)
+        if remaining <= 0:
+            break
+        model.setOptionValue("time_limit", remaining)
         model.minimize(obj)
-        try:
-            col_value = model.getSolution().col_value
-            xa_vals = {(0, a): col_value[xa[a].index] for a in arcs}
-        except Exception:  # pragma: no cover - defensive fallback
-            xa_vals = {(0, a): model.variableValue(xa[a]) for a in arcs}
+        status = model.getModelStatus()
+        if status in _STOP or not model.getSolution().value_valid:
+            break
+        col_value = model.getSolution().col_value
+        xa_vals = {(0, a): col_value[xa[a].index] for a in arcs}
         violated = find_violated_cuts_from_values(view, xa_vals, {(0, 0): 1.0})
         if not violated:
+            # Optimal only if this re-solve actually *proved* optimality. A solve
+            # interrupted by the (shrinking) time limit can return a connected but
+            # suboptimal incumbent with no violated cuts; treating that as converged
+            # would stamp a non-optimal tree "proven optimal" (observed on P400).
+            converged = status == hp.HighsModelStatus.kOptimal
             break
         for (_k, _l, cut_arcs) in violated:
             if cut_arcs:
@@ -1312,8 +1359,18 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
     runtime = time.time() - start
 
     selected = [a for a in arcs if model.variableValue(xa[a]) > 0.5]
-    gap = model.getInfo().mip_gap
     objective = model.getObjectiveValue()
+    if converged:
+        gap = model.getInfo().mip_gap
+    else:
+        # Time limit hit before all connectivity cuts were separated: the model is
+        # a relaxation whose optimum is only a lower bound, so its MIP gap would be
+        # a spurious ~0. Report an honest gap against the dual-ascent feasible upper
+        # bound instead (the caller maps the best valid component of `selected`).
+        if da_ub is not None and math.isfinite(da_ub) and da_ub > 0:
+            gap = max(0.0, (da_ub - objective) / max(1.0, abs(da_ub)))
+        else:
+            gap = float("inf")
     return gap, runtime, objective, selected
 
 

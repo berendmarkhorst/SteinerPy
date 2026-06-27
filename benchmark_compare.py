@@ -51,6 +51,7 @@ reused here as-is:
 """
 
 import argparse
+import math
 import os
 import sys
 import time
@@ -69,13 +70,15 @@ from benchmarks.optima import load_optima, optimum_for
 DEFAULT_INSTANCES = os.path.join("benchmarks", "data", "B")
 NX_METHODS = ("kou", "mehlhorn")
 
-# Method registry: key -> column header. Order drives the table layout.
+# Method registry: key -> (compact console header, full display name). The
+# compact header keeps the fixed-width console table aligned; the display name is
+# used in the Markdown report (README). Order drives the table layout.
 METHODS = [
-    ("nx_kou", "NX-kou"),
-    ("nx_meh", "NX-meh"),
-    ("sp_exact", "SP-exact"),
-    ("sp_da", "SP+DA"),
-    ("sp_heur", "SP-heur"),
+    ("nx_kou", "NX-kou", "NetworkX-kou"),
+    ("nx_meh", "NX-meh", "NetworkX-mehlhorn"),
+    ("sp_exact", "SP-exact", "SteinerPy-exact"),
+    ("sp_da", "SP+DA", "SteinerPy-exact+DA"),
+    ("sp_heur", "SP-heur", "SteinerPy-heuristic"),
 ]
 
 
@@ -189,7 +192,7 @@ def _fmt_pct(v):
 
 def _build_header(methods):
     head = f"{'Instance':<10} {'|V|':>4} {'|E|':>5} {'k':>3} {'opt':>6} |"
-    for _, hdr in methods:
+    for _, hdr, _disp in methods:
         head += f" {hdr + ' t':>8} {'gap%':>6} |"
     head += f" {'heur cgap%':>10}"
     return head
@@ -200,7 +203,7 @@ def print_row(r, methods):
         f"{r['label']:<10} {r['n']:>4} {r['edges']:>5} {r['k']:>3} "
         f"{(r['opt'] if r['opt'] is not None else '-')!s:>6} |"
     )
-    for key, _ in methods:
+    for key, _, _disp in methods:
         line += f" {_fmt_time(r.get(f'{key}_time'))} {_fmt_pct(r.get(f'{key}_gap'))} |"
     # SteinerPy heuristic's certified optimality bound (networkx has none).
     line += f" {_fmt_pct(r.get('sp_heur_cgap')):>10}"
@@ -212,8 +215,68 @@ def print_row(r, methods):
 
 
 def _avg(values):
-    vals = [v for v in values if isinstance(v, (int, float))]
+    # Exclude non-finite values so a single timeout (gap == inf, no incumbent
+    # found within the limit) doesn't poison a whole average column.
+    vals = [v for v in values if isinstance(v, (int, float)) and math.isfinite(v)]
     return sum(vals) / len(vals) if vals else None
+
+
+# ---------------------------------------------------------------------------
+# Markdown emitter (for pasting results into the README)
+# ---------------------------------------------------------------------------
+
+def _md_time(v):
+    return f"{v:.3f}" if isinstance(v, (int, float)) else "&mdash;"
+
+
+def _md_pct(v):
+    if not isinstance(v, (int, float)):
+        return "&mdash;"
+    if not math.isfinite(v):
+        return "&infin;"  # timed out with no feasible incumbent
+    p = v * 100
+    return f"{0.0 if abs(p) < 5e-5 else p:.2f}"
+
+
+def _md_summary_table(summary, n_inst):
+    lines = ["| Method | Avg time (s) | Avg gap % | # optimal |",
+             "|--------|-------------:|----------:|----------:|"]
+    for _hdr, disp, avg_t, avg_g, n_opt in summary:
+        t = f"{avg_t:.3f}" if avg_t is not None else "&mdash;"
+        g = "&mdash;" if avg_g is None else _md_pct(avg_g)
+        lines.append(f"| {disp} | {t} | {g} | {n_opt}/{n_inst} |")
+    return "\n".join(lines)
+
+
+def _md_detail_table(all_results, methods):
+    cols = ["Instance", "n", "m", "k", "opt"]
+    for _, _hdr, disp in methods:
+        cols += [f"{disp} t", f"{disp} gap%"]
+    cols += ["heur cgap%"]
+    rows = ["| " + " | ".join(cols) + " |",
+            "|" + "|".join("---" for _ in cols) + "|"]
+    for r in all_results:
+        cells = [r["label"], str(r["n"]), str(r["edges"]), str(r["k"]),
+                 (f"{r['opt']:g}" if r["opt"] is not None else "&mdash;")]
+        for key, _, _disp in methods:
+            cells += [_md_time(r.get(f"{key}_time")), _md_pct(r.get(f"{key}_gap"))]
+        cells.append(_md_pct(r.get("sp_heur_cgap")))
+        rows.append("| " + " | ".join(cells) + " |")
+    return "\n".join(rows)
+
+
+def print_markdown(args, paths, all_results, methods, summary, speedup):
+    mode = "heuristics only" if args.heuristics_only else "heuristics + exact"
+    print("### Steiner Tree &mdash; SteinerPy vs NetworkX\n")
+    print(f"_Instances: `{args.instances}` ({len(paths)} files) &middot; "
+          f"solver: {args.solver} &middot; time limit: {args.time_limit:g}s/solve "
+          f"&middot; mode: {mode}._\n")
+    print(_md_summary_table(summary, len(all_results)))
+    if speedup is not None:
+        print(f"\nAverage exact-vs-DA speedup (SP-exact / SP+DA): **{speedup:.2f}&times;**.")
+    print("\n<details>\n<summary>Per-instance detail</summary>\n")
+    print(_md_detail_table(all_results, methods))
+    print("\n</details>")
 
 
 def main(argv=None):
@@ -230,6 +293,9 @@ def main(argv=None):
     ap.add_argument("--heuristics-only", action="store_true",
                     help="skip the exact ILP runs; compare only the heuristics "
                          "(NX-kou, NX-meh, SP-heur) — scales to large instances")
+    ap.add_argument("--markdown", action="store_true",
+                    help="emit a GitHub-flavored Markdown report (for the README) "
+                         "instead of the fixed-width console table")
     args = ap.parse_args(argv)
 
     methods = [m for m in METHODS
@@ -247,13 +313,14 @@ def main(argv=None):
     sep = "-" * len(header)
 
     mode = "heuristics only" if args.heuristics_only else "heuristics + exact"
-    print("\n" + "=" * len(header))
-    print("SteinerPy vs NetworkX — Steiner Tree on literature instances")
-    print("=" * len(header))
-    print(f"\nInstances : {args.instances}  ({len(paths)} files)")
-    print(f"Mode      : {mode}")
-    print(f"Solver    : {args.solver}   time-limit: {args.time_limit:g}s/solve")
-    print("""
+    if not args.markdown:
+        print("\n" + "=" * len(header))
+        print("SteinerPy vs NetworkX — Steiner Tree on literature instances")
+        print("=" * len(header))
+        print(f"\nInstances : {args.instances}  ({len(paths)} files)")
+        print(f"Mode      : {mode}")
+        print(f"Solver    : {args.solver}   time-limit: {args.time_limit:g}s/solve")
+        print("""
 Columns:
   NX-kou / NX-meh = networkx approximation.steiner_tree (2-approx, no bound)
   SP-exact        = steinerpy exact ILP, selected solver (no acceleration)
@@ -268,23 +335,21 @@ SP-exact / SP+DA gap% should be ~0 (they return the published optimum). gap% is
 measured against literature optima, not the solver's internal gap. '(opt=ref)'
 marks an instance with no published optimum (gap is vs. the best exact value).
 """)
-    print(header)
-    print(sep)
+        print(header)
+        print(sep)
 
     all_results = []
     for path in paths:
         r = run_case(path, optima, args.time_limit, args.solver,
                      heuristics_only=args.heuristics_only)
         all_results.append(r)
-        print_row(r, methods)
+        if not args.markdown:
+            print_row(r, methods)
 
-    print(sep)
-
-    # ---- Summary ----
-    print("\nSummary (averages over instances where the method ran):")
-    print(f"  {'method':<10} {'avg time':>10} {'avg gap%':>9} {'#optimal':>9}")
+    # ---- Summary stats (computed once, rendered either way) ----
     n_inst = len(all_results)
-    for key, hdr in methods:
+    summary = []
+    for key, hdr, disp in methods:
         avg_t = _avg(r.get(f"{key}_time") for r in all_results)
         avg_g = _avg(r.get(f"{key}_gap") for r in all_results)
         n_opt = sum(
@@ -292,10 +357,7 @@ marks an instance with no published optimum (gap is vs. the best exact value).
             if isinstance(r.get(f"{key}_gap"), (int, float))
             and abs(r[f"{key}_gap"]) < 5e-5  # below the 0.01% table precision
         )
-        avg_t_s = f"{avg_t:>9.3f}s" if avg_t is not None else f"{'-':>10}"
-        avg_g_pct = 0.0 if avg_g is not None and abs(avg_g) < 5e-5 else avg_g
-        avg_g_s = f"{avg_g_pct * 100:>8.2f}%" if avg_g is not None else f"{'-':>9}"
-        print(f"  {hdr:<10} {avg_t_s} {avg_g_s} {f'{n_opt}/{n_inst}':>9}")
+        summary.append((hdr, disp, avg_t, avg_g, n_opt))
 
     # Exact-vs-DA speedup.
     speedups = [
@@ -304,9 +366,23 @@ marks an instance with no published optimum (gap is vs. the best exact value).
         if isinstance(r.get("sp_exact_time"), (int, float))
         and isinstance(r.get("sp_da_time"), (int, float)) and r["sp_da_time"] > 0
     ]
-    if speedups:
-        print(f"\nAverage exact-vs-DA speedup (SP-exact / SP+DA): "
-              f"{sum(speedups) / len(speedups):.2f}x")
+    speedup = sum(speedups) / len(speedups) if speedups else None
+
+    if args.markdown:
+        print_markdown(args, paths, all_results, methods, summary, speedup)
+        return
+
+    print(sep)
+    print("\nSummary (averages over instances where the method ran):")
+    print(f"  {'method':<10} {'avg time':>10} {'avg gap%':>9} {'#optimal':>9}")
+    for hdr, _disp, avg_t, avg_g, n_opt in summary:
+        avg_t_s = f"{avg_t:>9.3f}s" if avg_t is not None else f"{'-':>10}"
+        avg_g_pct = 0.0 if avg_g is not None and abs(avg_g) < 5e-5 else avg_g
+        avg_g_s = f"{avg_g_pct * 100:>8.2f}%" if avg_g is not None else f"{'-':>9}"
+        print(f"  {hdr:<10} {avg_t_s} {avg_g_s} {f'{n_opt}/{n_inst}':>9}")
+
+    if speedup is not None:
+        print(f"\nAverage exact-vs-DA speedup (SP-exact / SP+DA): {speedup:.2f}x")
 
     print("\nNotes:")
     print("  • SP-exact and SP+DA return the proven optimum (gap% ~ 0); they")

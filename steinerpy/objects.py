@@ -157,6 +157,25 @@ class BaseSteinerProblem:
             was_preprocessed=self.preprocess,
         )
 
+    def _sph_candidates(self, graph, terminals) -> List[List[Tuple]]:
+        """Classic shortest-path-heuristic trees as extra primal candidates.
+
+        Returns the edge lists of the Kou et al. (1981) and Mehlhorn (1988)
+        2-approximations (via :func:`networkx.algorithms.approximation.steiner_tree`)
+        on *graph*. Used only for the single-group undirected heuristic portfolio;
+        failures (disconnected graph, missing terminal) are skipped.
+        """
+        from networkx.algorithms.approximation import steiner_tree
+        out = []
+        for method in ("kou", "mehlhorn"):
+            try:
+                tree = steiner_tree(graph, terminals, weight=self.weight,
+                                    method=method)
+                out.append(list(tree.edges()))
+            except Exception:
+                pass
+        return out
+
     def _heuristic_solution(self) -> 'Solution':
         """Return the dual-ascent primal directly, with no ILP.
 
@@ -181,22 +200,47 @@ class BaseSteinerProblem:
                 "dual-ascent heuristic found no feasible solution; the terminals "
                 "may be disconnected."
             )
-        # Kou-style cleanup (undirected tree or forest): per connected component,
-        # recompute an MST over the subgraph induced by the dual-ascent primal's
-        # vertices and prune non-terminal leaves. It never increases cost and keeps
-        # each group connected, so it tightens both the tree and the certified gap
-        # (lower_bound is unchanged). Scoped to this heuristic path only, so the
-        # exact solver's warm-start primal/cutoff and reduced-cost fixing — which
-        # consume the raw dual-ascent primal — are untouched.
+        # Primal portfolio + Kou-style cleanup (undirected tree or forest), run in
+        # ORIGINAL-graph space. The raw dual-ascent primal is just one feasible
+        # tree; for a single group we also build the classic shortest-path-heuristic
+        # trees (Kou 1981, Mehlhorn 1988 via networkx) as extra candidates. Each
+        # candidate is refined per connected component — MST over the subgraph
+        # induced by its vertices, then non-terminal leaf pruning — which never
+        # increases cost and keeps every group connected. Keeping the cheapest
+        # refined candidate makes the result provably <= every Kou/Mehlhorn tree it
+        # builds on the original graph (so <= networkx, modulo heuristic tie-breaking
+        # on degenerate instances), while the dual-ascent lower bound — a valid
+        # bound that reductions preserve — still
+        # certifies the gap. Operating on the original graph (not the reduced one
+        # the ascent used) avoids reduction artifacts and keeps the <= networkx
+        # guarantee exact. The exact solver's warm-start primal/cutoff/fixing
+        # consume the raw reduced-graph da.primal_edges and are untouched.
         if not da.is_directed:
             from .dual_ascent import refine_primal_mst, _edges_cost
+            graph = self.original_graph
             all_terminals = [t for g in self.terminal_groups for t in g]
-            refined = refine_primal_mst(
-                self.graph, da.primal_edges, all_terminals, self.weight)
-            if refined:
-                rcost = _edges_cost(self.graph, refined, self.weight)
-                if rcost < da.upper_bound:
-                    da.primal_edges, da.upper_bound = refined, rcost
+            da_primal = (map_solution_to_original(
+                            da.primal_edges, self.reduction_tracker, self.graph)
+                         if self.preprocess else list(da.primal_edges))
+            candidates = [da_primal]
+            if len(self.terminal_groups) == 1:
+                candidates.extend(self._sph_candidates(graph, self.terminal_groups[0]))
+            best_edges = da_primal
+            best_cost = _edges_cost(graph, da_primal, self.weight)
+            for cand in candidates:
+                refined = refine_primal_mst(graph, cand, all_terminals, self.weight)
+                if refined:
+                    rcost = _edges_cost(graph, refined, self.weight)
+                    if rcost < best_cost:
+                        best_edges, best_cost = refined, rcost
+            gap = (_math.inf if _math.isinf(da.lower_bound)
+                   else (best_cost - da.lower_bound) / max(1.0, abs(best_cost)))
+            return Solution(
+                gap=gap, runtime=_time.time() - t0, objective=best_cost,
+                selected_edges=best_edges, original_selected_edges=best_edges,
+                was_preprocessed=self.preprocess,
+            )
+        # Directed: no undirected MST/SPH cleanup; return the dual-ascent primal.
         if _math.isinf(da.lower_bound):
             gap = _math.inf
         else:
@@ -635,7 +679,7 @@ class GroupSteinerProblem(SteinerProblem):
     Group Steiner Tree Problem (GSTP), thesis Ch. 5.7.
 
     Given vertex *groups*, find a minimum-cost tree that contains at least one vertex
-    from each group.  Solved by the Voss (1988) transformation to a plain Steiner tree
+    from each group.  Solved by the Voss (1999) transformation to a plain Steiner tree
     problem: add one artificial super-terminal per group, connected by zero-cost edges
     to every vertex of that group, then solve the Steiner tree problem whose terminals
     are the super-terminals.  The zero-cost connector edges are stripped from the
@@ -909,7 +953,10 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         bounds how far it could be from the optimum.
         """
         import time as _time, math as _math
-        from .pc_transform import map_sap_solution_to_pcstp, best_trivial_pcstp
+        from .pc_transform import (
+            map_sap_solution_to_pcstp, best_trivial_pcstp, refine_pcstp_tree,
+            pcstp_steiner_candidate,
+        )
         from .dual_ascent import dual_ascent as _run_da
 
         ctx = self._build_pc_transform()
@@ -920,7 +967,23 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             raise RuntimeError(
                 "dual-ascent heuristic found no feasible solution for the transformed SAP."
             )
-        edges, nodes, pcstp_obj = map_sap_solution_to_pcstp(ctx, da.primal_edges)
+        # Primal portfolio, each cleaned by the same cost-monotone local search
+        # (greedy profitable-node insertion + MST + unprofitable-leaf pruning):
+        #   A) the dual-ascent SAP primal mapped back to the PCSTP graph — strong
+        #      when few prizes are worth collecting (grows from what DA found);
+        #   B) a Steiner tree over *all* prize nodes, then pruned — strong on
+        #      dense-prize (P-type) instances where the DA primal is near-trivial.
+        # Keeping the cheaper makes the heuristic robust across both regimes; the
+        # dual-ascent lower bound is unchanged, so the certified gap stays valid.
+        edges, nodes, _ = map_sap_solution_to_pcstp(ctx, da.primal_edges)
+        edges, nodes, pcstp_obj = refine_pcstp_tree(
+            ctx._orig_graph, edges, nodes, ctx.node_prizes, ctx.weight)
+        cand = pcstp_steiner_candidate(ctx._orig_graph, ctx.node_prizes, ctx.weight)
+        if cand is not None:
+            e2, n2, o2 = refine_pcstp_tree(
+                ctx._orig_graph, cand[0], cand[1], ctx.node_prizes, ctx.weight)
+            if o2 < pcstp_obj:
+                edges, nodes, pcstp_obj = e2, n2, o2
         triv_nodes, triv_obj = best_trivial_pcstp(ctx.node_prizes)
         if triv_obj < pcstp_obj - 1e-9:
             edges, nodes, pcstp_obj = [], triv_nodes, triv_obj

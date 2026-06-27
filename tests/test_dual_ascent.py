@@ -696,3 +696,48 @@ def test_heuristic_mode_unsupported_raises():
         SteinerProblem(g, [[0, 4]], preprocess=False, budget=3.0).get_solution(exact=False)
     with pytest.raises(NotImplementedError):
         SteinerProblem(g, [[0, 4]], preprocess=False, max_degree=2).get_solution(exact=False)
+
+
+def test_heuristic_mode_disconnected_terminals_raises():
+    # Terminals in separate components -> no feasible primal -> RuntimeError.
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=1)
+    g.add_edge("C", "D", weight=1)
+    with pytest.raises(RuntimeError):
+        SteinerProblem(g, [["A", "C"]], preprocess=False).get_solution(exact=False)
+
+
+def test_sph_candidates_swallows_errors():
+    # A terminal missing from the graph makes networkx.steiner_tree raise for
+    # every method; _sph_candidates must skip those and return no candidates.
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=1)
+    prob = SteinerProblem(g, [["A", "B"]], preprocess=False)
+    assert prob._sph_candidates(g, ["A", "missing-node"]) == []
+
+
+def test_heuristic_portfolio_beats_dual_ascent_primal():
+    # An instance where the shortest-path-heuristic portfolio (Kou/Mehlhorn)
+    # yields a strictly cheaper refined tree than the raw dual-ascent primal,
+    # so the portfolio branch selects the better candidate. Still a valid (>= 0)
+    # gap against the unchanged dual-ascent lower bound.
+    edges = [
+        (0, 5, 9), (0, 6, 14), (0, 7, 9), (1, 2, 7), (1, 4, 8), (1, 6, 4),
+        (1, 7, 14), (1, 8, 1), (2, 7, 7), (2, 9, 7), (3, 6, 4), (3, 9, 9),
+        (4, 6, 13), (4, 7, 7), (4, 8, 6), (4, 9, 13), (5, 7, 11), (5, 9, 2),
+        (6, 7, 11), (6, 8, 11),
+    ]
+    g = nx.Graph()
+    for u, v, w in edges:
+        g.add_edge(u, v, weight=w)
+    terms = [3, 2, 0]
+    da = dual_ascent(SteinerProblem(g, [terms], preprocess=False))
+    sol = SteinerProblem(g, [terms], preprocess=False).get_solution(exact=False)
+    # portfolio improves strictly on the dual-ascent primal (31 < 32)
+    assert sol.objective == pytest.approx(31.0)
+    assert sol.objective < da.upper_bound - 1e-9
+    # gap stays valid: bounded below by 0, lower bound never exceeds the optimum
+    assert sol.gap >= -1e-12
+    exact = SteinerProblem(g, [terms], preprocess=False).get_solution(time_limit=30).objective
+    assert sol.objective + 1e-9 >= exact
+    assert _connected_per_group(sol.edges, [terms])

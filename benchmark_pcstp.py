@@ -34,6 +34,7 @@ heuristic are scored against it.
 """
 
 import argparse
+import math
 import os
 import sys
 import time
@@ -161,6 +162,68 @@ def _pct(v):
     return f"{p:>7.2f}"
 
 
+# ---------------------------------------------------------------------------
+# Markdown emitter (for pasting results into the README)
+# ---------------------------------------------------------------------------
+
+def _md_t(v):
+    return f"{v:.3f}" if isinstance(v, (int, float)) else "&mdash;"
+
+
+def _md_p(v):
+    if not isinstance(v, (int, float)):
+        return "&mdash;"
+    if not math.isfinite(v):
+        return "&infin;"  # timed out with no feasible incumbent
+    p = v * 100
+    return f"{0.0 if abs(p) < 5e-5 else p:.2f}"
+
+
+def _md_summary_table(summary_rows, n):
+    head = ["| Method | Avg time (s) | Avg gap % | # optimal |",
+            "|--------|-------------:|----------:|----------:|"]
+    for _label, disp, avg_t, avg_g, n_opt in summary_rows:
+        t = f"{avg_t:.3f}" if avg_t is not None else "&mdash;"
+        g = "&mdash;" if avg_g is None else _md_p(avg_g)
+        head.append(f"| {disp} | {t} | {g} | {n_opt}/{n} |")
+    return "\n".join(head)
+
+
+def _md_detail_table(results, show_exact):
+    cols = ["Instance", "n", "m", "p", "opt"]
+    if show_exact:
+        cols += ["SteinerPy-exact t", "SteinerPy-exact gap%"]
+    cols += ["SteinerPy-heuristic t", "SteinerPy-heuristic gap%",
+             "SteinerPy-heuristic cgap%", "pcst_fast t", "pcst_fast gap%"]
+    rows = ["| " + " | ".join(cols) + " |",
+            "|" + "|".join("---" for _ in cols) + "|"]
+    for r in results:
+        opt = r["opt"]
+        opt_s = (f"{opt:g}" if isinstance(opt, (int, float)) else "&mdash;")
+        if isinstance(opt, (int, float)) and not r["opt_proven"]:
+            opt_s += "~"  # exact hit the time limit; reference only
+        cells = [r["label"], str(r["n"]), str(r["edges"]), str(r["p"]), opt_s]
+        if show_exact:
+            cells += [_md_t(r.get("ex_time")), _md_p(r.get("ex_gap"))]
+        cells += [_md_t(r.get("he_time")), _md_p(r.get("he_gap")),
+                  _md_p(r.get("he_cgap")), _md_t(r.get("pf_time")),
+                  _md_p(r.get("pf_gap"))]
+        rows.append("| " + " | ".join(cells) + " |")
+    return "\n".join(rows)
+
+
+def print_markdown(args, paths, results, summary_rows, show_exact):
+    mode = "heuristics only" if args.heuristics_only else "heuristic + exact"
+    print("### Prize-Collecting Steiner (PCSPG) &mdash; SteinerPy vs pcst_fast\n")
+    print(f"_Instances: `{args.instances}` ({len(paths)} files) &middot; "
+          f"solver: {args.solver} &middot; time limit: {args.time_limit:g}s "
+          f"&middot; mode: {mode}._\n")
+    print(_md_summary_table(summary_rows, len(results)))
+    print("\n<details>\n<summary>Per-instance detail</summary>\n")
+    print(_md_detail_table(results, show_exact))
+    print("\n</details>")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="SteinerPy vs pcst_fast on PCSPG (prize-collecting) instances.")
@@ -172,6 +235,9 @@ def main(argv=None):
                     help="MIP solver for the exact SAP transform (default: gurobi)")
     ap.add_argument("--heuristics-only", action="store_true",
                     help="skip the exact solve; compare SP-heur vs pcst_fast only")
+    ap.add_argument("--markdown", action="store_true",
+                    help="emit a GitHub-flavored Markdown report (for the README) "
+                         "instead of the fixed-width console table")
     args = ap.parse_args(argv)
 
     paths = sorted(
@@ -188,26 +254,29 @@ def main(argv=None):
               + f" {'pcstf t':>8} {'gap%':>7}")
     sep = "-" * len(header)
 
-    print("\n" + "=" * len(header))
-    print("SteinerPy vs pcst_fast — Prize-Collecting Steiner (PCSPG)")
-    print("=" * len(header))
-    print(f"\nInstances : {args.instances}  ({len(paths)} files)")
-    print(f"Mode      : {'heuristics only' if args.heuristics_only else 'heuristic + exact'}"
-          f"   solver: {args.solver}   time-limit: {args.time_limit:g}s")
-    print("""
+    if not args.markdown:
+        print("\n" + "=" * len(header))
+        print("SteinerPy vs pcst_fast — Prize-Collecting Steiner (PCSPG)")
+        print("=" * len(header))
+        print(f"\nInstances : {args.instances}  ({len(paths)} files)")
+        print(f"Mode      : {'heuristics only' if args.heuristics_only else 'heuristic + exact'}"
+              f"   solver: {args.solver}   time-limit: {args.time_limit:g}s")
+        print("""
 Columns:
   SP-ex   = steinerpy exact (pc_transform), proven optimal (the reference)
   SP-he   = steinerpy heuristic (exact=False); cgap% = its CERTIFIED gap
   pcstf   = pcst_fast Goemans-Williamson 2-approx (no certificate)
   gap%    = (obj - opt) / opt vs. the exact optimum  |  '<m> t' = seconds
 """)
-    print(header)
-    print(sep)
+        print(header)
+        print(sep)
 
     results = []
     for path in paths:
         r = run_case(path, args.time_limit, args.solver, args.heuristics_only)
         results.append(r)
+        if args.markdown:
+            continue
         opt = r["opt"]
         opt_s = (f"{opt:>9.0f}" if isinstance(opt, (int, float)) else f"{'-':>9}")
         if isinstance(opt, (int, float)) and not r["opt_proven"]:
@@ -221,11 +290,10 @@ Columns:
             line += f"  [{r['status']}]"
         print(line)
 
-    print(sep)
-
-    # ---- Summary ----
+    # ---- Summary stats (computed once, rendered either way) ----
     def avg(key):
-        vals = [r[key] for r in results if isinstance(r.get(key), (int, float))]
+        vals = [r[key] for r in results
+                if isinstance(r.get(key), (int, float)) and math.isfinite(r[key])]
         return sum(vals) / len(vals) if vals else None
 
     def n_opt(key):
@@ -233,17 +301,25 @@ Columns:
                    if isinstance(r.get(key), (int, float)) and abs(r[key]) < 5e-5)
 
     n = len(results)
+    rows = [("SP-heur", "SteinerPy-heuristic", "he_time", "he_gap"),
+            ("pcst_fast", "pcst_fast", "pf_time", "pf_gap")]
+    if show_exact:
+        rows.insert(0, ("SP-exact", "SteinerPy-exact", "ex_time", "ex_gap"))
+    summary_rows = [(label, disp, avg(tkey), avg(gkey), n_opt(gkey))
+                    for label, disp, tkey, gkey in rows]
+
+    if args.markdown:
+        print_markdown(args, paths, results, summary_rows, show_exact)
+        return
+
+    print(sep)
     print("\nSummary (averages over solved instances):")
     print(f"  {'method':<10} {'avg time':>10} {'avg gap%':>9} {'#optimal':>9}")
-    rows = [("SP-heur", "he_time", "he_gap"), ("pcst_fast", "pf_time", "pf_gap")]
-    if show_exact:
-        rows.insert(0, ("SP-exact", "ex_time", "ex_gap"))
-    for label, tkey, gkey in rows:
-        at, ag = avg(tkey), avg(gkey)
+    for label, _disp, at, ag, no in summary_rows:
         at_s = f"{at:>9.3f}s" if at is not None else f"{'-':>10}"
         ag_s = f"{(0.0 if ag is not None and abs(ag) < 5e-5 else ag) * 100:>8.2f}%" \
             if ag is not None else f"{'-':>9}"
-        print(f"  {label:<10} {at_s} {ag_s} {f'{n_opt(gkey)}/{n}':>9}")
+        print(f"  {label:<10} {at_s} {ag_s} {f'{no}/{n}':>9}")
 
     print("\nNotes:")
     if show_exact:
@@ -253,9 +329,9 @@ Columns:
         print("  • No exact run: gaps are vs. the best heuristic objective per")
         print("    instance (a non-proven reference), so the best method shows 0%.")
     print("  • pcst_fast is extremely fast but gives no optimality certificate.")
-    print("  • SP-heur is ILP-free and reports a CERTIFIED gap (cgap%); its PCSTP")
-    print("    primal (dual-ascent SAP) is weak on P-type instances — unlike the")
-    print("    classic-Steiner heuristic, this path has no MST refinement yet.")
+    print("  • SP-heur is ILP-free and reports a CERTIFIED gap (cgap%). Its primal")
+    print("    is a portfolio — the dual-ascent SAP tree and a 'connect-all-prizes")
+    print("    then prune' tree — each cleaned by insertion + MST + leaf pruning.")
 
 
 if __name__ == "__main__":
