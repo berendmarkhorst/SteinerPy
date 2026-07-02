@@ -56,6 +56,7 @@ class BaseSteinerProblem:
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight", preprocess=True, **kwargs):
         """
         Initialize the SteinerProblem (can be tree or forest).
+
         :param graph: networkx graph (Graph or DiGraph).
         :param terminal_groups: nested list of terminals.
         :param weight: edge attribute specified by this string as the edge weight.
@@ -796,6 +797,7 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
     def __init__(self, graph, terminal_groups, node_prizes, penalty_cost=1000, penalty_budget=None, **kwargs):
         """
         Prize Collecting Steiner Problem - extends regular Steiner problem.
+
         :param node_prizes: dict mapping node -> prize value
         :param penalty_cost: cost per unconnected terminal
         :param penalty_budget: maximum total penalty allowed (optional)

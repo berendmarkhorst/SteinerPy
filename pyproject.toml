@@ -49,15 +49,17 @@ dev = [
     "mypy",
 ]
 docs = [
-    "sphinx",
-    "sphinx-rtd-theme",
+    "sphinx>=7.0",
+    "furo",
+    "myst-nb",
+    "sphinx-copybutton",
 ]
 
 [project.urls]
 Homepage = "https://github.com/berendmarkhorst/SteinerPy"
 Repository = "https://github.com/berendmarkhorst/SteinerPy"
 Issues = "https://github.com/berendmarkhorst/SteinerPy/issues"
-Documentation = "https://github.com/berendmarkhorst/SteinerPy"
+Documentation = "https://steinerpy.readthedocs.io"
 Changelog = "https://github.com/berendmarkhorst/SteinerPy/releases"
 
 [tool.hatch.build.targets.wheel]

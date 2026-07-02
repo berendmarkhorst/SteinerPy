@@ -70,6 +70,9 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/build/
+# generated at build time by docs/source/conf.py (copied from ./example.ipynb)
+docs/source/examples/quickstart.ipynb
 
 # PyBuilder
 .pybuilder/

@@ -53,6 +53,7 @@ _SEP_PARALLEL_MIN_TASKS = 4
 def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsModel:
     """
     Creates a HiGHS model with the given time limit and logfile.
+
     :param time_limit: time limit in seconds for the HiGHS model.
     :param logfile: path to logfile.
     :param threads: HiGHS thread count.  ``None`` -> ``STEINERPY_THREADS`` env or
@@ -86,6 +87,7 @@ def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsMo
 def get_terminals(terminal_group: List[List]) -> List:
     """
     Turns a nested list of terminals into a list of terminals.
+
     :param terminal_group: nested list of terminals.
     :return: list of terminals.
     """
@@ -94,6 +96,7 @@ def get_terminals(terminal_group: List[List]) -> List:
 def terminal_groups_without_root(terminal_group: List[List], roots: List, group_index: int) -> Set:
     """
     Get terminal groups until index k without kth root.
+
     :param terminal_group: nested list of terminals.
     :param roots: list of roots.
     :param group_index: index of the terminal group.
@@ -107,6 +110,7 @@ def terminal_groups_without_root(terminal_group: List[List], roots: List, group_
 def get_terminal_groups_until_k(terminal_groups: List[List], group_index: int) -> Set:
     """
     Get terminal groups until index k.
+
     :param terminal_groups: nested list of terminals.
     :param group_index: index of the terminal group.
     :return: subset of terminal groups up till index k.
@@ -116,6 +120,7 @@ def get_terminal_groups_until_k(terminal_groups: List[List], group_index: int) -
 def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem') -> Tuple[hp.HighsModel, Dict[str, hp.HighsVarType]]:
     """
     Adds DO-D constraints to the model (see Markhorst et al. 2025)
+
     :param model: HiGHS model.
     :param steiner_problem: AutomatedPipeRouting-object.
     :return: HiGHS model with DO-D constraints and decision variables.
@@ -203,6 +208,7 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
 def demand_and_supply_directed(steiner_problem: 'SteinerProblem', group_id_k: int, t: Tuple, v: Tuple, z: hp.HighsVarType) -> Union[hp.HighsVarType, int]:
     """
     Calculate the demand and supply for a directed model.
+
     :param cc_k: The current connected component.
     :param t: A terminal represented as a tuple of integers.
     :param v: A vertex represented as a tuple of integers.
@@ -224,6 +230,7 @@ def demand_and_supply_directed(steiner_problem: 'SteinerProblem', group_id_k: in
 def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem', z: hp.HighsVarType, y2: hp.HighsVarType) -> Tuple[hp.HighsModel, Dict[str, hp.HighsVarType]]:
     """
     We add the flow constraints to the HiGHS model.
+
     :param model: HiGHS model.
     :param steiner_problem: SteinerProblem-object.
     :param z: decision variable z.
@@ -748,6 +755,7 @@ def add_degree_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProble
     """
     Add maximum degree constraints to the model.
     For each node v: sum of x[e] for all edges e incident to v <= max_degree.
+
     :param model: HiGHS model.
     :param steiner_problem: SteinerProblem-object with max_degree attribute.
     :param x: edge selection decision variables.
@@ -766,6 +774,7 @@ def add_hop_constraint(model: hp.HighsModel, steiner_problem: 'SteinerProblem', 
     The number of arcs in the arborescence equals ``sum(y1[a])``; bounding it by
     ``hop_limit`` enforces ``|A(S)| <= H``.  Used by the hop-constrained directed
     Steiner tree problem (:class:`steinerpy.objects.HopConstrainedSteinerProblem`).
+
     :param model: HiGHS model.
     :param steiner_problem: SteinerProblem-object with a ``hop_limit`` attribute.
     :param y1: global arc-selection decision variables.
@@ -894,6 +903,7 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
     Build a budget-constrained Steiner model.
     Objective: maximize connected terminals (minimize unconnected terminals).
     Constraint: total edge cost <= budget.
+
     :param steiner_problem: SteinerProblem-object with a ``budget`` attribute.
     :param time_limit: time limit in seconds.
     :param logfile: path to logfile.
@@ -943,6 +953,7 @@ def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem'
                      x: Dict, penalty_vars: Dict) -> Tuple[float, float, int, List[Tuple], Dict]:
     """
     Solve budget-constrained model: minimize number of unconnected terminals.
+
     :param model: HiGHS model.
     :param steiner_problem: SteinerProblem-object with a ``budget`` attribute.
     :param x: edge selection variables.
