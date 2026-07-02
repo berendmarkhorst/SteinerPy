@@ -48,11 +48,14 @@ dev = [
     "flake8",
     "mypy",
 ]
+# The docs toolchain does not support Python 3.8/3.9; the marker keeps the
+# universal uv resolution satisfiable across requires-python >= 3.8. Docs are
+# built on Python 3.12 (see .readthedocs.yaml).
 docs = [
-    "sphinx>=7.0",
-    "furo",
-    "myst-nb",
-    "sphinx-copybutton",
+    "sphinx>=7.0; python_version >= '3.10'",
+    "furo; python_version >= '3.10'",
+    "myst-nb; python_version >= '3.10'",
+    "sphinx-copybutton; python_version >= '3.10'",
 ]
 
 [project.urls]
