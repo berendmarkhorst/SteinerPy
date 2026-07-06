@@ -24,7 +24,9 @@ from steinerpy.graph_reducer import (
     preprocess_graph,
     map_solution_to_original,
     _voronoi,
+    _voronoi2,
     _mehlhorn_terminal_mst,
+    _sd_bound,
 )
 
 
@@ -274,6 +276,59 @@ def test_mehlhorn_bottleneck_matches_complete_network():
             path = nx.shortest_path(mst, a, b)
             ref = max(mst[u][v]["weight"] for u, v in zip(path, path[1:]))
             assert fast[a][b] == pytest.approx(ref)
+
+
+def test_voronoi2_labels_are_exact_order_statistics():
+    """The two-label multi-source Dijkstra must yield the smallest and second
+    smallest per-terminal distances (the second over terminals distinct from
+    the chosen nearest one — which equals the second order statistic regardless
+    of tie-breaking)."""
+    G = _random_graph(12, 0.4, 77)
+    terminals = {0, 5, 9}
+    d1, b1, d2, b2 = _voronoi2(G, terminals, "weight")
+    for v in G.nodes():
+        dists = sorted(
+            (nx.shortest_path_length(G, t, v, weight="weight"), t) for t in terminals
+        )
+        assert d1[v] == pytest.approx(dists[0][0])
+        assert nx.shortest_path_length(G, b1[v], v, weight="weight") == pytest.approx(d1[v])
+        assert d2[v] == pytest.approx(dists[1][0])
+        assert b2[v] != b1[v]
+        assert nx.shortest_path_length(G, b2[v], v, weight="weight") == pytest.approx(d2[v])
+
+
+def test_voronoi2_first_label_matches_voronoi():
+    G = _random_graph(15, 0.35, 5)
+    terminals = {1, 6, 11}
+    dist, _base = _voronoi(G, terminals, "weight")
+    d1, _b1, _d2, _b2 = _voronoi2(G, terminals, "weight")
+    assert d1 == dist
+
+
+def test_second_nearest_terminal_certifies_extra_sd_deletion():
+    """An edge only the two-label SD bound can delete: the endpoints' nearest
+    terminals are separated by a large bottleneck, but the second-nearest
+    terminal of one endpoint is cheaply connected."""
+    G = nx.Graph()
+    G.add_edge("u", "ta", weight=1)
+    G.add_edge("v", "tb", weight=1)
+    G.add_edge("u", "tc", weight=2)
+    G.add_edge("tc", "tb", weight=1)
+    G.add_edge("u", "v", weight=2.5)
+    terminals = {"ta", "tb", "tc"}
+
+    vor = _voronoi2(G, terminals, "weight")
+    bott = _mehlhorn_terminal_mst(G, terminals, vor[0], vor[1], "weight")
+    # Nearest-only bound (classic test): max(1, b_T(ta, tb) = 3, 1) = 3 — keeps.
+    nearest_only = (vor[0], vor[1], {}, {})
+    assert _sd_bound("u", "v", nearest_only, bott) == pytest.approx(3)
+    # Two-label bound routes u -> tc -> tb -> v: max(2, 1, 1) = 2 — deletes.
+    assert _sd_bound("u", "v", vor, bott) == pytest.approx(2)
+
+    dels = {tuple(sorted(e)) for e in special_distance_deletions(G, terminals, "weight")}
+    assert ("u", "v") in dels
+    # ...and the long-edge test alone would NOT delete it (detour costs 4).
+    assert ("u", "v") not in {tuple(sorted(e)) for e in long_edge_deletions(G, "weight")}
 
 
 @pytest.mark.parametrize("seed", range(25))
