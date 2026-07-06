@@ -1,6 +1,6 @@
 # Performance features
 
-All features on this page are **opt-in** and **preserve the optimum**: with the default settings you get the plain exact solver, and enabling any of these flags returns the same optimal objective (or, for the heuristic-only mode, a certified bound on it).
+All features on this page **preserve the optimum**: enabling (or disabling) any of these flags returns the same optimal objective (or, for the heuristic-only mode, a certified bound on it). The heavy graph reductions are **on by default**; the dual-ascent features remain opt-in.
 
 ## Dual-ascent accelerator
 
@@ -29,34 +29,38 @@ When enabled it additionally **warm-starts** the cut loop with the Steiner cuts 
 solution = SteinerProblem(graph, terminal_groups, da_reduce=True).get_solution()
 ```
 
-`da_reduce` is a **reduction test**: it removes edges that the dual-ascent reduced costs prove cannot appear in any optimal solution and cascades the degree-1/degree-2 reductions to a fixpoint.
+`da_reduce` is a **reduction test**: it removes edges *and nodes* that the dual-ascent reduced costs prove cannot appear in any optimal solution (bound-based edge and node elimination) and cascades the degree-1/degree-2 reductions to a fixpoint.
 It requires `preprocess=True` (the default), applies to undirected problems only, is skipped under a `budget`/`max_degree` modifier, and preserves the optimum (solutions still map back to the original graph).
 It composes with `dual_ascent=True`.
 
 ## Heavy graph reductions
 
 ```python
-# Special Distance + long-edge edge-deletion tests, interleaved with the degree
-# reductions to a fixpoint — heavier preprocessing for harder instances.
-solution = SteinerProblem(graph, terminal_groups, heavy=True).get_solution()
+# ON by default: Special Distance + long-edge deletion and node replacement,
+# interleaved with the degree reductions to a fixpoint.
+solution = SteinerProblem(graph, terminal_groups).get_solution()
 
-# Fine-grained control (heavy=True turns on whichever applies):
-SteinerProblem(graph, terminal_groups, special_distance=True, long_edge=False)
+# Disable them all ...
+SteinerProblem(graph, terminal_groups, heavy=False)
+
+# ... or take fine-grained control (each flag defaults to the `heavy` value):
+SteinerProblem(graph, terminal_groups, special_distance=True, long_edge=False,
+               replace_nodes=False)
 ```
 
-`heavy=True` enables two classic **alternative-based reduction tests** from the Steiner-tree literature, both of which only delete edges that are provably in no optimal solution and then cascade the degree-1/degree-2 reductions:
+`heavy` (default **True**) enables three classic **alternative-based reduction tests** from the Steiner-tree literature, each of which removes only what is provably compatible with an optimal solution and then cascades the degree-1/degree-2 reductions:
 
-- **Special Distance (bottleneck Steiner distance) test** — deletes an edge `e = {v, w}` when the bottleneck distance between `v` and `w` through the *terminal distance network* is below `c(e)` (Rehfeldt & Koch, *Math. Prog. B* 197, 2023, Thm 1; surveyed in Ljubić, *Networks* 77, 2021, §4). Catches long edges that have a cheaper terminal-hopping detour, which the degree reductions miss. **Steiner tree only** (automatically skipped for the multi-group forest, where terminal-hopping would be unsound).
+- **Special Distance (bottleneck Steiner distance) test** — deletes an edge `e = {v, w}` when the bottleneck distance between `v` and `w` through the *terminal distance network* is below `c(e)` (Rehfeldt & Koch, *Math. Prog. B* 197, 2023, Thm 1; surveyed in Ljubić, *Networks* 77, 2021, §4). The bound routes through the **two** nearest terminals of each endpoint, a strict strengthening of the classic nearest-terminal bound. **Steiner tree only** (automatically skipped for the multi-group forest, where terminal-hopping would be unsound).
 - **Long-edge / alternative-path test** — deletes an edge when a strictly cheaper detour exists in `G \ e`. Valid for both Steiner **tree** and **forest**.
+- **Node replacement (pseudo-elimination)** — eliminates a non-terminal of degree ≤ 4 that provably has degree ≤ 2 in at least one minimum Steiner tree (Rehfeldt & Koch 2023, Prop. 4: the criterion compares the largest terminal-MST weights against the cheapest incident edges), bridging each neighbour pair with the two-edge path cost. Replacement edges are pre-filtered by the Special Distance bound and merged into cheaper parallels, so the graph never grows. **Steiner tree only.**
 
-Both tests are implemented with the fast constructions used by state-of-the-art SPG solvers: the Special Distance test builds the terminal distance network from a single multi-source Dijkstra (terminal Voronoi diagram) and Mehlhorn's (1988) boundary MST — `O(m + n log n)` rather than one shortest-path tree per terminal — and the long-edge test runs one bounded Dijkstra per *vertex* rather than per *edge* (Rehfeldt & Koch 2023, §2.3).
-In practice this is several times faster on large, terminal-rich instances (≈5–10× for Special Distance, ≈3–5× for long-edge).
+The tests are implemented with the fast constructions used by state-of-the-art SPG solvers: a single two-label multi-source Dijkstra (terminal Voronoi diagram) plus Mehlhorn's (1988) boundary MST — `O(m + n log n)` rather than one shortest-path tree per terminal — shared by the Special Distance and replacement tests, and one bounded Dijkstra per *vertex* rather than per *edge* for the long-edge test (Rehfeldt & Koch 2023, §2.3). The degree-1/degree-2 cascades run in place off a change-driven worklist.
 
-Like `da_reduce`, `heavy` requires `preprocess=True` (the default), applies to undirected problems only, is skipped under a `budget`/`max_degree` modifier (those variants do not minimise edge cost), and preserves the optimum — solutions still map back to the original graph.
+`heavy` requires `preprocess=True` (the default), applies to undirected problems only, is skipped under a `budget`/`max_degree`/`hop_limit` modifier (those variants do not minimise plain edge cost), and preserves the optimum **value** — solutions still map back to the original graph, though among several equal-cost optima a different one may be returned than with `heavy=False`.
 It composes with `da_reduce=True` and `dual_ascent=True`; a good "throw everything at it" configuration is:
 
 ```python
-SteinerProblem(graph, terminals, heavy=True, da_reduce=True, dual_ascent=True)
+SteinerProblem(graph, terminals, da_reduce=True, dual_ascent=True)
 ```
 
 ## Heuristic-only mode

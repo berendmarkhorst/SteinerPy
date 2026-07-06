@@ -67,26 +67,33 @@ class BaseSteinerProblem:
         # then cascades the degree reductions). Requires preprocessing, an
         # undirected graph, and no budget/degree modifier.
         self.da_reduce = kwargs.get('da_reduce', False)
-        # Opt-in *heavy* graph reductions (sound edge-deletion tests from the
-        # Steiner reduction literature): the Special Distance / bottleneck
-        # Steiner distance test (Rehfeldt & Koch 2023, Thm 1; Steiner tree only)
-        # and the long-edge / alternative-path test (tree and forest). ``heavy``
-        # turns on whichever applies; ``special_distance`` / ``long_edge`` allow
-        # fine-grained control. Like ``da_reduce`` they require preprocessing, an
-        # undirected graph, and no budget/degree modifier (those variants do not
-        # minimise edge cost, so a "non-optimal edge" deletion would be unsound).
-        self.heavy_reduce = kwargs.get('heavy', False)
+        # *Heavy* graph reductions (sound tests from the Steiner reduction
+        # literature): the Special Distance / bottleneck Steiner distance test
+        # (Rehfeldt & Koch 2023, Thm 1; Steiner tree only), the long-edge /
+        # alternative-path test (tree and forest), and degree-k node
+        # replacement / pseudo-elimination (Rehfeldt & Koch 2023, Prop. 4;
+        # Steiner tree only). All are provably optimum-value-preserving, so
+        # ``heavy`` defaults to **on**; ``special_distance`` / ``long_edge`` /
+        # ``replace_nodes`` allow fine-grained control and ``heavy=False``
+        # disables the lot. Like ``da_reduce`` they require preprocessing, an
+        # undirected graph, and no budget/degree/hop modifier (those variants
+        # do not minimise plain edge cost, so a "non-optimal edge" deletion
+        # would be unsound).
+        self.heavy_reduce = kwargs.get('heavy', True)
         sd_opt = kwargs.get('special_distance', self.heavy_reduce)
         le_opt = kwargs.get('long_edge', self.heavy_reduce)
+        rn_opt = kwargs.get('replace_nodes', self.heavy_reduce)
 
         if preprocess:
             if isinstance(graph, nx.DiGraph):
                 raise ValueError("Graph preprocessing is not supported for directed graphs. Use preprocess=False.")
-            _heavy_ok = kwargs.get('budget') is None and kwargs.get('max_degree') is None
+            _heavy_ok = (kwargs.get('budget') is None and kwargs.get('max_degree') is None
+                         and kwargs.get('hop_limit') is None)
             self.graph, self.reduction_tracker = preprocess_graph(
                 graph, terminal_groups, weight,
                 special_distance=bool(sd_opt) and _heavy_ok,
                 long_edge=bool(le_opt) and _heavy_ok,
+                replace_nodes=bool(rn_opt) and _heavy_ok,
             )
             if self.da_reduce and kwargs.get('budget') is None and kwargs.get('max_degree') is None:
                 from .dual_ascent import reduce_graph_with_dual_ascent
