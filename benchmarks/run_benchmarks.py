@@ -6,7 +6,8 @@ Usage
         --instances benchmarks/data/B \
         --optima benchmarks/optima.csv \
         --time-limit 300 --solver highs \
-        --config both --out benchmarks/results/B.csv [--jobs 4] [--full]
+        --config both --reduce heavy \
+        --out benchmarks/results/B.csv [--jobs 4] [--full]
 
 Design for HPC use:
 * **headless** — no plotting/interactive dependencies;
@@ -37,14 +38,25 @@ FIELDS = [
     "instance", "nodes", "edges", "terminals", "opt",
     "base_obj", "base_rt", "base_gap",
     "da_obj", "da_rt", "da_gap",
-    "speedup", "n_fixed", "status",
+    "speedup", "n_fixed",
+    "prep_rt", "red_nodes_pct", "red_edges_pct", "status",
 ]
 
+# --reduce presets mapped onto SteinerProblem kwargs. "heavy" is the library
+# default (special distance + long edge + node replacement); "none" restricts
+# preprocessing to the structural degree reductions.
+REDUCE_KWARGS = {
+    "none": {"heavy": False},
+    "heavy": {"heavy": True},
+    "heavy+da": {"heavy": True, "da_reduce": True},
+}
 
-def _solve(stp_path, time_limit, solver, config):
+
+def _solve(stp_path, time_limit, solver, config, reduce_kwargs):
     """Worker: solve one instance under the requested config(s). Returns a row dict."""
     logging.disable(logging.CRITICAL)  # silence solver chatter in workers
     from steinerpy import SteinerProblem  # imported in-worker for spawn safety
+    from steinerpy.graph_reducer import reduction_stats
 
     graph, tg = read_stp(stp_path)
     stats = instance_stats(graph, tg)
@@ -55,24 +67,32 @@ def _solve(stp_path, time_limit, solver, config):
 
     def run(use_da):
         t0 = time.time()
-        prob = SteinerProblem(graph.copy(), [list(tg[0])], preprocess=True, dual_ascent=use_da)
-        sol = prob.get_solution(time_limit=time_limit)
-        return sol, time.time() - t0
+        prob = SteinerProblem(graph.copy(), [list(tg[0])], preprocess=True,
+                              dual_ascent=use_da, **reduce_kwargs)
+        prep = time.time() - t0
+        sol = prob.get_solution(time_limit=time_limit, solver=solver)
+        return prob, sol, prep, time.time() - t0
 
     try:
         if config in ("baseline", "both"):
-            sol, rt = run(False)
+            prob, sol, prep, rt = run(False)
+            rstats = reduction_stats(prob.original_graph, prob.graph)
             row.update(base_obj=round(sol.objective, 4), base_rt=round(rt, 3),
-                       base_gap=round(sol.gap, 6))
+                       base_gap=round(sol.gap, 6), prep_rt=round(prep, 3),
+                       red_nodes_pct=round(rstats["node_reduction_percent"], 1),
+                       red_edges_pct=round(rstats["edge_reduction_percent"], 1))
         if config in ("da", "both"):
             # Report how many variables dual ascent fixes (model shrinkage).
             from steinerpy.dual_ascent import dual_ascent, reduced_cost_fixing
-            probe = SteinerProblem(graph.copy(), [list(tg[0])], preprocess=True, dual_ascent=True)
+            probe = SteinerProblem(graph.copy(), [list(tg[0])], preprocess=True,
+                                   dual_ascent=True, **reduce_kwargs)
             da_res = dual_ascent(probe)
             row["n_fixed"] = reduced_cost_fixing(probe, da_res).total()
-            sol_da, rt_da = run(True)
+            _prob, sol_da, prep_da, rt_da = run(True)
             row.update(da_obj=round(sol_da.objective, 4), da_rt=round(rt_da, 3),
                        da_gap=round(sol_da.gap, 6))
+            if row["prep_rt"] == "":
+                row["prep_rt"] = round(prep_da, 3)
     except Exception as exc:  # never let one instance abort the sweep
         row["status"] = f"error:{type(exc).__name__}"
         return row
@@ -115,6 +135,11 @@ def main(argv=None):
     ap.add_argument("--time-limit", type=float, default=300.0)
     ap.add_argument("--solver", default="highs", choices=["highs", "gurobi"])
     ap.add_argument("--config", default="both", choices=["baseline", "da", "both"])
+    ap.add_argument("--reduce", default="heavy", choices=sorted(REDUCE_KWARGS),
+                    help="graph-reduction preset applied in every config "
+                         "(none = structural degree reductions only; heavy = the "
+                         "library default incl. SD/long-edge/node replacement; "
+                         "heavy+da adds the dual-ascent bound reduction)")
     ap.add_argument("--out", required=True, help="output CSV (append-only, resumable)")
     ap.add_argument("--jobs", type=int, default=1)
     ap.add_argument("--full", action="store_true",
@@ -149,15 +174,18 @@ def main(argv=None):
                   f"da={row['da_obj']!s:>8}/{row['da_rt']!s:>7}s "
                   f"fixed={row['n_fixed']!s} speedup={row['speedup']!s} [{row['status']}]")
 
+        reduce_kwargs = REDUCE_KWARGS[args.reduce]
         if args.jobs > 1:
             with ProcessPoolExecutor(max_workers=args.jobs) as ex:
-                futs = {ex.submit(_solve, p, args.time_limit, args.solver, args.config): p
+                futs = {ex.submit(_solve, p, args.time_limit, args.solver,
+                                  args.config, reduce_kwargs): p
                         for p in paths}
                 for fut in as_completed(futs):
                     finalize(fut.result())
         else:
             for p in paths:
-                finalize(_solve(p, args.time_limit, args.solver, args.config))
+                finalize(_solve(p, args.time_limit, args.solver, args.config,
+                                reduce_kwargs))
 
 
 if __name__ == "__main__":
