@@ -87,13 +87,21 @@ class DualAscentResult:
 
 @dataclass
 class FixingResult:
-    """Variables to fix to 0 before the ILP solve."""
+    """Variables to fix to 0 before the ILP solve.
+
+    ``fix_nodes`` are non-terminal nodes provably in no optimal solution
+    (bound-based node elimination); their incident arcs/edges are already
+    expanded into the variable-fix sets, so the model appliers need not know
+    about nodes. The graph reduction additionally deletes them outright.
+    """
     fix_x_edges: Set[Tuple] = field(default_factory=set)
     fix_y1_arcs: Set[Arc] = field(default_factory=set)
     fix_y2: Dict[int, Set[Arc]] = field(default_factory=dict)
+    fix_nodes: Set = field(default_factory=set)
 
     def total(self) -> int:
-        return len(self.fix_x_edges) + len(self.fix_y1_arcs) + sum(len(s) for s in self.fix_y2.values())
+        return (len(self.fix_x_edges) + len(self.fix_y1_arcs)
+                + sum(len(s) for s in self.fix_y2.values()) + len(self.fix_nodes))
 
 
 # ---------------------------------------------------------------------------
@@ -604,10 +612,15 @@ def _dist_to_terminals(arcs, costs, terminals, nodes) -> Dict:
     return dist
 
 
-def _fixable_arcs_single(arcs, costs, root, terminals, lb, ub) -> Set[Arc]:
+def _potentials_single(arcs, costs, root, terminals):
+    """Distance-from-root / distance-to-nearest-terminal over reduced costs."""
     nodes = _node_universe(arcs, terminals, root)
     d_from = _dist_from_root(arcs, costs, root, nodes)
     d_to = _dist_to_terminals(arcs, costs, terminals, nodes)
+    return nodes, d_from, d_to
+
+
+def _fixable_arcs(arcs, costs, d_from, d_to, lb, ub) -> Set[Arc]:
     fix = set()
     for a in arcs:
         i, j = a
@@ -617,7 +630,38 @@ def _fixable_arcs_single(arcs, costs, root, terminals, lb, ub) -> Set[Arc]:
     return fix
 
 
-def _fixable_edges_forest(graph, arcs, edges, groups, roots, residual, lb, ub) -> Set[Tuple]:
+def _fixable_nodes(nodes, terminals, d_from, d_to, lb, ub) -> Set:
+    """Bound-based node elimination (Ljubic 2021, Sec. 4; Polzin 2003).
+
+    Any arborescence rooted at the ascent root that contains node ``v`` contains
+    the arc-disjoint paths root->v (through its ancestors) and v->t for some
+    descendant terminal ``t`` (in a minimal arborescence every non-terminal has
+    a terminal descendant), so it costs at least ``lb + d_from(v) + d_to(v)``.
+    If that exceeds ``ub``, ``v`` is in no optimal arborescence rooted there —
+    and since every optimal undirected tree induces an optimal arborescence on
+    the same node set for *any* root, ``v`` is in no optimal tree at all.  The
+    conclusion is therefore root-agnostic even though the certificate uses the
+    ascent root (unlike the directional y2 arc fix, which is not).
+    """
+    term_set = set(terminals)
+    fix = set()
+    for v in nodes:
+        if v in term_set:
+            continue
+        if lb + d_from.get(v, math.inf) + d_to.get(v, math.inf) > ub + EPS:
+            fix.add(v)
+    return fix
+
+
+def _fixable_edges_forest(graph, arcs, edges, groups, roots, residual, lb, ub):
+    """Forest edge- and node-fixing over the symmetric final residual.
+
+    Node soundness: in a minimal Steiner forest every edge — hence every used
+    non-terminal ``v`` — lies on a path between two terminals of one group
+    ``k``; orienting that component from ``root_k`` gives the arc-disjoint
+    root->v / v->t_k decomposition, so a solution containing ``v`` costs at
+    least ``lb + min_k(d_from[k](v) + d_to[k](v))``.
+    """
     # Residual reduced cost on both directions of each edge.
     rc = {a: residual[frozenset(a)] for a in arcs}
     all_terms = [t for g in groups for t in g]
@@ -637,7 +681,20 @@ def _fixable_edges_forest(graph, arcs, edges, groups, roots, residual, lb, ub) -
                     best = val
         if lb + best > ub + EPS:
             fix.add(e)
-    return fix
+
+    term_set = set(all_terms)
+    fix_nodes = set()
+    for v in nodes:
+        if v in term_set:
+            continue
+        best = min(
+            (d_from[k].get(v, math.inf) + d_to[k].get(v, math.inf)
+             for k in range(len(groups))),
+            default=math.inf,
+        )
+        if lb + best > ub + EPS:
+            fix_nodes.add(v)
+    return fix, fix_nodes
 
 
 def reduced_cost_fixing(steiner_problem, da: DualAscentResult) -> FixingResult:
@@ -653,7 +710,10 @@ def reduced_cost_fixing(steiner_problem, da: DualAscentResult) -> FixingResult:
     if da.residual is None:
         # Single group / directed: tight arc-level fixing with arc reduced costs.
         ga = da.groups[0]
-        fix_arcs = _fixable_arcs_single(arcs, ga.reduced_costs, ga.root, ga.terminals, lb, ub)
+        nodes, d_from, d_to = _potentials_single(arcs, ga.reduced_costs, ga.root, ga.terminals)
+        fix_arcs = _fixable_arcs(arcs, ga.reduced_costs, d_from, d_to, lb, ub)
+        result.fix_nodes = _fixable_nodes(nodes, ga.terminals, d_from, d_to, lb, ub)
+        result.fix_nodes.discard(ga.root)
         if da.is_directed:
             # A genuinely directed instance has a fixed root that equals the
             # ascent root, so the directional arc fix is sound as computed.
@@ -691,12 +751,13 @@ def reduced_cost_fixing(steiner_problem, da: DualAscentResult) -> FixingResult:
                 result.fix_y2 = {0: set(sym)}
     else:
         # Forest: edge-level fixing with the (symmetric) final residual.
-        fix_edges = _fixable_edges_forest(
+        fix_edges, fix_nodes = _fixable_edges_forest(
             steiner_problem.graph, arcs, edges,
             steiner_problem.terminal_groups, steiner_problem.roots,
             da.residual, lb, ub,
         )
         result.fix_x_edges = set(fix_edges)
+        result.fix_nodes = fix_nodes
         fix_arcs = set()
         for e in fix_edges:
             for a in ((e[0], e[1]), (e[1], e[0])):
@@ -704,6 +765,19 @@ def reduced_cost_fixing(steiner_problem, da: DualAscentResult) -> FixingResult:
                     fix_arcs.add(a)
         result.fix_y1_arcs = fix_arcs
         result.fix_y2 = {k: set(fix_arcs) for k in range(len(steiner_problem.terminal_groups))}
+
+    if result.fix_nodes:
+        # A node in no optimal solution forbids all its incident variables.
+        # This expansion is root-agnostic (see _fixable_nodes), so it is sound
+        # in every branch above, including the root-mismatch case where plain
+        # directional arc fixes are restricted.
+        node_arcs = {a for a in arcs
+                     if a[0] in result.fix_nodes or a[1] in result.fix_nodes}
+        result.fix_x_edges |= {e for e in edges
+                               if e[0] in result.fix_nodes or e[1] in result.fix_nodes}
+        result.fix_y1_arcs |= node_arcs
+        for k in result.fix_y2:
+            result.fix_y2[k] |= node_arcs
     return result
 
 
@@ -919,20 +993,20 @@ def _terminals_connected(graph, terminal_groups) -> bool:
 
 def reduce_graph_with_dual_ascent(graph, terminal_groups, weight, tracker,
                                   max_passes: int = 3):
-    """Bound-based reduction test: delete edges that reduced-cost fixing proves
-    are in **no** optimal solution, then cascade the degree-1/degree-2 reductions,
-    iterating to a fixpoint.
+    """Bound-based reduction test: delete edges *and nodes* that reduced-cost
+    fixing proves are in **no** optimal solution, then cascade the
+    degree-1/degree-2 reductions, iterating to a fixpoint.
 
     Only undirected graphs are reduced (directed problems skip preprocessing).
     The degree reductions are recorded in ``tracker`` so the existing solution
-    back-mapping continues to work; deleted edges never appear in any solution,
-    so they need no tracking.  Every removed edge is provably non-optimal, so the
-    optimum is preserved; a connectivity check guards against numerical edge
-    cases by aborting the offending pass.
+    back-mapping continues to work; deleted edges/nodes never appear in any
+    solution, so they need no tracking.  Every removal is provably non-optimal,
+    so the optimum is preserved; a connectivity check guards against numerical
+    edge cases by aborting the offending pass.
 
     Returns the reduced graph (a copy; the input is never mutated).
     """
-    from .graph_reducer import degree_one_reduction, degree_two_reduction
+    from .graph_reducer import _structural_fixpoint
 
     if isinstance(graph, nx.DiGraph):
         return graph
@@ -945,20 +1019,26 @@ def reduce_graph_with_dual_ascent(graph, terminal_groups, weight, tracker,
         if not da.feasible or math.isinf(da.lower_bound) or math.isinf(da.upper_bound):
             break
         fixing = reduced_cost_fixing(view, da)
-        if not fixing.fix_x_edges:
+        if not fixing.fix_x_edges and not fixing.fix_nodes:
             break
 
         snapshot = G.copy()
         before = (G.number_of_nodes(), G.number_of_edges())
+        seeds = set()
         for e in list(G.edges()):
             if e in fixing.fix_x_edges or (e[1], e[0]) in fixing.fix_x_edges:
                 G.remove_edge(*e)
+                seeds.update(e)
+        for v in fixing.fix_nodes:
+            if v in G and v not in all_terms:
+                seeds.update(G.neighbors(v))
+                G.remove_node(v)
+                seeds.discard(v)
         if not _terminals_connected(G, terminal_groups):
             return snapshot  # defensive: should never happen for sound fixing
 
         # Cascade the structural reductions enabled by the removals.
-        G = degree_one_reduction(G, all_terms, tracker)
-        G = degree_two_reduction(G, all_terms, weight, tracker)
+        _structural_fixpoint(G, all_terms, weight, tracker, seeds=seeds)
         if (G.number_of_nodes(), G.number_of_edges()) == before:
             break
 

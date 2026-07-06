@@ -124,6 +124,110 @@ def test_fixing_never_removes_optimal_edge():
     assert ("A", "D") in fixing.fix_x_edges or ("D", "A") in fixing.fix_x_edges
 
 
+def _all_optimal_nodes(g, groups, weight="weight"):
+    """Brute force: optimum value and the union of nodes over ALL optimal
+    edge subsets (small instances only)."""
+    from itertools import combinations
+    from tests.test_heavy_reductions import _groups_connected
+    edges = [(u, v, d.get(weight, 1)) for u, v, d in g.edges(data=True)]
+    m = len(edges)
+    best, opt_nodes = float("inf"), set()
+    for r in range(0, m + 1):
+        for combo in combinations(range(m), r):
+            cost = sum(edges[i][2] for i in combo)
+            if cost > best:
+                continue
+            es = [(edges[i][0], edges[i][1]) for i in combo]
+            if not _groups_connected(es, groups):
+                continue
+            nodes = {n for e in es for n in e}
+            if cost < best:
+                best, opt_nodes = cost, set(nodes)
+            else:
+                opt_nodes |= nodes
+    return best, opt_nodes
+
+
+def test_node_fixing_removes_provably_useless_node():
+    # t1-a-t2 path (cost 2) plus an expensive detour node z: z is in no optimal
+    # solution and the bound lb + d(root->z) + d(z->T) certifies it.
+    g = nx.Graph()
+    g.add_edge("t1", "a", weight=1)
+    g.add_edge("a", "t2", weight=1)
+    g.add_edge("t1", "z", weight=10)
+    g.add_edge("z", "t2", weight=10)
+    p = SteinerProblem(g, [["t1", "t2"]], preprocess=False)
+    da = dual_ascent(p)
+    fixing = reduced_cost_fixing(p, da)
+    assert "z" in fixing.fix_nodes
+    assert "a" not in fixing.fix_nodes and "t1" not in fixing.fix_nodes
+    # Node fixes are expanded into all incident variable fixes.
+    for e in [("t1", "z"), ("z", "t2")]:
+        assert e in fixing.fix_x_edges or (e[1], e[0]) in fixing.fix_x_edges
+        for a in (e, (e[1], e[0])):
+            assert a in fixing.fix_y1_arcs
+
+    from steinerpy.dual_ascent import reduce_graph_with_dual_ascent
+    from steinerpy.graph_reducer import ReductionTracker
+    reduced = reduce_graph_with_dual_ascent(g, [["t1", "t2"]], "weight", ReductionTracker())
+    assert "z" not in reduced
+
+
+@pytest.mark.parametrize("seed", range(25))
+def test_node_fixing_never_removes_a_node_of_any_optimum(seed):
+    # Single group: no fixed node may appear in ANY optimal solution.
+    import random
+    rng = random.Random(seed)
+    g = nx.gnp_random_graph(rng.randint(5, 7), 0.5, seed=seed * 13 + 1)
+    if not nx.is_connected(g) or g.number_of_edges() > 14:
+        pytest.skip("disconnected or too large for brute force")
+    for u, v in g.edges():
+        g[u][v]["weight"] = rng.randint(1, 6)
+    terms = rng.sample(list(g.nodes()), rng.randint(2, min(4, g.number_of_nodes())))
+    _opt, opt_nodes = _all_optimal_nodes(g, [terms])
+    p = SteinerProblem(g, [terms], preprocess=False)
+    da = dual_ascent(p)
+    fixing = reduced_cost_fixing(p, da)
+    assert not (fixing.fix_nodes & opt_nodes)
+    assert not (fixing.fix_nodes & set(terms))
+
+
+@pytest.mark.parametrize("seed", range(15))
+def test_node_fixing_forest_never_removes_a_node_of_any_optimum(seed):
+    import random
+    rng = random.Random(seed + 500)
+    g = nx.gnp_random_graph(rng.randint(6, 7), 0.5, seed=seed * 7 + 3)
+    if not nx.is_connected(g) or g.number_of_edges() > 14:
+        pytest.skip("disconnected or too large for brute force")
+    for u, v in g.edges():
+        g[u][v]["weight"] = rng.randint(1, 6)
+    nodes = list(g.nodes())
+    sh = rng.sample(nodes, min(len(nodes), 6))
+    h = max(2, len(sh) // 2)
+    groups = [sh[:h], sh[h:]]
+    if len(groups[1]) < 2:
+        pytest.skip("degenerate group")
+    _opt, opt_nodes = _all_optimal_nodes(g, groups)
+    p = SteinerProblem(g, groups, preprocess=False)
+    da = dual_ascent(p)
+    fixing = reduced_cost_fixing(p, da)
+    assert not (fixing.fix_nodes & opt_nodes)
+
+
+def test_node_fixing_sound_when_ascent_root_differs_from_model_root():
+    # Node elimination is root-agnostic (unlike the directional y2 arc fix):
+    # even when multi-root ascent kept a different root, no fixed node may
+    # appear in an optimal solution.
+    g, terms = _seed7_instance()
+    p = SteinerProblem(g.copy(), [terms], preprocess=False)
+    da = dual_ascent(p)
+    fixing = reduced_cost_fixing(p, da)
+    baseline = SteinerProblem(g.copy(), [terms], preprocess=False).get_solution(
+        dual_ascent=False, decompose=False)
+    used = {n for e in baseline.edges for n in e}
+    assert not (fixing.fix_nodes & used)
+
+
 def test_fixing_directed_keeps_optimal_arcs():
     dg = nx.DiGraph()
     dg.add_edge("A", "B", weight=1)
@@ -446,9 +550,12 @@ def test_multistart_primal_never_worse_than_single_root():
 
 def test_da_reduce_removes_provably_bad_edge_and_shrinks():
     # Notebook tree: A-D (weight 10) is in no optimal solution and survives the
-    # degree reductions (all degree-1/2 nodes are terminals), so da_reduce removes it.
-    plain = SteinerProblem(_notebook_tree(), [["A", "B", "D"]], preprocess=True)
-    reduced = SteinerProblem(_notebook_tree(), [["A", "B", "D"]], preprocess=True, da_reduce=True)
+    # degree reductions (all degree-1/2 nodes are terminals), so da_reduce removes
+    # it. heavy=False isolates da_reduce from the (default-on) heavy edge tests,
+    # which would otherwise delete A-D themselves.
+    plain = SteinerProblem(_notebook_tree(), [["A", "B", "D"]], preprocess=True, heavy=False)
+    reduced = SteinerProblem(_notebook_tree(), [["A", "B", "D"]], preprocess=True,
+                             heavy=False, da_reduce=True)
     assert reduced.graph.number_of_edges() < plain.graph.number_of_edges()
     assert not reduced.graph.has_edge("A", "D")
 
