@@ -127,9 +127,11 @@ def test_steiner_tree_example_from_notebook():
     # Create SteinerProblem to connect terminals A, B, D
     problem = SteinerProblem(graph, [["A", "B", "D"]])
     
-    # Verify problem setup
+    # Verify problem setup. The default-on heavy reductions delete the A-D edge
+    # (weight 10) because the detour A-C-D (cost 2) is provably always cheaper.
     assert problem.graph.number_of_nodes() == 4
-    assert problem.graph.number_of_edges() == 4
+    assert problem.graph.number_of_edges() == 3
+    assert not problem.graph.has_edge("A", "D")
     assert problem.terminal_groups == [["A", "B", "D"]]
     assert problem.steiner_points == {'C'}  # C is the only Steiner point
     

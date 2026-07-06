@@ -12,7 +12,7 @@ SteinerPy solves Steiner tree and Steiner forest problems — and many advanced 
 
 - **One API, many variants** — Steiner tree/forest, prize-collecting, node-weighted, maximum-weight connected subgraph, directed (arborescence), hop-constrained, group, rectilinear, terminal-leaf, and budgeted variants.
 - **Exact, with a certificate** — every solve reports a proven optimality gap; `gap == 0.0` means provably optimal.
-- **Fast when you want it** — an opt-in dual-ascent accelerator, graph reduction tests, and a heuristic-only mode that stays in NetworkX's speed class while still certifying its gap.
+- **Fast by default** — provably optimum-preserving graph reductions from the Steiner-tree literature run automatically, plus an opt-in dual-ascent accelerator and a heuristic-only mode that stays in NetworkX's speed class while still certifying its gap.
 
 📖 **Documentation: [steinerpy.readthedocs.io](https://steinerpy.readthedocs.io)**
 

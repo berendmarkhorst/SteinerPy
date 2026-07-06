@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Degree-k node replacement / pseudo-elimination** (`replace_nodes=`, part of
+  `heavy`): the Rehfeldt & Koch (2023, Prop. 4) test eliminates a non-terminal
+  that provably has degree ≤ 2 in at least one minimum Steiner tree (checked
+  against the sorted Mehlhorn terminal-MST weights, one comparison per degree
+  class), bridging each neighbour pair with the two-edge path cost. Replacement
+  edges are pre-filtered by the Special Distance bound, merged into cheaper
+  parallels, capped at degree 4 with a growth guard, and recorded exactly like
+  degree-2 contractions so the existing solution back-mapping applies
+  (back-mapped solutions are additionally de-duplicated). Steiner **tree** only
+  (skipped for multiple groups).
+- **Two-label Special Distance test**: the SD bound now routes through the two
+  nearest terminals of *each* endpoint (two-label multi-source Dijkstra,
+  `_voronoi2`), a strict strengthening of the classic nearest-terminal bound at
+  about twice the (linearithmic) preprocessing cost.
+- **Bound-based node elimination in dual ascent**: reduced-cost fixing now also
+  fixes non-terminal *nodes* with `lb + d̃(root→v) + d̃(v→T) > ub` (Ljubić 2021
+  §4; Polzin 2003) — root-agnostic, valid for tree and forest — expands them
+  into incident arc/edge variable fixes for the ILP, and `da_reduce=True`
+  deletes them from the graph before cascading the structural reductions.
+
 - **Prize-collecting / MWCSP acceleration via SAP transformation** (opt-in
   `pc_transform=True`, `exact=False`, `pc_reduce=True` on
   `PrizeCollectingProblem` / `MaxWeightConnectedSubgraph`). Adapts the
@@ -52,6 +72,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variants. Default stays `exact=True` (solve to optimality).
 
 ### Changed
+- **Heavy reductions are now ON by default** (`heavy=True`): Special Distance,
+  long-edge, and node replacement run automatically for undirected problems
+  without `budget`/`max_degree`/`hop_limit` modifiers (prize-collecting and
+  directed problems are unaffected — they never preprocess). All tests are
+  provably optimum-value-preserving; among several equal-cost optima a
+  different one may now be returned. Disable with `heavy=False` or the granular
+  `special_distance=` / `long_edge=` / `replace_nodes=` flags.
+- **Worklist-driven preprocessing**: `preprocess_graph` now runs the
+  degree-1/degree-2 reductions in place off a change-driven worklist (no more
+  per-pass graph copies and full node rescans), builds one Voronoi diagram /
+  terminal MST per heavy round shared by the SD and replacement tests, applies
+  deletions with an undo log instead of full graph snapshots, and stops the
+  heavy sub-passes once a round removes less than 1% of the edges.
+- `benchmarks/run_benchmarks.py` gained `--reduce {none,heavy,heavy+da}` and
+  reports preprocessing time and node/edge reduction percentages per instance.
 - **Faster heavy reductions** (no API or result change beyond nearest-terminal
   tie-breaking): the Special Distance test now builds the terminal distance
   network with a single multi-source Dijkstra (terminal Voronoi diagram) plus
