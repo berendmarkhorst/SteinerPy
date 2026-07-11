@@ -8,6 +8,7 @@ The algorithms below are credited inline in the relevant source modules; this pa
 - R. T. Wong (1984), *A dual ascent approach for Steiner tree problems on a directed graph*, Mathematical Programming 28, 271–287, [doi:10.1007/BF02612335](https://doi.org/10.1007/BF02612335) — dual ascent for the directed-cut (arborescence) dual (`steinerpy/dual_ascent.py`).
 - M. Leitner, I. Ljubić, M. Luipersbeck, M. Sinnl (2018), *A dual ascent-based branch-and-bound framework for the prize-collecting Steiner tree and related problems*, INFORMS Journal on Computing 30(2), 402–420, [doi:10.1287/ijoc.2017.0788](https://doi.org/10.1287/ijoc.2017.0788) — reduced-cost variable fixing (`steinerpy/dual_ascent.py`).
 - D. Schmidt, B. Zey, F. Margot (2021), *Stronger MIP formulations for the Steiner forest problem*, Mathematical Programming 186, 373–407, [doi:10.1007/s10107-019-01460-6](https://doi.org/10.1007/s10107-019-01460-6) — branch-and-cut acceleration via creep flows and back cuts, used in the directed-cut separation (`steinerpy/mathematical_model.py`).
+- T. Koch, A. Martin (1998), *Solving Steiner tree problems in graphs to optimality*, Networks 32(3), 207–232, [doi:10.1002/(SICI)1097-0037(199810)32:3<207::AID-NET5>3.0.CO;2-O](https://doi.org/10.1002/(SICI)1097-0037(199810)32:3%3C207::AID-NET5%3E3.0.CO;2-O) — nested cuts in the directed-cut separation (`steinerpy/mathematical_model.py`).
 
 ## Graph reductions
 
