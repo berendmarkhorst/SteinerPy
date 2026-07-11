@@ -60,6 +60,11 @@ def _nested_cut_rounds() -> int:
     the number of LP/MIP re-solve rounds in the cut loop.  Configure with
     ``STEINERPY_NESTED_CUTS`` (0 disables); only extra max-flows are spent on
     terminals whose first cut was violated.
+
+    The default is 1: on the HiGHS path every added row is carried through a
+    full MIP re-solve each round, and benchmarking showed one nested cut per
+    violated terminal is a consistent win (~1.25x on tree and forest) while
+    three bloat the model enough to cost more than the rounds they save.
     """
     env = os.environ.get("STEINERPY_NESTED_CUTS")
     if env is not None:
@@ -67,7 +72,7 @@ def _nested_cut_rounds() -> int:
             return max(0, int(env))
         except ValueError:
             pass
-    return 3
+    return 1
 
 
 def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsModel:

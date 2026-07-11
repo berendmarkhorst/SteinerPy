@@ -45,9 +45,9 @@ def test_nested_cut_rounds_env(monkeypatch):
     monkeypatch.setenv("STEINERPY_NESTED_CUTS", "7")
     assert _nested_cut_rounds() == 7
     monkeypatch.setenv("STEINERPY_NESTED_CUTS", "not-a-number")
-    assert _nested_cut_rounds() == 3  # default
+    assert _nested_cut_rounds() == 1  # default
     monkeypatch.delenv("STEINERPY_NESTED_CUTS")
-    assert _nested_cut_rounds() == 3
+    assert _nested_cut_rounds() == 1
 
 
 @pytest.mark.parametrize("groups", [1, 2])

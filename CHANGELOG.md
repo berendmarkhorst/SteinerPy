@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Nested cuts in the directed-cut separation** (Koch & Martin 1998): when a
   terminal's minimum cut is violated, the cut's arcs are saturated (capacity
   raised to 1) and the max-flow re-run, emitting up to `STEINERPY_NESTED_CUTS`
-  (default 3, `0` disables) further violated cuts per separation round. Extra
+  (default 1, `0` disables) further violated cuts per separation round. Extra
   max-flows are spent only on violated terminals, and capacities are only ever
   raised, so every nested cut is guaranteed violated at the current solution.
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
