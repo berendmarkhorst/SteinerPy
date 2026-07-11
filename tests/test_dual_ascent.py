@@ -476,6 +476,10 @@ def test_seeding_reduces_cut_loop_rounds(monkeypatch):
     non-trivial number of rounds to reduce."""
     import steinerpy.mathematical_model as mm
 
+    # This test measures ILP cut-loop behaviour: keep the few-terminal
+    # Dreyfus-Wagner DP from short-circuiting the solve.
+    monkeypatch.setenv("STEINERPY_DW_MAX_TERMINALS", "0")
+
     # A graph whose baseline cut loop needs several separation rounds.
     rng = __import__("random").Random(2024)
     g = nx.gnp_random_graph(11, 0.45, seed=7)

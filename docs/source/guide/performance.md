@@ -63,6 +63,13 @@ It composes with `da_reduce=True` and `dual_ascent=True`; a good "throw everythi
 SteinerProblem(graph, terminals, da_reduce=True, dual_ascent=True)
 ```
 
+## Few-terminal dynamic program
+
+For a plain (undirected, single-group, unconstrained) Steiner tree with **few terminals**, the exact [Dreyfus–Wagner (1971)](https://doi.org/10.1002/net.3230010302) dynamic program — in the [Erickson–Monma–Veinott (1987)](https://doi.org/10.1287/moor.12.4.634) formulation — solves the reduced instance outright, bypassing the ILP entirely.
+This is the reductions + DP recipe of the winning PACE 2018 solvers; it is `O(3^k)` in the terminal count `k` but only linearithmic in the graph size, so for small `k` it beats any branch-and-cut by a wide margin (4–30× on benchmarked instances).
+
+It is **auto-selected** after preprocessing whenever the (reduced) terminal count is at most `STEINERPY_DW_MAX_TERMINALS` (default `10`; `0` disables), returns the identical optimum with `gap == 0.0`, and transparently accelerates the transformed group-Steiner, terminal-leaf and rectilinear variants as well.
+
 ## Cut-separation accelerators
 
 The exact solve enforces connectivity lazily with directed Steiner cuts found by minimum-cut separation.

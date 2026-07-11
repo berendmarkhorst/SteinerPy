@@ -17,6 +17,8 @@ The algorithms below are credited inline in the relevant source modules; this pa
 - C. W. Duin (1993), *Steiner's problem in graphs*, PhD thesis, University of Amsterdam, and T. Polzin & S. Vahdati Daneshmand (2001), *Improved algorithms for the Steiner problem in networks*, Discrete Applied Mathematics 112(1–3), 263–300, [doi:10.1016/S0166-218X(00)00319-X](https://doi.org/10.1016/S0166-218X(00)00319-X) — alternative-based reduction tests (`steinerpy/graph_reducer.py`).
 - I. Ljubić (2021), *Solving Steiner trees: Recent advances, challenges, and perspectives*, Networks 77(2), 177–204, [doi:10.1002/net.22005](https://doi.org/10.1002/net.22005) — survey informing the reduction and dual-ascent implementations.
 
+- S. E. Dreyfus, R. A. Wagner (1971), *The Steiner problem in graphs*, Networks 1(3), 195–207, [doi:10.1002/net.3230010302](https://doi.org/10.1002/net.3230010302) and R. E. Erickson, C. L. Monma, A. F. Veinott (1987), *Send-and-split method for minimum-concave-cost network flows*, Mathematics of Operations Research 12(4), 634–664, [doi:10.1287/moor.12.4.634](https://doi.org/10.1287/moor.12.4.634) — the few-terminal exact dynamic program (`steinerpy/dreyfus_wagner.py`).
+
 ## Heuristics & classic constructions
 
 - L. Kou, G. Markowsky, L. Berman (1981), *A fast algorithm for Steiner trees*, Acta Informatica 15(2), 141–145, [doi:10.1007/BF00288961](https://doi.org/10.1007/BF00288961) — shortest-path Steiner tree heuristic and tree cleanup (`steinerpy/objects.py`, `steinerpy/dual_ascent.py`).

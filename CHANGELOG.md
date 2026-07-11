@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Few-terminal exact dynamic program** (Dreyfus & Wagner 1971, in the
+  Erickson–Monma–Veinott formulation): plain undirected single-group Steiner
+  tree instances with at most `STEINERPY_DW_MAX_TERMINALS` terminals (default
+  10, `0` disables) are now solved by an `O(3^k·n + 2^k·(m + n log n))` dynamic
+  program instead of the ILP — the reductions + DP recipe of the PACE 2018
+  winning solvers. Vectorised merge steps (numpy) and virtual-source scipy
+  Dijkstra grow steps; auto-selected after preprocessing, exactness-preserving
+  (validated against a brute-force oracle and the ILP), 4–30x faster than the
+  accelerated ILP on benchmarked instances. Applies transparently to the
+  transformed group-Steiner, terminal-leaf, and rectilinear variants.
 - **LP-first cut loop (HiGHS)**: before the integer cut loop starts, the
   directed Steiner cuts are separated on the **LP relaxation** — each round is
   a cheap LP re-solve instead of a full branch-and-bound run, and the
@@ -41,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- **Mixed node-type crash in the reduction Dijkstras**: the long-edge test and
+  the terminal-Voronoi construction pushed `(distance, node)` pairs onto their
+  heaps, so a distance tie compared node labels — a `TypeError` when labels mix
+  types (e.g. the group-Steiner transform's string super-terminals next to int
+  nodes). Heap entries now carry a sequence tiebreaker.
 - **HiGHS variable typing in the penalty/budget/MWCSPB models**:
   `addVariable(0, 1, hp.HighsVarType.kInteger)` passed the integrality enum as
   the *objective coefficient* (the third positional argument is `obj`, not

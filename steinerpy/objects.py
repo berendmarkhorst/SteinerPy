@@ -146,6 +146,38 @@ class BaseSteinerProblem:
             return False
         return True
 
+    def _dw_eligible(self) -> bool:
+        """Whether the Dreyfus–Wagner dynamic program can solve this instance.
+
+        The DP is exact for a plain, undirected, single-group Steiner tree with
+        no budget/degree/hop modifier.  It is exponential in the terminal count
+        so it is only auto-selected for at most
+        :func:`~steinerpy.dreyfus_wagner.dw_max_terminals` terminals (default
+        10, ``STEINERPY_DW_MAX_TERMINALS`` overrides, ``0`` disables), with a
+        memory guard on ``2^(k-1)`` label arrays of length ``n``.
+        """
+        if isinstance(self.graph, nx.DiGraph):
+            return False
+        if len(self.terminal_groups) != 1:
+            return False
+        if self.budget is not None:
+            return False
+        if getattr(self, 'max_degree', None) is not None:
+            return False
+        if getattr(self, 'hop_limit', None) is not None:
+            return False
+        from ._fastgraph import HAS_SCIPY
+        if not HAS_SCIPY:
+            return False
+        from .dreyfus_wagner import dw_max_terminals
+        k = len(set(self.terminal_groups[0]))
+        if k < 2 or k > dw_max_terminals():
+            return False
+        # ~3 arrays of 2^(k-1) x (n+1) doubles/ints; keep the footprint modest.
+        if (1 << (k - 1)) * (self.graph.number_of_nodes() + 1) > 50_000_000:
+            return False
+        return True
+
     def _solution_from_da(self, da, t0, gap) -> 'Solution':
         """Build a :class:`Solution` from a dual-ascent result (no ILP).
 
@@ -438,6 +470,12 @@ class BaseSteinerProblem:
             raise ValueError(
                 f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'."
             )
+        if solver == "gurobi":
+            # Fail loudly up front when the requested backend is unavailable,
+            # even on paths that end up not building an ILP (dual-ascent
+            # early-exit, Dreyfus-Wagner DP).
+            from .mathematical_model import _check_gurobipy
+            _check_gurobipy()
 
         # Heuristic-only mode: return the dual-ascent primal with no ILP. Much
         # faster (no MIP), and unlike a pure heuristic it carries a proven
@@ -492,6 +530,38 @@ class BaseSteinerProblem:
             )
             if dec is not None:
                 return dec
+
+        # Few-terminal exact dynamic program (Dreyfus & Wagner 1971, in the
+        # Erickson-Monma-Veinott formulation): for a small terminal count the
+        # O(3^k) DP solves the (already reduced) instance outright, bypassing
+        # the ILP entirely — the PACE 2018 winning recipe of reductions + DP.
+        # Exactness-preserving; auto-selected, cap via STEINERPY_DW_MAX_TERMINALS.
+        if self._dw_eligible():
+            import math as _math_dw
+            import time as _time_dw
+            from .dreyfus_wagner import dreyfus_wagner
+            _t0 = _time_dw.time()
+            dw_cost, dw_edges = dreyfus_wagner(
+                self.graph, self.terminal_groups[0], self.weight
+            )
+            if _math_dw.isfinite(dw_cost):
+                runtime = _time_dw.time() - _t0
+                if self.preprocess:
+                    original_selected_edges = map_solution_to_original(
+                        dw_edges, self.reduction_tracker, self.graph
+                    )
+                else:
+                    original_selected_edges = dw_edges
+                return Solution(
+                    gap=0.0,
+                    runtime=runtime,
+                    objective=dw_cost,
+                    selected_edges=dw_edges,
+                    original_selected_edges=original_selected_edges,
+                    was_preprocessed=self.preprocess,
+                )
+            # Terminals not connected: fall through to the ILP so infeasible
+            # instances keep the exact same behaviour as the default path.
 
         # Optional dual-ascent accelerator: lower bound + primal heuristic +
         # reduced-cost variable fixing. Early-exits when proven optimal.

@@ -433,15 +433,19 @@ def _voronoi(G: nx.Graph, terminals, weight: str):
     distance computation would need.
     """
     import heapq
+    from itertools import count
     dist: Dict = {}
     base: Dict = {}
+    # Sequence tiebreaker: node labels of mixed types (e.g. group-Steiner
+    # super-terminal strings next to int nodes) are not mutually comparable.
+    ctr = count()
     pq = []
     for t in terminals:
         dist[t] = 0.0
         base[t] = t
-        heapq.heappush(pq, (0.0, t))
+        heapq.heappush(pq, (0.0, next(ctr), t))
     while pq:
-        d, u = heapq.heappop(pq)
+        d, _c, u = heapq.heappop(pq)
         if d > dist.get(u, float("inf")):
             continue
         for v, attr in G[u].items():
@@ -449,7 +453,7 @@ def _voronoi(G: nx.Graph, terminals, weight: str):
             if nd < dist.get(v, float("inf")):
                 dist[v] = nd
                 base[v] = base[u]
-                heapq.heappush(pq, (nd, v))
+                heapq.heappush(pq, (nd, next(ctr), v))
     return dist, base
 
 
@@ -650,10 +654,14 @@ def _long_edge_for_vertex(v0):
         return ()
     cmax = max(c for _w, c in nbrs)
     dist = {v0: 0.0}
-    pq = [(0.0, v0)]
+    # Heap entries carry a sequence tiebreaker: node labels of mixed types
+    # (e.g. the group-Steiner super-terminal strings next to int nodes) are not
+    # mutually comparable, and equal distances would otherwise compare them.
+    seq = 0
+    pq = [(0.0, seq, v0)]
     settled = 0
     while pq and settled < max_settle:
-        d, x = heapq.heappop(pq)
+        d, _seq, x = heapq.heappop(pq)
         if d > dist.get(x, float("inf")):
             continue
         if d >= cmax:                       # no cheaper detour for any incident edge
@@ -663,7 +671,8 @@ def _long_edge_for_vertex(v0):
             nd = d + c
             if nd < dist.get(y, float("inf")):
                 dist[y] = nd
-                heapq.heappush(pq, (nd, y))
+                seq += 1
+                heapq.heappush(pq, (nd, seq, y))
     out = []
     for w, c in nbrs:
         if dist.get(w, float("inf")) < c - eps:
