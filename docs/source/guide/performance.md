@@ -68,10 +68,11 @@ SteinerProblem(graph, terminals, da_reduce=True, dual_ascent=True)
 The exact solve enforces connectivity lazily with directed Steiner cuts found by minimum-cut separation.
 Three classic accelerators are applied automatically (no flags needed):
 
+- **LP-first separation** ([Koch & Martin 1998](<https://doi.org/10.1002/(SICI)1097-0037(199810)32:3%3C207::AID-NET5%3E3.0.CO;2-O>)) — on the HiGHS path the cut loop first runs on the **LP relaxation**: each round is a cheap LP re-solve, and the accumulated root cuts strengthen every subsequent MIP solve (5–10× on benchmarked tree instances). Tune or disable with `STEINERPY_LP_CUT_ROUNDS` (default `50`, `0` disables). The Gurobi path separates fractional points inside its branch-and-cut callback instead.
 - **Creep flows** and **back cuts** ([Schmidt, Zey & Margot 2021](https://doi.org/10.1007/s10107-019-01460-6), §4.1) — bias each minimum cut towards few arcs, and add the terminal-side cut alongside the root-side one.
 - **Nested cuts** ([Koch & Martin 1998](<https://doi.org/10.1002/(SICI)1097-0037(199810)32:3%3C207::AID-NET5%3E3.0.CO;2-O>)) — after a violated cut is found, its arcs are saturated and the max-flow re-run, yielding a second, structurally different violated cut per round. Extra max-flows are spent only on violated terminals. Tune or disable with the `STEINERPY_NESTED_CUTS` environment variable (default `1`, `0` disables; higher values add more cuts per round but grow the model faster than they save re-solve rounds on the HiGHS path).
 
-All three change only how fast the cut loop converges, never the optimum.
+All of these change only how fast the cut loop converges, never the optimum.
 
 ## Heuristic-only mode
 

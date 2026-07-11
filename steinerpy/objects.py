@@ -537,6 +537,7 @@ class BaseSteinerProblem:
                 gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
+            reapply_start = None
             if da_cuts is not None:
                 from .dual_ascent import (
                     apply_fixes_highs, set_highs_warm_start,
@@ -546,7 +547,11 @@ class BaseSteinerProblem:
                 apply_fixes_highs(model, x, y1, y2, fixing)
                 set_highs_warm_start(model, x, da_primal)
                 set_highs_cutoff(model, da_ub)
-            gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
+                # run_model's LP cut phase clears a pending MIP start; hand it a
+                # callback to re-apply the dual-ascent primal afterwards.
+                _m, _x, _p = model, x, da_primal
+                reapply_start = lambda: set_highs_warm_start(_m, _x, _p)  # noqa: E731
+            gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z, reapply_start=reapply_start)
             if da_cuts is not None and _math.isinf(objective):
                 # The acceleration over-constrained a feasible instance into
                 # infeasibility; re-solve from a clean, un-accelerated model.

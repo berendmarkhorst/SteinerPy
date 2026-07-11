@@ -17,6 +17,7 @@ from steinerpy import SteinerProblem
 from steinerpy.mathematical_model import (
     build_budget_model,
     build_prize_collecting_model,
+    _lp_cut_rounds,
     _nested_cut_rounds,
 )
 
@@ -48,6 +49,40 @@ def test_nested_cut_rounds_env(monkeypatch):
     assert _nested_cut_rounds() == 1  # default
     monkeypatch.delenv("STEINERPY_NESTED_CUTS")
     assert _nested_cut_rounds() == 1
+
+
+def test_lp_cut_rounds_env(monkeypatch):
+    monkeypatch.setenv("STEINERPY_LP_CUT_ROUNDS", "0")
+    assert _lp_cut_rounds() == 0
+    monkeypatch.setenv("STEINERPY_LP_CUT_ROUNDS", "12")
+    assert _lp_cut_rounds() == 12
+    monkeypatch.delenv("STEINERPY_LP_CUT_ROUNDS")
+    assert _lp_cut_rounds() == 50  # default
+
+
+@pytest.mark.parametrize("groups", [1, 2])
+def test_lp_cut_phase_preserves_optimum(monkeypatch, groups):
+    G, terminals = _random_instance(40, 100, 4 * groups, seed=17 + groups)
+    tg = [terminals[i * 4:(i + 1) * 4] for i in range(groups)]
+
+    monkeypatch.setenv("STEINERPY_LP_CUT_ROUNDS", "0")
+    base = SteinerProblem(G, tg).get_solution(time_limit=120)
+    monkeypatch.setenv("STEINERPY_LP_CUT_ROUNDS", "50")
+    lp_first = SteinerProblem(G, tg).get_solution(time_limit=120)
+
+    assert base.gap == pytest.approx(0.0, abs=1e-6)
+    assert lp_first.gap == pytest.approx(0.0, abs=1e-6)
+    assert lp_first.objective == pytest.approx(base.objective)
+
+
+def test_lp_cut_phase_with_dual_ascent_warm_start():
+    # Exercises the reapply_start path: dual ascent supplies a MIP warm start
+    # that run_model must re-apply after the LP phase.
+    G, terminals = _random_instance(40, 100, 5, seed=23)
+    sol = SteinerProblem(G, [terminals], dual_ascent=True).get_solution(time_limit=120)
+    ref = SteinerProblem(G, [terminals]).get_solution(time_limit=120)
+    assert sol.gap == pytest.approx(0.0, abs=1e-6)
+    assert sol.objective == pytest.approx(ref.objective)
 
 
 @pytest.mark.parametrize("groups", [1, 2])

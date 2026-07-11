@@ -75,6 +75,25 @@ def _nested_cut_rounds() -> int:
     return 1
 
 
+def _lp_cut_rounds() -> int:
+    """Maximum rounds of cut separation on the LP *relaxation* (HiGHS path).
+
+    Before the integer cut loop starts, connectivity cuts are separated on the
+    LP relaxation: each round is a cheap LP re-solve instead of a full
+    branch-and-bound run, and the cuts found strengthen the root bound of every
+    subsequent MIP solve — the standard root-separation scheme of
+    branch-and-cut Steiner codes (Koch & Martin 1998).  Configure with
+    ``STEINERPY_LP_CUT_ROUNDS`` (0 disables the LP phase).
+    """
+    env = os.environ.get("STEINERPY_LP_CUT_ROUNDS")
+    if env is not None:
+        try:
+            return max(0, int(env))
+        except ValueError:
+            pass
+    return 50
+
+
 def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsModel:
     """
     Creates a HiGHS model with the given time limit and logfile.
@@ -754,22 +773,28 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
     return model, x, y1, y2, z
 
 
-def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType, y2: Dict, z: Dict) -> Tuple[float, float, float, List[Tuple]]:
+def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType, y2: Dict, z: Dict, reapply_start=None) -> Tuple[float, float, float, List[Tuple]]:
     """
     Solves the model using an iterative cut-generation (lazy-cut) approach and
     returns the result.
 
     Instead of adding flow variables and constraints upfront, the solver is run
-    repeatedly.  After each solve, violated directed cut constraints are
-    identified via a minimum-cut computation (networkx) and appended to the
-    model before the next solve.  The process terminates when no violated cut
-    is found, guaranteeing that the returned solution is feasible.
+    repeatedly.  Cuts are first separated on the **LP relaxation** (cheap LP
+    re-solves that build up the root cuts, see :func:`_lp_cut_rounds`); then
+    integrality is restored and the integer cut loop runs.  After each solve,
+    violated directed cut constraints are identified via a minimum-cut
+    computation and appended to the model before the next solve.  The process
+    terminates when no violated cut is found, guaranteeing that the returned
+    solution is feasible.
 
     :param model: HiGHS model (built by :func:`build_model`).
     :param steiner_problem: SteinerProblem-object.
     :param x: edge selection decision variables.
     :param y2: per-group arc variables {(group_id, arc): var}.
     :param z: connectivity variables {(k, l): var}.
+    :param reapply_start: optional zero-argument callable that re-applies a MIP
+        warm start; called after the LP phase (which would otherwise clear a
+        start set before this function).
     :return: (gap, runtime, objective, selected_edges).
              Note: *runtime* covers only the iterative solve loop and does not
              include the model compilation time reported by :func:`build_model`.
@@ -790,6 +815,38 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     total_tl = float(_tl[1] if isinstance(_tl, tuple) else _tl)
 
     start_time = time.time()
+
+    # Phase 1 — root cuts on the LP relaxation.  All columns of the base model
+    # are integer, so relax them all and restore afterwards.
+    lp_rounds = _lp_cut_rounds()
+    if lp_rounds > 0:
+        num_col = model.getNumCol()
+        for col in range(num_col):
+            model.changeColIntegrality(col, hp.HighsVarType.kContinuous)
+        try:
+            for _ in range(lp_rounds):
+                remaining = total_tl - (time.time() - start_time)
+                if remaining <= 0:
+                    break
+                model.setOptionValue("time_limit", remaining)
+                model.minimize(objective_expr)
+                if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
+                        or not model.getSolution().value_valid):
+                    break
+                violated_cuts = find_violated_cuts(steiner_problem, y2, z, model)
+                if not violated_cuts:
+                    break
+                for group_id_k, group_id_l, cut_arcs in violated_cuts:
+                    lhs = sum(y2[(group_id_k, a)] for a in cut_arcs) if cut_arcs else 0
+                    model.addConstr(lhs >= z[(group_id_k, group_id_l)])
+                logging.info(f"LP cut phase: added {len(violated_cuts)} cut(s).")
+        finally:
+            for col in range(num_col):
+                model.changeColIntegrality(col, hp.HighsVarType.kInteger)
+        if reapply_start is not None:
+            reapply_start()
+
+    # Phase 2 — the integer cut loop.
     converged = False
     while True:
         remaining = total_tl - (time.time() - start_time)
@@ -1409,7 +1466,47 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
             if terms:
                 model.addConstr(sum(terms) >= 1)
 
-    # MIP warm start from the dual-ascent primal.
+    # NOTE: deliberately do NOT pass da_ub to HiGHS as `objective_bound`. Unlike
+    # Gurobi's `Params.Cutoff` (a true pruning cutoff), HiGHS treats objective_bound
+    # as a termination target inside the cut loop: a loose dual-ascent UB makes a
+    # re-solve stop kOptimal at a feasible-but-suboptimal incumbent, which the loop
+    # then reports as "proven optimal" (false-optimal bug observed on PCSPG P400).
+    # da_ub is still used below only to report an honest gap on a non-proven solve.
+
+    obj = sum(xa[a] * view.graph.edges[a][view.weight] for a in arcs)
+
+    start = time.time()
+
+    # Phase 1 — root cuts on the LP relaxation (see _lp_cut_rounds).
+    lp_rounds = _lp_cut_rounds()
+    if lp_rounds > 0:
+        num_col = model.getNumCol()
+        for col in range(num_col):
+            model.changeColIntegrality(col, hp.HighsVarType.kContinuous)
+        try:
+            for _ in range(lp_rounds):
+                remaining = time_limit - (time.time() - start)
+                if remaining <= 0:
+                    break
+                model.setOptionValue("time_limit", remaining)
+                model.minimize(obj)
+                if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
+                        or not model.getSolution().value_valid):
+                    break
+                col_value = model.getSolution().col_value
+                xa_vals = {(0, a): col_value[xa[a].index] for a in arcs}
+                violated = find_violated_cuts_from_values(view, xa_vals, {(0, 0): 1.0})
+                if not violated:
+                    break
+                for (_k, _l, cut_arcs) in violated:
+                    if cut_arcs:
+                        model.addConstr(sum(xa[a] for a in cut_arcs) >= 1)
+        finally:
+            for col in range(num_col):
+                model.changeColIntegrality(col, hp.HighsVarType.kInteger)
+
+    # MIP warm start from the dual-ascent primal (applied after the LP phase,
+    # which would otherwise clear it).
     if primal:
         try:
             import numpy as np
@@ -1421,16 +1518,7 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         except Exception:
             pass
 
-    # NOTE: deliberately do NOT pass da_ub to HiGHS as `objective_bound`. Unlike
-    # Gurobi's `Params.Cutoff` (a true pruning cutoff), HiGHS treats objective_bound
-    # as a termination target inside the cut loop: a loose dual-ascent UB makes a
-    # re-solve stop kOptimal at a feasible-but-suboptimal incumbent, which the loop
-    # then reports as "proven optimal" (false-optimal bug observed on PCSPG P400).
-    # da_ub is still used below only to report an honest gap on a non-proven solve.
-
-    obj = sum(xa[a] * view.graph.edges[a][view.weight] for a in arcs)
-
-    start = time.time()
+    # Phase 2 — the integer cut loop.
     converged = False
     _STOP = (
         hp.HighsModelStatus.kInfeasible,

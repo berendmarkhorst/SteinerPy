@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **LP-first cut loop (HiGHS)**: before the integer cut loop starts, the
+  directed Steiner cuts are separated on the **LP relaxation** — each round is
+  a cheap LP re-solve instead of a full branch-and-bound run, and the
+  accumulated root cuts strengthen every subsequent MIP solve (the classic
+  root-separation scheme of branch-and-cut Steiner codes, Koch & Martin 1998).
+  Applies to the iterative HiGHS path (`run_model`, `solve_sap_highs`); the
+  Gurobi path already separates fractional points in its callback.  Configure
+  with `STEINERPY_LP_CUT_ROUNDS` (default 50, `0` disables).  Speedups of
+  5–10x on seeded tree instances and ~1.6x on a forest instance, with
+  identical optima.  A dual-ascent MIP warm start set before `run_model` is
+  re-applied after the LP phase via the new `reapply_start` callback.
 - **Nested cuts in the directed-cut separation** (Koch & Martin 1998): when a
   terminal's minimum cut is violated, the cut's arcs are saturated (capacity
   raised to 1) and the max-flow re-run, emitting up to `STEINERPY_NESTED_CUTS`
