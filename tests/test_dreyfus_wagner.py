@@ -105,7 +105,11 @@ def test_matches_ilp_on_random_instances(monkeypatch, seed):
 
 def test_auto_selected_in_get_solution_with_preprocessing():
     G, terminals = _random_instance(60, 150, 6, seed=101)
-    prob = SteinerProblem(G, [terminals])  # preprocess + heavy on by default
+    # With the full default reduction stack this instance is solved outright in
+    # preprocessing; use the structural reductions only so the DP is the one
+    # doing the solving (still exercising the degree-2 back-mapping).
+    prob = SteinerProblem(G, [terminals], heavy=False, contract_terminals=False,
+                          bound_based=False)
     assert prob._dw_eligible()
     sol = prob.get_solution(time_limit=120)
     assert sol.gap == 0.0
@@ -113,6 +117,12 @@ def test_auto_selected_in_get_solution_with_preprocessing():
     # at the reported cost.
     assert _spans(sol.edges, terminals)
     assert sol.objective == pytest.approx(_edge_cost(G, sol.edges))
+
+    # And the full default stack (which may pre-solve the instance entirely)
+    # must agree on the objective.
+    full = SteinerProblem(G, [terminals]).get_solution(time_limit=120)
+    assert full.objective == pytest.approx(sol.objective)
+    assert _spans(full.edges, terminals)
 
 
 def test_not_selected_above_terminal_cap(monkeypatch):

@@ -65,13 +65,20 @@ SteinerProblem(graph, terminals, da_reduce=True, dual_ascent=True)
 
 ## Terminal contraction
 
-Two *inclusion* tests run alongside the deletion tests (on by default, `contract_terminals=False` opts out; Steiner **tree** only):
+Four *inclusion* tests run alongside the deletion tests (on by default, `contract_terminals=False` opts out; Steiner **tree** only):
 
 - **Degree-1 terminal contraction** — a terminal's sole incident edge is in *every* feasible solution, so it is fixed and the terminal merged into its neighbour.
 - **Adjacent-terminal contraction** — an edge between two terminals that is a cheapest edge incident to one of them is in *at least one* optimal solution (the classic cut-exchange argument), so it is fixed and the terminals merged.
+- **Nearest Vertex (NV)** ([Polzin & Vahdati Daneshmand 1998](https://doi.org/10.1016/S0166-218X(00)00319-X), Obs. 3.2) — a terminal's cheapest incident edge `{t, v'}` is fixed when `c(e') + d(v', tj) ≤ c(e'')` for another terminal `tj` (second-cheapest incident cost `c(e'')`), certified from the two-label Voronoi diagram.
+- **Short Links (SL)** (ibid., Obs. 3.3) — the cheapest edge leaving a terminal's Voronoi region is fixed when every other leaving edge costs at least its full link length `d(t,u) + c(u,w) + d(w, base(w))`; the merged endpoint is *promoted to a terminal*.
 
 Fixing an edge moves its cost out of the reduced model (it is added back to every reported objective) and **shrinks the terminal set**, which in turn strengthens the Special-Distance and replacement tests — the cascade can solve an instance outright during preprocessing, in which case no solver runs at all.
 Solutions still map back to the original graph, and the optimum **value** is preserved exactly.
+
+## Bound-based deletions (BND)
+
+Using the terminals' Voronoi **radii** (cheapest way to leave each region) and a shortest-path-heuristic upper bound, any node with `d1(v) + d2(v) + Σ smallest (s−2) radii > UB` — and any edge with `c(e) + d1(u) + d1(w) + Σ radii > UB` — is provably not needed in any optimal solution and is deleted ([Polzin & Vahdati Daneshmand 1998](https://doi.org/10.1016/S0166-218X(00)00319-X), Obs. 3.5/3.6).
+On by default with the heavy tests; opt out with `bound_based=False`.
 
 ## Few-terminal dynamic program
 

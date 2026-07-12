@@ -84,12 +84,16 @@ class BaseSteinerProblem:
         le_opt = kwargs.get('long_edge', self.heavy_reduce)
         rn_opt = kwargs.get('replace_nodes', self.heavy_reduce)
 
-        # Terminal contraction (fixed-edge) tests: degree-1 terminals and
-        # adjacent-terminal cheapest edges are provably in >= one optimal
-        # solution, so they are contracted — the terminal set shrinks, which
-        # strengthens every other test. Steiner tree only; requires the plain
-        # edge-cost objective (like the heavy tests). On by default.
+        # Terminal contraction (fixed-edge) tests: degree-1 terminals,
+        # adjacent-terminal cheapest edges, the Nearest-Vertex and the
+        # Short-Links tests fix edges provably in >= one optimal solution and
+        # contract them — the terminal set shrinks, which strengthens every
+        # other test. Steiner tree only; requires the plain edge-cost
+        # objective (like the heavy tests). On by default.
         ct_opt = kwargs.get('contract_terminals', True)
+        # Bound-based (BND) node/edge deletions using Voronoi radii + an SPH
+        # upper bound (Polzin & Vahdati 1998). Grouped with the heavy tests.
+        bb_opt = kwargs.get('bound_based', self.heavy_reduce)
 
         if preprocess:
             if isinstance(graph, nx.DiGraph):
@@ -102,15 +106,22 @@ class BaseSteinerProblem:
                 long_edge=bool(le_opt) and _heavy_ok,
                 replace_nodes=bool(rn_opt) and _heavy_ok,
                 contract=bool(ct_opt) and _heavy_ok,
+                bound_based=bool(bb_opt) and _heavy_ok,
             )
-            if self.reduction_tracker.terminal_merges:
-                # Contractions merged terminals away; point the groups at the
-                # surviving representatives (order-preserving de-dup).
+            if self.reduction_tracker.terminal_merges or self.reduction_tracker.added_terminals:
+                # Contractions merged terminals away (and the SL test may have
+                # promoted new ones): point the groups at the surviving
+                # representatives (order-preserving de-dup) and append the
+                # SL-promoted terminals to the single group.
                 terminal_groups = [
                     list(dict.fromkeys(
                         self.reduction_tracker.resolve_terminal(t) for t in group))
                     for group in terminal_groups
                 ]
+                if self.reduction_tracker.added_terminals:
+                    extra = [self.reduction_tracker.resolve_terminal(v)
+                             for v in self.reduction_tracker.added_terminals]
+                    terminal_groups[0] = list(dict.fromkeys(terminal_groups[0] + extra))
             if self.da_reduce and kwargs.get('budget') is None and kwargs.get('max_degree') is None:
                 from .dual_ascent import reduce_graph_with_dual_ascent
                 self.graph = reduce_graph_with_dual_ascent(

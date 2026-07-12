@@ -184,3 +184,78 @@ def test_solution_mapping_with_synthetic_fixed_edge():
     assert sol.objective == pytest.approx(ref.objective)
     assert _spans(sol.edges, [0, 3, 4])
     assert _edge_cost(G, sol.edges) == pytest.approx(sol.objective)
+
+
+# ---------------------------------------------------------------------------
+# NV / SL / BND tests (Polzin & Vahdati 1998; Rehfeldt master thesis §2.2)
+# ---------------------------------------------------------------------------
+
+def test_nv_contracts_nearest_vertex():
+    # Terminal 0's cheapest edge goes to Steiner vertex 1, which is right next
+    # to terminal 2: c(e') + d(v', t2) = 1 + 1 = 2 <= c(e'') = 5 -> contract.
+    G = nx.Graph()
+    G.add_edge(0, 1, weight=1)   # e' = (t0, v')
+    G.add_edge(0, 3, weight=5)   # e'' (second cheapest at t0)
+    G.add_edge(1, 2, weight=1)   # v' - t2
+    G.add_edge(3, 2, weight=5)
+    reduced, tracker = preprocess_graph(
+        G, [[0, 2]], special_distance=False, long_edge=False, contract=True)
+    assert tracker.fixed_cost == 2  # both edges of the cheap path get fixed
+    assert reduced.number_of_edges() == 0
+
+
+def test_sl_promotes_new_terminal():
+    # Two far-apart terminals joined by a single cheap "bridge" between two
+    # Steiner vertices: the bridge is each region's only viable link, so SL
+    # (or the cascade it enables) must fix it although neither endpoint is a
+    # terminal. Side edges are expensive so NV alone cannot resolve them.
+    G = nx.Graph()
+    G.add_edge("t1", "a", weight=10)
+    G.add_edge("t1", "a2", weight=10)
+    G.add_edge("a", "a2", weight=10)
+    G.add_edge("a", "b", weight=1)    # the bridge (only link between regions)
+    G.add_edge("b", "t2", weight=10)
+    G.add_edge("b", "b2", weight=10)
+    G.add_edge("t2", "b2", weight=10)
+    sol = SteinerProblem(G, [["t1", "t2"]]).get_solution(time_limit=30)
+    ref = SteinerProblem(G, [["t1", "t2"]], preprocess=False).get_solution(time_limit=30)
+    assert sol.objective == pytest.approx(ref.objective) == 21
+    assert _spans(sol.edges, ["t1", "t2"])
+    assert _edge_cost(G, sol.edges) == pytest.approx(sol.objective)
+
+
+def test_bnd_deletes_far_vertex():
+    from steinerpy.graph_reducer import (
+        bound_based_deletions, _voronoi2, _terminal_mst,
+    )
+    # Triangle of terminals with cheap direct edges; vertex 9 hangs far away —
+    # any tree through it costs at least 2*20 more than the SPH tree.
+    G = nx.Graph()
+    G.add_edge(0, 1, weight=1)
+    G.add_edge(1, 2, weight=1)
+    G.add_edge(0, 2, weight=1)
+    G.add_edge(0, 9, weight=20)
+    G.add_edge(2, 9, weight=20)
+    terminals = {0, 1, 2}
+    vor = _voronoi2(G, terminals, "weight")
+    tmst = _terminal_mst(G, terminals, vor[0], vor[1], "weight")
+    nodes, edges = bound_based_deletions(G, terminals, "weight", vor, tmst)
+    assert 9 in nodes
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_nv_sl_bnd_preserve_optimum_random(seed):
+    G, terminals = _random_instance(35, 90, 4 + seed % 4, seed=200 + seed)
+    sol = SteinerProblem(G, [terminals]).get_solution(time_limit=120)
+    ref = SteinerProblem(G, [terminals], preprocess=False).get_solution(time_limit=120)
+    assert sol.objective == pytest.approx(ref.objective)
+    assert _spans(sol.edges, terminals)
+    assert _edge_cost(G, sol.edges) == pytest.approx(sol.objective)
+
+
+def test_bound_based_flag_disables():
+    G, terminals = _random_instance(30, 80, 5, seed=300)
+    p = SteinerProblem(G, [terminals], bound_based=False)
+    sol = p.get_solution(time_limit=60)
+    ref = SteinerProblem(G, [terminals], preprocess=False).get_solution(time_limit=60)
+    assert sol.objective == pytest.approx(ref.objective)

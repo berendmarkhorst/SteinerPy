@@ -276,10 +276,10 @@ def test_fixing_sound_when_ascent_root_differs_from_model_root():
     # The directional y2 fix must never forbid an arc of an optimal *model-root*
     # arborescence when multi-root ascent chose a different root.
     g, terms = _seed7_instance()
-    # contract_terminals=False keeps the fixture's terminal set (and thus the
-    # differing-roots scenario this test is about) intact.
+    # contract_terminals/bound_based=False keep the fixture's reduced shape
+    # (and thus the differing-roots scenario this test is about) intact.
     p = SteinerProblem(g.copy(), [terms], preprocess=True, da_reduce=True,
-                       contract_terminals=False)
+                       contract_terminals=False, bound_based=False)
     da = dual_ascent(p)
     assert da.groups[0].root != p.roots[0]   # the bug-triggering condition
 

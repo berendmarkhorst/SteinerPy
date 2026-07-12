@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Nearest-Vertex (NV), Short-Links (SL) and bound-based (BND) reductions**
+  (Polzin & Vahdati Daneshmand 1998, Obs. 3.2/3.3/3.5/3.6; Steiner **tree**
+  only): NV contracts a terminal's cheapest incident edge when
+  `c(e') + d(v', tj) <= c(e'')` for another terminal `tj` (certified via the
+  two-label Voronoi diagram); SL contracts a Voronoi region's cheapest
+  boundary link when every other link costs at least its full link length —
+  promoting the merged endpoint to a **new terminal** when needed
+  (`ReductionTracker.added_terminals`); BND deletes nodes/edges whose
+  Voronoi-radius lower bound `d1 + d2 + sum of smallest (s-2) radii` exceeds a
+  Mehlhorn-SPH upper bound (`bound_based=` flag, grouped with `heavy`).
+  NV/SL join the `contract_terminals` cascade; contraction sub-rounds run on a
+  fresh Voronoi diagram and the diagram is rebuilt before the deletion tests
+  (whose bounds must remain lower bounds). Validated by randomized sweeps
+  against unreduced solves, including zero-weight-edge (group-Steiner-style)
+  instances.
 - **Terminal contraction (fixed-edge) reductions** (on by default, opt out with
   `contract_terminals=False`; Steiner **tree** only): two inclusion tests that
   *fix* an edge into the solution and merge its endpoints — **degree-1
