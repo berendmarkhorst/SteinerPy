@@ -276,7 +276,10 @@ def test_fixing_sound_when_ascent_root_differs_from_model_root():
     # The directional y2 fix must never forbid an arc of an optimal *model-root*
     # arborescence when multi-root ascent chose a different root.
     g, terms = _seed7_instance()
-    p = SteinerProblem(g.copy(), [terms], preprocess=True, da_reduce=True)
+    # contract_terminals=False keeps the fixture's terminal set (and thus the
+    # differing-roots scenario this test is about) intact.
+    p = SteinerProblem(g.copy(), [terms], preprocess=True, da_reduce=True,
+                       contract_terminals=False)
     da = dual_ascent(p)
     assert da.groups[0].root != p.roots[0]   # the bug-triggering condition
 
@@ -557,9 +560,12 @@ def test_da_reduce_removes_provably_bad_edge_and_shrinks():
     # degree reductions (all degree-1/2 nodes are terminals), so da_reduce removes
     # it. heavy=False isolates da_reduce from the (default-on) heavy edge tests,
     # which would otherwise delete A-D themselves.
-    plain = SteinerProblem(_notebook_tree(), [["A", "B", "D"]], preprocess=True, heavy=False)
+    # contract_terminals=False keeps the terminal contraction from solving the
+    # tiny fixture outright before da_reduce gets a chance to act.
+    plain = SteinerProblem(_notebook_tree(), [["A", "B", "D"]], preprocess=True,
+                           heavy=False, contract_terminals=False)
     reduced = SteinerProblem(_notebook_tree(), [["A", "B", "D"]], preprocess=True,
-                             heavy=False, da_reduce=True)
+                             heavy=False, da_reduce=True, contract_terminals=False)
     assert reduced.graph.number_of_edges() < plain.graph.number_of_edges()
     assert not reduced.graph.has_edge("A", "D")
 

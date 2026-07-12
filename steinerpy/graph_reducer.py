@@ -13,6 +13,14 @@ class ReductionTracker:
         self.degree_two_contractions = []
         self.degree_one_removals = []      # List of removed nodes (just for statistics)
         self._edge_counter = 0  # Unique ID for contracted edges
+        # Fixed-edge channel (terminal contractions): reduced-graph edges proven
+        # to lie in at least one optimal solution.  Their cost leaves the reduced
+        # problem's objective (``fixed_cost`` must be added back), and their
+        # expansions are appended to every mapped solution.
+        self.fixed_edges = []              # (u, w, edge_id_or_None) at fix time
+        self.fixed_cost = 0.0
+        # Terminals merged away by a contraction: old terminal -> surviving node.
+        self.terminal_merges: Dict = {}
 
     def add_degree_two_contraction(self, node: str, u: str, w: str, weight_uv: float, weight_vw: float, edge_id: str):
         """Record a degree-2 node contraction that actually created/modified an edge."""
@@ -22,15 +30,114 @@ class ReductionTracker:
         """Record a degree-1 node removal."""
         self.degree_one_removals.append(node)
 
+    def add_fixed_edge(self, u, w, cost: float, edge_id):
+        """Record an edge fixed into every solution (terminal contraction)."""
+        self.fixed_edges.append((u, w, edge_id))
+        self.fixed_cost += cost
+
+    def add_terminal_merge(self, gone, keep):
+        """Record that terminal ``gone`` was merged into node ``keep``."""
+        self.terminal_merges[gone] = keep
+
+    def resolve_terminal(self, t):
+        """Follow the merge chain of ``t`` to its surviving representative."""
+        seen = set()
+        while t in self.terminal_merges and t not in seen:
+            seen.add(t)
+            t = self.terminal_merges[t]
+        return t
+
     def get_next_edge_id(self) -> str:
         """Generate unique ID for contracted edges."""
         self._edge_counter += 1
         return f"contracted_edge_{self._edge_counter}"
 
 
+def _contract_terminal_edge(G: nx.Graph, keep, gone, weight: str,
+                            terminals: Set, tracker: ReductionTracker) -> Set:
+    """Fix edge ``{keep, gone}`` into every solution and merge ``gone`` into ``keep``.
+
+    The caller guarantees the edge lies in at least one optimal solution of the
+    current (reduced) problem.  The edge cost moves to the tracker's fixed-cost
+    channel; every other edge ``{gone, x}`` is re-homed to ``{keep, x}`` (kept
+    only when cheaper than an existing parallel) and recorded as a degree-2
+    style contraction through ``gone``, so the existing back-mapping expands
+    ``{keep, x}`` into ``{keep, gone} + {gone, x}`` unchanged.  ``keep``
+    becomes (or stays) a terminal; a merged-away terminal is recorded so the
+    caller can remap its terminal groups.
+
+    Returns the set of nodes whose degree changed (worklist seeds).
+    """
+    data = G[keep][gone]
+    edge_id = data.get('edge_id') if data.get('edge_type') == 'contracted' else None
+    if tracker:
+        tracker.add_fixed_edge(keep, gone, data.get(weight, 1), edge_id)
+    seeds = {keep}
+    for x in list(G.neighbors(gone)):
+        if x == keep or x == gone:
+            continue
+        c_gx = G[gone][x].get(weight, 1)
+        existing = G[keep][x] if G.has_edge(keep, x) else None
+        if existing is None or c_gx < existing.get(weight, float("inf")):
+            new_id = tracker.get_next_edge_id() if tracker else None
+            attrs = {weight: c_gx, 'edge_type': 'contracted', 'edge_id': new_id}
+            if existing is None:
+                G.add_edge(keep, x, **attrs)
+            else:
+                existing.update(attrs)
+            if tracker:
+                tracker.add_degree_two_contraction(gone, keep, x, 0.0, c_gx, new_id)
+        seeds.add(x)
+    G.remove_node(gone)
+    if gone in terminals:
+        terminals.discard(gone)
+        if tracker:
+            tracker.add_terminal_merge(gone, keep)
+    terminals.add(keep)
+    return seeds
+
+
+def _adjacent_terminal_pass(G: nx.Graph, terminals: Set, weight: str,
+                            tracker: ReductionTracker) -> Set:
+    """Contract terminal-terminal edges that are cheapest at one endpoint.
+
+    Classic MST-style inclusion test: let ``e = {t, t'}`` with both endpoints
+    terminals and ``c(e) <= c(f)`` for every ``f`` in ``delta(t)``.  Any optimal
+    tree ``S`` without ``e`` contains a ``t``-``t'`` path whose first edge ``f``
+    lies in ``delta(t)`` and costs at least ``c(e)``; removing ``f`` splits
+    ``S`` with ``t`` on one side and ``t'`` on the other, and adding ``e``
+    reconnects it at no larger cost.  Hence ``e`` is in at least one optimal
+    tree and can be contracted.  Single terminal group only.
+
+    Returns worklist seeds for the structural fixpoint.
+    """
+    seeds: Set = set()
+    progress = True
+    while progress and len(terminals) >= 2:
+        progress = False
+        for t in list(terminals):
+            if t not in G or len(terminals) < 2:
+                continue
+            nbrs = list(G[t].items())
+            if not nbrs:
+                continue
+            cmin = min(attr.get(weight, 1) for _x, attr in nbrs)
+            cand = None
+            for x, attr in nbrs:
+                if x in terminals and attr.get(weight, 1) <= cmin:
+                    cand = x
+                    break
+            if cand is None:
+                continue
+            seeds |= _contract_terminal_edge(G, t, cand, weight, terminals, tracker)
+            progress = True
+    return seeds
+
+
 def _structural_fixpoint(G: nx.Graph, terminals: Set, weight: str,
                          tracker: ReductionTracker = None, seeds=None,
-                         do_deg1: bool = True, do_deg2: bool = True) -> bool:
+                         do_deg1: bool = True, do_deg2: bool = True,
+                         contract_terminals: bool = False) -> bool:
     """In-place degree-1 / degree-2 fixpoint driven by a worklist.
 
     Instead of rescanning every node per pass, a queue holds the nodes whose
@@ -38,6 +145,12 @@ def _structural_fixpoint(G: nx.Graph, terminals: Set, weight: str,
     its (former) neighbours, so a full fixpoint costs time proportional to the
     work actually performed.  ``seeds`` restricts the initial worklist (e.g. to
     the endpoints of freshly deleted edges); by default all nodes are seeded.
+
+    With ``contract_terminals`` (single terminal group only), a degree-1
+    *terminal* is also handled: its sole incident edge is in **every** feasible
+    solution (the terminal must be connected and has no other edge), so the
+    edge is fixed and the terminal merged into its neighbour — see
+    :func:`_contract_terminal_edge`.
 
     Returns True iff the graph was modified.
     """
@@ -53,7 +166,15 @@ def _structural_fixpoint(G: nx.Graph, terminals: Set, weight: str,
     while queue:
         v = queue.popleft()
         queued.discard(v)
-        if v not in G or v in terminals:
+        if v not in G:
+            continue
+        if v in terminals:
+            if (contract_terminals and len(terminals) >= 2
+                    and G.degree(v) == 1):
+                (n,) = G.neighbors(v)
+                for s in _contract_terminal_edge(G, n, v, weight, terminals, tracker):
+                    enqueue(s)
+                changed = True
             continue
         deg = G.degree(v)
         if do_deg1 and deg == 1:
@@ -138,7 +259,8 @@ _REBUILD_PER_SUBPASS = False
 
 def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str = "weight",
                      special_distance: bool = False, long_edge: bool = False,
-                     max_settle: int = 2000, replace_nodes: bool = False
+                     max_settle: int = 2000, replace_nodes: bool = False,
+                     contract: bool = False
                      ) -> Tuple[nx.Graph, ReductionTracker]:
     """Apply the structural (and, optionally, heavy) reductions to a fixpoint.
 
@@ -159,6 +281,15 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
     :param replace_nodes: enable degree-k pseudo-elimination of non-terminals
         (Rehfeldt & Koch 2023, Prop. 4; Steiner *tree* only, skipped for
         multiple terminal groups).
+    :param contract: enable the *terminal contraction* tests (Steiner **tree**
+        only, skipped for multiple terminal groups): degree-1 terminals (the
+        sole incident edge is in every solution) and adjacent-terminal edges
+        that are cheapest at one endpoint (in at least one optimal solution,
+        see :func:`_adjacent_terminal_pass`).  Fixed edges move their cost to
+        ``tracker.fixed_cost`` (the caller must add it back to the objective)
+        and merged-away terminals are recorded in ``tracker.terminal_merges``
+        (the caller must remap its terminal groups via
+        ``tracker.resolve_terminal``).
     :returns: ``(reduced_graph, tracker)``.  Deleted edges need no tracking;
         the degree-2 contractions *and* node replacements are recorded for
         solution back-mapping (a replacement edge ``{u, w}`` through eliminated
@@ -182,18 +313,30 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
 
     reduced_graph = G.copy()
     tracker = ReductionTracker()
+    ct_on = contract and single_group
 
     # Structural fixpoint first; the heavy tests then run on the smaller graph.
-    _structural_fixpoint(reduced_graph, all_terminals, weight, tracker)
+    _structural_fixpoint(reduced_graph, all_terminals, weight, tracker,
+                         contract_terminals=ct_on)
 
     sd_on = special_distance and single_group
     rn_on = replace_nodes and single_group
     rounds = 0
-    while sd_on or long_edge or rn_on:
+    while sd_on or long_edge or rn_on or ct_on:
         rounds += 1
         n0 = reduced_graph.number_of_nodes()
         m0 = reduced_graph.number_of_edges()
         seeds: Set = set()
+
+        # Terminal contractions first: they change the terminal set, so they
+        # must run before this round's Voronoi diagram / terminal MST is built.
+        if ct_on:
+            ct_seeds = _adjacent_terminal_pass(reduced_graph, all_terminals,
+                                               weight, tracker)
+            if ct_seeds:
+                _structural_fixpoint(reduced_graph, all_terminals, weight,
+                                     tracker, seeds=ct_seeds,
+                                     contract_terminals=True)
 
         # Shared per-round data for the terminal-based tests.
         vor = bott = mst_weights = None
@@ -246,7 +389,10 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
 
         if seeds:
             _structural_fixpoint(reduced_graph, all_terminals, weight, tracker,
-                                 seeds=seeds)
+                                 seeds=seeds, contract_terminals=ct_on)
+
+        if len(all_terminals) <= 1:
+            break  # trivial problem: the optimum is the fixed edges alone
 
         removed = (n0 - reduced_graph.number_of_nodes()) + \
                   (m0 - reduced_graph.number_of_edges())
@@ -339,6 +485,11 @@ def map_solution_to_original(reduced_solution_edges: List[Tuple[str, str]],
             # Original edge - keep as is
             original_edges.append(edge)
 
+    # Fixed edges (terminal contractions) are in every solution of the original
+    # problem but absent from the reduced graph; append their expansions.
+    for (fu, fw, fid) in getattr(tracker, 'fixed_edges', ()):
+        original_edges.extend(expand(fu, fw, fid, frozenset()))
+
     # De-duplicate while preserving order.
     seen: Set = set()
     deduped = []
@@ -382,14 +533,15 @@ def map_solution_to_original(reduced_solution_edges: List[Tuple[str, str]],
 # in a mapped solution.  The degree reductions and node replacements they
 # cascade into are tracked.
 #
-# NOT implemented (deferred deliberately): the NSV / nearest-special-vertex
-# edge *contraction* test (Duin & Volgenant 1989; Rehfeldt & Koch 2023,
-# Prop. 2/3). It fixes an edge into every solution, which requires (a) a
-# fixed-edge cost channel through every objective/solution site, (b) endpoint
-# renaming in the back-mapping, and (c) mutating the terminal set mid-
-# preprocessing, while the model builders receive the original terminal
-# groups. That is a cross-cutting invariant change with historically modest
-# payoff once the SD/replacement/dual-ascent tests are active.
+# Terminal *contraction* (fixed-edge) tests are implemented via the
+# fixed-edge channel on the ReductionTracker (fixed_cost / fixed_edges /
+# terminal_merges): degree-1 terminal contraction (inside
+# _structural_fixpoint) and the adjacent-terminal cheapest-edge test
+# (_adjacent_terminal_pass).  Still open: the full NSV / SL nearest-special-
+# vertex tests (Duin & Volgenant 1989; Polzin & Vahdati Daneshmand 2001),
+# which additionally contract terminal-to-NON-terminal edges under a
+# Voronoi-radius condition — the infrastructure here supports them; only the
+# (subtle) test conditions remain to be added.
 
 
 def _groups_connected(G: nx.Graph, terminal_groups: List[List]) -> bool:

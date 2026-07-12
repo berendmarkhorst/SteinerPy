@@ -24,8 +24,22 @@ def test_steiner_problem_initialization():
     
     problem = SteinerProblem(G, terminal_groups, preprocess=True)
 
+    # Terminal contraction solves this chain outright: both terminals are
+    # degree-1, so every edge is fixed and the graph collapses to one node.
     assert problem.original_graph.number_of_nodes() == 4
     assert problem.original_graph.number_of_edges() == 3
+    assert problem.graph.number_of_nodes() == 1
+    assert problem.graph.number_of_edges() == 0
+    assert problem.terminal_groups == [[problem.roots[0]]]
+    assert problem.reduction_tracker.fixed_cost == 4
+    assert problem.weight == "weight"
+    assert problem.steiner_points == set()
+
+    # Without the contraction tests, the degree-2 reduction leaves the classic
+    # two-terminal single-edge shape.
+    problem = SteinerProblem(G, terminal_groups, preprocess=True,
+                             contract_terminals=False)
+
     assert problem.graph.number_of_nodes() == 2
     assert problem.graph.number_of_edges() == 1
     assert problem.terminal_groups == terminal_groups
@@ -57,8 +71,8 @@ def test_steiner_problem_repr():
     G.add_edge('A', 'B', weight=1)
     
     terminal_groups = [['A', 'B']]
-    problem = SteinerProblem(G, terminal_groups)
-    
+    problem = SteinerProblem(G, terminal_groups, contract_terminals=False)
+
     repr_str = repr(problem)
     assert "2 nodes" in repr_str
     assert "1 edges" in repr_str
@@ -126,39 +140,43 @@ def test_steiner_tree_example_from_notebook():
     
     # Create SteinerProblem to connect terminals A, B, D
     problem = SteinerProblem(graph, [["A", "B", "D"]])
-    
-    # Verify problem setup. The default-on heavy reductions delete the A-D edge
-    # (weight 10) because the detour A-C-D (cost 2) is provably always cheaper.
-    assert problem.graph.number_of_nodes() == 4
-    assert problem.graph.number_of_edges() == 3
-    assert not problem.graph.has_edge("A", "D")
-    assert problem.terminal_groups == [["A", "B", "D"]]
-    assert problem.steiner_points == {'C'}  # C is the only Steiner point
-    
+
+    # The default-on reductions now solve this instance outright: heavy tests
+    # delete the A-D edge (detour A-C-D is cheaper) and terminal contraction
+    # fixes the remaining star edges (B is degree-1; A-C / C-D are cheapest
+    # incident terminal-terminal edges after B merges into C).
+    assert problem.graph.number_of_edges() == 0
+    assert problem.reduction_tracker.fixed_cost == 3
+
     # Solve the problem
     solution = problem.get_solution(time_limit=30)
-    
+
     # Verify solution properties
     assert isinstance(solution, Solution)
     assert solution.objective is not None
     assert solution.runtime is not None
     assert solution.gap is not None
     assert isinstance(solution.selected_edges, list)
-    
+
     # The optimal solution should have cost 3 (AC=1, BC=1, CD=1)
     # allowing for small numerical tolerance
     assert abs(solution.objective - 3.0) < 1e-6, f"Expected objective ~3.0, got {solution.objective}"
+
+    # The optimal solution uses exactly 3 original-graph edges
+    assert len(solution.edges) == 3, f"Expected 3 edges, got {len(solution.edges)}"
+    assert set(map(frozenset, solution.edges)) == {
+        frozenset(("A", "C")), frozenset(("B", "C")), frozenset(("C", "D"))
+    }
     
-    # The optimal solution should use exactly 3 edges
-    assert len(solution.selected_edges) == 3, f"Expected 3 edges, got {len(solution.selected_edges)}"
-    
-    # Convert selected edges to a set of undirected edges for easier comparison
+    # Convert original-graph edges to a set of undirected edges for comparison
+    # (selected_edges refers to the reduced graph, which is empty here — the
+    # whole solution consists of contraction-fixed edges).
     selected_undirected = set()
-    for edge in solution.selected_edges:
+    for edge in solution.edges:
         # Normalize edge direction (smaller node first)
         normalized_edge = tuple(sorted(edge))
         selected_undirected.add(normalized_edge)
-    
+
     # The expected optimal edges are AC, BC, CD
     expected_edges = {('A', 'C'), ('B', 'C'), ('C', 'D')}
     assert selected_undirected == expected_edges, f"Expected edges {expected_edges}, got {selected_undirected}"

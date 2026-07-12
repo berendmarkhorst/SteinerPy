@@ -63,6 +63,16 @@ It composes with `da_reduce=True` and `dual_ascent=True`; a good "throw everythi
 SteinerProblem(graph, terminals, da_reduce=True, dual_ascent=True)
 ```
 
+## Terminal contraction
+
+Two *inclusion* tests run alongside the deletion tests (on by default, `contract_terminals=False` opts out; Steiner **tree** only):
+
+- **Degree-1 terminal contraction** — a terminal's sole incident edge is in *every* feasible solution, so it is fixed and the terminal merged into its neighbour.
+- **Adjacent-terminal contraction** — an edge between two terminals that is a cheapest edge incident to one of them is in *at least one* optimal solution (the classic cut-exchange argument), so it is fixed and the terminals merged.
+
+Fixing an edge moves its cost out of the reduced model (it is added back to every reported objective) and **shrinks the terminal set**, which in turn strengthens the Special-Distance and replacement tests — the cascade can solve an instance outright during preprocessing, in which case no solver runs at all.
+Solutions still map back to the original graph, and the optimum **value** is preserved exactly.
+
 ## Few-terminal dynamic program
 
 For a plain (undirected, single-group, unconstrained) Steiner tree with **few terminals**, the exact [Dreyfus–Wagner (1971)](https://doi.org/10.1002/net.3230010302) dynamic program — in the [Erickson–Monma–Veinott (1987)](https://doi.org/10.1287/moor.12.4.634) formulation — solves the reduced instance outright, bypassing the ILP entirely.

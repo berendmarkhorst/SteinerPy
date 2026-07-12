@@ -84,6 +84,13 @@ class BaseSteinerProblem:
         le_opt = kwargs.get('long_edge', self.heavy_reduce)
         rn_opt = kwargs.get('replace_nodes', self.heavy_reduce)
 
+        # Terminal contraction (fixed-edge) tests: degree-1 terminals and
+        # adjacent-terminal cheapest edges are provably in >= one optimal
+        # solution, so they are contracted — the terminal set shrinks, which
+        # strengthens every other test. Steiner tree only; requires the plain
+        # edge-cost objective (like the heavy tests). On by default.
+        ct_opt = kwargs.get('contract_terminals', True)
+
         if preprocess:
             if isinstance(graph, nx.DiGraph):
                 raise ValueError("Graph preprocessing is not supported for directed graphs. Use preprocess=False.")
@@ -94,7 +101,16 @@ class BaseSteinerProblem:
                 special_distance=bool(sd_opt) and _heavy_ok,
                 long_edge=bool(le_opt) and _heavy_ok,
                 replace_nodes=bool(rn_opt) and _heavy_ok,
+                contract=bool(ct_opt) and _heavy_ok,
             )
+            if self.reduction_tracker.terminal_merges:
+                # Contractions merged terminals away; point the groups at the
+                # surviving representatives (order-preserving de-dup).
+                terminal_groups = [
+                    list(dict.fromkeys(
+                        self.reduction_tracker.resolve_terminal(t) for t in group))
+                    for group in terminal_groups
+                ]
             if self.da_reduce and kwargs.get('budget') is None and kwargs.get('max_degree') is None:
                 from .dual_ascent import reduce_graph_with_dual_ascent
                 self.graph = reduce_graph_with_dual_ascent(
@@ -178,6 +194,14 @@ class BaseSteinerProblem:
             return False
         return True
 
+    def _fixed_cost(self) -> float:
+        """Cost of edges fixed into every solution by terminal contraction.
+
+        The reduced problem's objective excludes these; every reporting site
+        adds this constant back so objectives refer to the original graph.
+        """
+        return self.reduction_tracker.fixed_cost if self.preprocess else 0.0
+
     def _solution_from_da(self, da, t0, gap) -> 'Solution':
         """Build a :class:`Solution` from a dual-ascent result (no ILP).
 
@@ -192,7 +216,8 @@ class BaseSteinerProblem:
         else:
             original = da.primal_edges
         return Solution(
-            gap=gap, runtime=_time.time() - t0, objective=da.upper_bound,
+            gap=gap, runtime=_time.time() - t0,
+            objective=da.upper_bound + self._fixed_cost(),
             selected_edges=da.primal_edges, original_selected_edges=original,
             was_preprocessed=self.preprocess,
         )
@@ -278,8 +303,12 @@ class BaseSteinerProblem:
                     rcost = _edges_cost(graph, refined, self.weight)
                     if rcost < best_cost:
                         best_edges, best_cost = refined, rcost
-            gap = (_math.inf if _math.isinf(da.lower_bound)
-                   else (best_cost - da.lower_bound) / max(1.0, abs(best_cost)))
+            # Lower bound for the ORIGINAL problem: the dual-ascent bound is for
+            # the reduced problem, whose optimum sits fixed_cost below the
+            # original one.
+            lb = da.lower_bound + self._fixed_cost()
+            gap = (_math.inf if _math.isinf(lb)
+                   else (best_cost - lb) / max(1.0, abs(best_cost)))
             return Solution(
                 gap=gap, runtime=_time.time() - t0, objective=best_cost,
                 selected_edges=best_edges, original_selected_edges=best_edges,
@@ -424,7 +453,7 @@ class BaseSteinerProblem:
                 union[frozenset((u, v))] = (u, v)
 
         selected_edges = list(union.values())
-        objective = sum(G.edges[e][self.weight] for e in selected_edges)
+        objective = sum(G.edges[e][self.weight] for e in selected_edges) + self._fixed_cost()
         if self.preprocess:
             original = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
         else:
@@ -476,6 +505,21 @@ class BaseSteinerProblem:
             # early-exit, Dreyfus-Wagner DP).
             from .mathematical_model import _check_gurobipy
             _check_gurobipy()
+
+        # Trivial after preprocessing: when every group is down to <= 1
+        # terminal (e.g. terminal contraction solved the whole instance), the
+        # optimum is exactly the fixed edges — nothing is left to optimise.
+        if self.budget is None and all(len(g) <= 1 for g in self.terminal_groups):
+            import time as _time_triv
+            _t0 = _time_triv.time()
+            original = (map_solution_to_original([], self.reduction_tracker, self.graph)
+                        if self.preprocess else [])
+            return Solution(
+                gap=0.0, runtime=_time_triv.time() - _t0,
+                objective=self._fixed_cost(),
+                selected_edges=[], original_selected_edges=original,
+                was_preprocessed=self.preprocess,
+            )
 
         # Heuristic-only mode: return the dual-ascent primal with no ILP. Much
         # faster (no MIP), and unlike a pure heuristic it carries a proven
@@ -555,7 +599,7 @@ class BaseSteinerProblem:
                 return Solution(
                     gap=0.0,
                     runtime=runtime,
-                    objective=dw_cost,
+                    objective=dw_cost + self._fixed_cost(),
                     selected_edges=dw_edges,
                     original_selected_edges=original_selected_edges,
                     was_preprocessed=self.preprocess,
@@ -633,6 +677,16 @@ class BaseSteinerProblem:
             original_selected_edges = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
         else:
             original_selected_edges = selected_edges
+
+        # Shift the objective by the terminal-contraction fixed cost; rescale a
+        # finite nonzero relative gap so it refers to the shifted objective.
+        fc = self._fixed_cost()
+        if fc:
+            import math as _m
+            if _m.isfinite(objective):
+                if gap and _m.isfinite(gap):
+                    gap = gap * abs(objective) / max(1.0, abs(objective + fc))
+                objective = objective + fc
 
         solution = Solution(
             gap=gap,

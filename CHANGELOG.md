@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Terminal contraction (fixed-edge) reductions** (on by default, opt out with
+  `contract_terminals=False`; Steiner **tree** only): two inclusion tests that
+  *fix* an edge into the solution and merge its endpoints — **degree-1
+  terminals** (the sole incident edge is in every feasible solution) and
+  **adjacent terminals** whose connecting edge is cheapest at one endpoint (in
+  at least one optimal solution, by the classic cut-exchange argument). The
+  new fixed-edge channel on `ReductionTracker` (`fixed_cost`, `fixed_edges`,
+  `terminal_merges`) moves the fixed cost out of the reduced model (every
+  reporting site adds it back), re-homes the merged node's edges with full
+  back-mapping support, and remaps the terminal groups to the surviving
+  representatives. Contraction shrinks the terminal set, which strengthens the
+  Special-Distance/replacement tests and can solve instances outright during
+  preprocessing (the solver then returns immediately). Validated against
+  `preprocess=False` solves and a brute-force oracle on hundreds of random
+  instances. The full NSV/SL terminal-to-non-terminal contractions remain
+  future work; the infrastructure now supports them.
 - **Few-terminal exact dynamic program** (Dreyfus & Wagner 1971, in the
   Erickson–Monma–Veinott formulation): plain undirected single-group Steiner
   tree instances with at most `STEINERPY_DW_MAX_TERMINALS` terminals (default
