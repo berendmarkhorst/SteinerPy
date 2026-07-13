@@ -50,6 +50,50 @@ def _sep_thread_count() -> int:
 _SEP_PARALLEL_MIN_TASKS = 4
 
 
+def _nested_cut_rounds() -> int:
+    """Extra *nested cuts* per violated terminal (Koch & Martin 1998, Sect. 4).
+
+    After a violated minimum cut is found, its arcs' capacities are raised to 1
+    (as if fully selected) and the max-flow is re-run; while the new minimum cut
+    is still violated it is added as well.  Each round yields a structurally
+    different cut for the price of one extra max-flow, which typically collapses
+    the number of LP/MIP re-solve rounds in the cut loop.  Configure with
+    ``STEINERPY_NESTED_CUTS`` (0 disables); only extra max-flows are spent on
+    terminals whose first cut was violated.
+
+    The default is 1: on the HiGHS path every added row is carried through a
+    full MIP re-solve each round, and benchmarking showed one nested cut per
+    violated terminal is a consistent win (~1.25x on tree and forest) while
+    three bloat the model enough to cost more than the rounds they save.
+    """
+    env = os.environ.get("STEINERPY_NESTED_CUTS")
+    if env is not None:
+        try:
+            return max(0, int(env))
+        except ValueError:
+            pass
+    return 1
+
+
+def _lp_cut_rounds() -> int:
+    """Maximum rounds of cut separation on the LP *relaxation* (HiGHS path).
+
+    Before the integer cut loop starts, connectivity cuts are separated on the
+    LP relaxation: each round is a cheap LP re-solve instead of a full
+    branch-and-bound run, and the cuts found strengthen the root bound of every
+    subsequent MIP solve — the standard root-separation scheme of
+    branch-and-cut Steiner codes (Koch & Martin 1998).  Configure with
+    ``STEINERPY_LP_CUT_ROUNDS`` (0 disables the LP phase).
+    """
+    env = os.environ.get("STEINERPY_LP_CUT_ROUNDS")
+    if env is not None:
+        try:
+            return max(0, int(env))
+        except ValueError:
+            pass
+    return 50
+
+
 def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsModel:
     """
     Creates a HiGHS model with the given time limit and logfile.
@@ -82,6 +126,33 @@ def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsMo
         model.setOptionValue("log_file", logfile)
 
     return model
+
+
+def _arc_adjacency(arcs) -> Tuple[Dict, Dict]:
+    """Per-node incoming/outgoing arc lists, built in one pass over ``arcs``.
+
+    The model builders need "arcs entering v" / "arcs leaving v" for many nodes
+    (and, for the forest model, for every terminal group); scanning the full arc
+    list per node makes model construction O(|V|·|A|).  Building the adjacency
+    once keeps it O(|A|).
+
+    :return: ``(in_arcs, out_arcs)`` dicts mapping node -> list of arcs.
+    """
+    in_arcs: Dict = {}
+    out_arcs: Dict = {}
+    for a in arcs:
+        out_arcs.setdefault(a[0], []).append(a)
+        in_arcs.setdefault(a[1], []).append(a)
+    return in_arcs, out_arcs
+
+
+def _incident_edges(edges) -> Dict:
+    """Per-node incident edge lists, built in one pass over ``edges``."""
+    incident: Dict = {}
+    for e in edges:
+        incident.setdefault(e[0], []).append(e)
+        incident.setdefault(e[1], []).append(e)
+    return incident
 
 
 def get_terminals(terminal_group: List[List]) -> List:
@@ -128,6 +199,7 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
     # Sets
     group_indices = range(len(steiner_problem.terminal_groups))
     k_indices = [(k, l) for k in group_indices for l in group_indices if l >= k]
+    in_arcs, out_arcs = _arc_adjacency(steiner_problem.arcs)
 
     # Decision variables
     x = {e: model.addVariable(0, 1, name=f"x[{e}]") for e in steiner_problem.edges}
@@ -146,7 +218,7 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
 
     # Constraint 2: indegree of each vertex cannot exceed 1
     for v in steiner_problem.nodes:
-        incoming = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        incoming = [y1[a] for a in in_arcs.get(v, ())]
         if incoming:
             model.addConstr(sum(incoming) <= 1)
 
@@ -172,40 +244,40 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
     # Constraint 6: terminals in T^{1···k−1} cannot attach to root r k
     for group_id_k in group_indices:
         for t in get_terminal_groups_until_k(steiner_problem.terminal_groups, group_id_k):
-            incoming = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == t]
+            incoming = [y2[group_id_k, a] for a in in_arcs.get(t, ())]
             if incoming:
                 model.addConstr(sum(incoming) == 0)
 
     # Constraint 7: indegree at most outdegree for Steiner points
     for v in steiner_problem.steiner_points:
-        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
-        out_arcs = [y1[a] for a in steiner_problem.arcs if a[0] == v]
-        if in_arcs:
-            out_degree_sum = sum(out_arcs) if out_arcs else 0
-            model.addConstr(sum(in_arcs) <= out_degree_sum)
+        entering = [y1[a] for a in in_arcs.get(v, ())]
+        leaving = [y1[a] for a in out_arcs.get(v, ())]
+        if entering:
+            out_degree_sum = sum(leaving) if leaving else 0
+            model.addConstr(sum(entering) <= out_degree_sum)
 
     # Constraint 8: indegree at most outdegree per terminal group
     for group_id_k in group_indices:
         remaining_vertices = set(steiner_problem.nodes) - set(terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id_k))
         for v in remaining_vertices:
-            in_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == v]
-            out_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[0] == v]
-            if in_arcs:
-                out_degree_sum = sum(out_arcs) if out_arcs else 0
-                model.addConstr(sum(in_arcs) <= out_degree_sum)
+            entering = [y2[group_id_k, a] for a in in_arcs.get(v, ())]
+            leaving = [y2[group_id_k, a] for a in out_arcs.get(v, ())]
+            if entering:
+                out_degree_sum = sum(leaving) if leaving else 0
+                model.addConstr(sum(entering) <= out_degree_sum)
 
     # Constraint 9: connect y2 and z
     for group_id_k in group_indices:
         for group_id_l in group_indices:
             if group_id_l > group_id_k:
-                incoming = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == steiner_problem.roots[group_id_l]]
+                incoming = [y2[group_id_k, a] for a in in_arcs.get(steiner_problem.roots[group_id_l], ())]
                 if incoming:
                     model.addConstr(sum(incoming) <= z[group_id_k, group_id_l])
 
     return model, x, y1, y2, z
 
 
-def demand_and_supply_directed(steiner_problem: 'SteinerProblem', group_id_k: int, t: Tuple, v: Tuple, z: hp.HighsVarType) -> Union[hp.HighsVarType, int]:
+def demand_and_supply_directed(steiner_problem: 'SteinerProblem', group_id_k: int, t: Tuple, v: Tuple, z: hp.HighsVarType, t_group: int = None) -> Union[hp.HighsVarType, int]:
     """
     Calculate the demand and supply for a directed model.
 
@@ -213,16 +285,19 @@ def demand_and_supply_directed(steiner_problem: 'SteinerProblem', group_id_k: in
     :param t: A terminal represented as a tuple of integers.
     :param v: A vertex represented as a tuple of integers.
     :param z: The decision variable z.
+    :param t_group: index of the terminal group containing ``t``; looked up when
+        omitted (callers in a loop should precompute it once per terminal).
     :return: The value of z if the vertex is the root, -z if the vertex is a terminal, and 0 otherwise.
     """
 
     # We assume terminals are disjoint from each other
-    group_id_l = [group_id for group_id, group in enumerate(steiner_problem.terminal_groups) if t in group][0]
+    if t_group is None:
+        t_group = [group_id for group_id, group in enumerate(steiner_problem.terminal_groups) if t in group][0]
 
     if v == steiner_problem.roots[group_id_k]:
-        return z[(group_id_k, group_id_l)]
+        return z[(group_id_k, t_group)]
     elif v == t:
-        return -z[(group_id_k, group_id_l)]
+        return -z[(group_id_k, t_group)]
     else:
         return 0
 
@@ -237,27 +312,36 @@ def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem'
     :param y2: decision variable y2.
     :return: HiGHS model and variable(s).
     """
-    # Decision variables (binary flow variables)
+    # Decision variables: continuous flow in [0, 1].  Integrality of f is not
+    # needed: for any fixed integer values of y2 and z each (group, t) block is
+    # a unit s-t flow problem with integral capacities, and f never enters the
+    # objective — so relaxing f keeps the model exact while removing
+    # O(|T|·|A|) integer columns from branch-and-bound.
     group_indices = range(len(steiner_problem.terminal_groups))
-    f = {(group_id, t, a): model.addVariable(0, 1, hp.HighsVarType.kInteger, name=f"f[{group_id},{a}]") for group_id in group_indices
+    f = {(group_id, t, a): model.addVariable(0, 1, name=f"f[{group_id},{a}]") for group_id in group_indices
           for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id) for a in steiner_problem.arcs}
+
+    in_arcs, out_arcs = _arc_adjacency(steiner_problem.arcs)
+    t_to_group = {t: gid for gid, group in enumerate(steiner_problem.terminal_groups)
+                  for t in group}
 
     # Constraint 1: flow conservation
     for v in steiner_problem.nodes:
+        arcs_out = out_arcs.get(v, ())
+        arcs_in = in_arcs.get(v, ())
         for group_id in group_indices:
             for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
-                out_arcs = [a for a in steiner_problem.arcs if a[0] == v]
-                in_arcs = [a for a in steiner_problem.arcs if a[1] == v]
-                demand_and_supply = demand_and_supply_directed(steiner_problem, group_id, t, v, z)
+                demand_and_supply = demand_and_supply_directed(
+                    steiner_problem, group_id, t, v, z, t_group=t_to_group[t])
                 # demand_and_supply is either a HiGHS variable (root/terminal) or the integer 0.
                 # When the node has no incident arcs and the demand is zero (isolated, non-source/sink),
                 # the constraint is trivially satisfied and can be skipped.
                 is_highs_expr = not isinstance(demand_and_supply, (int, float))
-                has_arcs = bool(out_arcs or in_arcs)
+                has_arcs = bool(arcs_out or arcs_in)
                 if not has_arcs and not is_highs_expr:
                     continue  # Isolated node with no demand: trivially satisfied
-                first_term = sum(f[group_id, t, a] for a in out_arcs) if out_arcs else 0
-                second_term = sum(f[group_id, t, a] for a in in_arcs) if in_arcs else 0
+                first_term = sum(f[group_id, t, a] for a in arcs_out) if arcs_out else 0
+                second_term = sum(f[group_id, t, a] for a in arcs_in) if arcs_in else 0
                 left_hand_side = first_term - second_term
                 model.addConstr(left_hand_side == demand_and_supply)
 
@@ -272,8 +356,9 @@ def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem'
     # Constraint 3: prevent flow from leaving a terminal
     for group_id in group_indices:
         for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
-            if sum(1 for u, v in steiner_problem.arcs if u == t) > 0:
-                left_hand_side = sum(f[group_id, t, (u, v)] for u, v in steiner_problem.arcs if u == t)
+            terminal_out = out_arcs.get(t, ())
+            if terminal_out:
+                left_hand_side = sum(f[group_id, t, a] for a in terminal_out)
                 model.addConstr(left_hand_side == 0, name="flow_3")
 
     return model, f
@@ -297,20 +382,25 @@ def add_optional_flow_constraints(
     :return: model with added constraints and flow variable dict f.
     """
     group_indices = range(len(steiner_problem.terminal_groups))
+    # Continuous flow in [0, 1] — see add_flow_constraints: with integral y2 and
+    # connection variables, a feasible continuous unit flow exists iff an
+    # integral one does, and f never enters the objective.
     f = {
-        (group_id, t, a): model.addVariable(0, 1, hp.HighsVarType.kInteger, name=f"f_opt[{group_id},{a}]")
+        (group_id, t, a): model.addVariable(0, 1, name=f"f_opt[{group_id},{a}]")
         for group_id in group_indices
         for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id)
         for a in steiner_problem.arcs
     }
 
+    in_arcs, out_arcs = _arc_adjacency(steiner_problem.arcs)
+
     # Constraint 1: optional flow conservation
     # demand = connection_var at root, -connection_var at terminal, 0 elsewhere
     for v in steiner_problem.nodes:
+        arcs_out = out_arcs.get(v, ())
+        arcs_in = in_arcs.get(v, ())
         for group_id in group_indices:
             for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
-                out_arcs = [a for a in steiner_problem.arcs if a[0] == v]
-                in_arcs = [a for a in steiner_problem.arcs if a[1] == v]
                 c = connection_vars[(group_id, t)]
 
                 if v == steiner_problem.roots[group_id]:
@@ -319,12 +409,12 @@ def add_optional_flow_constraints(
                     demand = -c
                 else:
                     # demand = 0 (flow conservation); skip when node has no arcs
-                    if not out_arcs and not in_arcs:
+                    if not arcs_out and not arcs_in:
                         continue
                     demand = 0
 
-                first_term = sum(f[group_id, t, a] for a in out_arcs) if out_arcs else 0
-                second_term = sum(f[group_id, t, a] for a in in_arcs) if in_arcs else 0
+                first_term = sum(f[group_id, t, a] for a in arcs_out) if arcs_out else 0
+                second_term = sum(f[group_id, t, a] for a in arcs_in) if arcs_in else 0
                 model.addConstr(first_term - second_term == demand)
 
     # Constraint 2: flow can only use selected arcs
@@ -336,9 +426,9 @@ def add_optional_flow_constraints(
     # Constraint 3: no flow leaving a terminal
     for group_id in group_indices:
         for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
-            out_arcs = [(u, v) for u, v in steiner_problem.arcs if u == t]
-            if out_arcs:
-                model.addConstr(sum(f[group_id, t, a] for a in out_arcs) == 0)
+            terminal_out = out_arcs.get(t, ())
+            if terminal_out:
+                model.addConstr(sum(f[group_id, t, a] for a in terminal_out) == 0)
 
     return model, f
 
@@ -434,6 +524,12 @@ def _group_cuts_scipy(steiner_problem, csr, group_id_k, tasks, y2_vals,
         dtype=np.float64, count=len(csr.arcs),
     )
     int_csr = csr.build_int_csr(cap)
+    max_nested = _nested_cut_rounds()
+
+    def _cut_arc_indices(side):
+        heads = csr.heads
+        out = csr.out_by_tail
+        return [ai for u in side for ai in out[u] if int(heads[ai]) not in side]
 
     def _solve(idx_task):
         i, (group_id_l, t, z_val) = idx_task
@@ -444,6 +540,24 @@ def _group_cuts_scipy(steiner_problem, csr, group_id_k, tasks, y2_vals,
         sides = [src_side]
         if back_cuts and back_side != src_side:
             sides.append(back_side)
+        # Nested cuts (Koch & Martin 1998): saturate the arcs of the violated
+        # cut just found (capacity -> 1, "as if selected") and re-run max-flow.
+        # Capacities are only ever *raised*, so a nested min cut whose value is
+        # still below z is guaranteed violated w.r.t. the original y2 values.
+        if flow_value < z_val - eps and max_nested > 0:
+            cap_mod = cap.copy()
+            cur_side = src_side
+            for _ in range(max_nested):
+                cut_idx = _cut_arc_indices(cur_side)
+                if not cut_idx:
+                    break
+                cap_mod[cut_idx] = np.maximum(cap_mod[cut_idx], 1.0)
+                fv, s_side, _b = min_cut_scipy(
+                    csr.build_int_csr(cap_mod), src_idx, sink_idx)
+                if fv >= z_val - eps:
+                    break
+                sides.append(s_side)
+                cur_side = s_side
         return i, (group_id_l, t, flow_value, z_val, sides)
 
     indexed = list(enumerate(tasks))
@@ -532,7 +646,10 @@ def find_violated_cuts_from_values(
     applied: *creep flows* (the ``eps`` added to each arc capacity, which biases
     the minimum cut towards cutting few arcs) and, when ``back_cuts`` is set, the
     *back cut* — the second minimum cut on the terminal side, added alongside the
-    usual root-side cut.
+    usual root-side cut.  The scipy path additionally emits *nested cuts*
+    (Koch & Martin 1998): for each violated terminal the cut arcs are saturated
+    and the max-flow re-run, yielding up to ``STEINERPY_NESTED_CUTS`` further
+    violated cuts per separation round (see :func:`_nested_cut_rounds`).
 
     :param steiner_problem: SteinerProblem-object.
     :param y2_vals: per-group arc values {(group_id, arc): float}.
@@ -656,22 +773,28 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
     return model, x, y1, y2, z
 
 
-def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType, y2: Dict, z: Dict) -> Tuple[float, float, float, List[Tuple]]:
+def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType, y2: Dict, z: Dict, reapply_start=None) -> Tuple[float, float, float, List[Tuple]]:
     """
     Solves the model using an iterative cut-generation (lazy-cut) approach and
     returns the result.
 
     Instead of adding flow variables and constraints upfront, the solver is run
-    repeatedly.  After each solve, violated directed cut constraints are
-    identified via a minimum-cut computation (networkx) and appended to the
-    model before the next solve.  The process terminates when no violated cut
-    is found, guaranteeing that the returned solution is feasible.
+    repeatedly.  Cuts are first separated on the **LP relaxation** (cheap LP
+    re-solves that build up the root cuts, see :func:`_lp_cut_rounds`); then
+    integrality is restored and the integer cut loop runs.  After each solve,
+    violated directed cut constraints are identified via a minimum-cut
+    computation and appended to the model before the next solve.  The process
+    terminates when no violated cut is found, guaranteeing that the returned
+    solution is feasible.
 
     :param model: HiGHS model (built by :func:`build_model`).
     :param steiner_problem: SteinerProblem-object.
     :param x: edge selection decision variables.
     :param y2: per-group arc variables {(group_id, arc): var}.
     :param z: connectivity variables {(k, l): var}.
+    :param reapply_start: optional zero-argument callable that re-applies a MIP
+        warm start; called after the LP phase (which would otherwise clear a
+        start set before this function).
     :return: (gap, runtime, objective, selected_edges).
              Note: *runtime* covers only the iterative solve loop and does not
              include the model compilation time reported by :func:`build_model`.
@@ -692,6 +815,38 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     total_tl = float(_tl[1] if isinstance(_tl, tuple) else _tl)
 
     start_time = time.time()
+
+    # Phase 1 — root cuts on the LP relaxation.  All columns of the base model
+    # are integer, so relax them all and restore afterwards.
+    lp_rounds = _lp_cut_rounds()
+    if lp_rounds > 0:
+        num_col = model.getNumCol()
+        for col in range(num_col):
+            model.changeColIntegrality(col, hp.HighsVarType.kContinuous)
+        try:
+            for _ in range(lp_rounds):
+                remaining = total_tl - (time.time() - start_time)
+                if remaining <= 0:
+                    break
+                model.setOptionValue("time_limit", remaining)
+                model.minimize(objective_expr)
+                if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
+                        or not model.getSolution().value_valid):
+                    break
+                violated_cuts = find_violated_cuts(steiner_problem, y2, z, model)
+                if not violated_cuts:
+                    break
+                for group_id_k, group_id_l, cut_arcs in violated_cuts:
+                    lhs = sum(y2[(group_id_k, a)] for a in cut_arcs) if cut_arcs else 0
+                    model.addConstr(lhs >= z[(group_id_k, group_id_l)])
+                logging.info(f"LP cut phase: added {len(violated_cuts)} cut(s).")
+        finally:
+            for col in range(num_col):
+                model.changeColIntegrality(col, hp.HighsVarType.kInteger)
+        if reapply_start is not None:
+            reapply_start()
+
+    # Phase 2 — the integer cut loop.
     converged = False
     while True:
         remaining = total_tl - (time.time() - start_time)
@@ -761,8 +916,9 @@ def add_degree_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProble
     :param x: edge selection decision variables.
     """
     max_degree = steiner_problem.max_degree
+    incident_edges = _incident_edges(steiner_problem.edges)
     for v in steiner_problem.nodes:
-        incident = [x[e] for e in steiner_problem.edges if v in e]
+        incident = [x[e] for e in incident_edges.get(v, ())]
         if incident:
             model.addConstr(sum(incident) <= max_degree)
 
@@ -798,7 +954,7 @@ def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time
     group_indices = range(len(steiner_problem.terminal_groups))
     
     # Node selection variables (whether we collect prize from a node)
-    node_vars = {node: model.addVariable(0, 1, hp.HighsVarType.kInteger, name=f"node[{node}]") 
+    node_vars = {node: model.addVariable(0, 1, type=hp.HighsVarType.kInteger, name=f"node[{node}]") 
                  for node in steiner_problem.nodes}
     
     # Terminal penalty variables (penalty for not connecting a terminal)
@@ -806,7 +962,7 @@ def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time
     for group_id in group_indices:
         for terminal in steiner_problem.terminal_groups[group_id]:
             penalty_vars[(group_id, terminal)] = model.addVariable(
-                0, 1, hp.HighsVarType.kInteger, name=f"penalty[{group_id},{terminal}]"
+                0, 1, type=hp.HighsVarType.kInteger, name=f"penalty[{group_id},{terminal}]"
             )
     
     # Add prize collecting constraints
@@ -821,16 +977,17 @@ def add_prize_collecting_constraints(model: hp.HighsModel, steiner_problem: 'Pri
     Add prize collecting specific constraints to the base model.
     """
     group_indices = range(len(steiner_problem.terminal_groups))
-    
+    in_arcs, out_arcs = _arc_adjacency(steiner_problem.arcs)
+
     # Constraint: Node can only be selected if it's in the tree
     for node in steiner_problem.nodes:
         # If node is selected, it must have at least one incident edge (or be a terminal)
-        incident_arcs = [y1[arc] for arc in steiner_problem.arcs 
-                        if arc[0] == node or arc[1] == node]
+        incident_arcs = [y1[arc] for arc in in_arcs.get(node, ())]
+        incident_arcs += [y1[arc] for arc in out_arcs.get(node, ())]
         if incident_arcs:
-            model.addConstr(node_vars[node] <= sum(incident_arcs) + 
+            model.addConstr(node_vars[node] <= sum(incident_arcs) +
                            sum(1 for group in steiner_problem.terminal_groups if node in group))
-    
+
     # Constraint: Terminal connection or penalty
     for group_id in group_indices:
         # Treat the root of each group as connected by definition to avoid
@@ -843,9 +1000,7 @@ def add_prize_collecting_constraints(model: hp.HighsModel, steiner_problem: 'Pri
                 # Root is considered connected, even if it has indegree 0
                 is_connected = 1
             else:
-                is_connected = sum(
-                    y1[arc] for arc in steiner_problem.arcs if arc[1] == terminal
-                )
+                is_connected = sum(y1[arc] for arc in in_arcs.get(terminal, ()))
             model.addConstr(is_connected + penalty_vars[(group_id, terminal)] >= 1)
     
     # Optional: Budget constraint on total penalties
@@ -929,10 +1084,10 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
                 # Root is always connected; no penalty variable needed
                 continue
             penalty_vars[(group_id, terminal)] = model.addVariable(
-                0, 1, hp.HighsVarType.kInteger, name=f"penalty[{group_id},{terminal}]"
+                0, 1, type=hp.HighsVarType.kInteger, name=f"penalty[{group_id},{terminal}]"
             )
             connection_vars[(group_id, terminal)] = model.addVariable(
-                0, 1, hp.HighsVarType.kInteger, name=f"conn[{group_id},{terminal}]"
+                0, 1, type=hp.HighsVarType.kInteger, name=f"conn[{group_id},{terminal}]"
             )
             # Exactly one of connected or penalised
             model.addConstr(connection_vars[(group_id, terminal)] + penalty_vars[(group_id, terminal)] == 1)
@@ -1037,6 +1192,7 @@ def build_model_gurobi(
     # Sets
     group_indices = range(len(steiner_problem.terminal_groups))
     k_indices = [(k, l) for k in group_indices for l in group_indices if l >= k]
+    in_arcs, out_arcs = _arc_adjacency(steiner_problem.arcs)
 
     # Decision variables
     x = {e: model.addVar(vtype=GRB.BINARY, name=f"x[{e}]")
@@ -1057,7 +1213,7 @@ def build_model_gurobi(
 
     # Constraint 2: indegree of each vertex cannot exceed 1
     for v in steiner_problem.nodes:
-        incoming = [y1[a] for a in steiner_problem.arcs if a[1] == v]
+        incoming = [y1[a] for a in in_arcs.get(v, ())]
         if incoming:
             model.addConstr(gp.quicksum(incoming) <= 1)
 
@@ -1084,17 +1240,17 @@ def build_model_gurobi(
     # Constraint 6: terminals in T^{1...k-1} cannot attach to root r_k
     for group_id_k in group_indices:
         for t in get_terminal_groups_until_k(steiner_problem.terminal_groups, group_id_k):
-            incoming = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == t]
+            incoming = [y2[group_id_k, a] for a in in_arcs.get(t, ())]
             if incoming:
                 model.addConstr(gp.quicksum(incoming) == 0)
 
     # Constraint 7: indegree at most outdegree for Steiner points
     for v in steiner_problem.steiner_points:
-        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
-        out_arcs = [y1[a] for a in steiner_problem.arcs if a[0] == v]
-        if in_arcs:
-            out_sum = gp.quicksum(out_arcs) if out_arcs else 0
-            model.addConstr(gp.quicksum(in_arcs) <= out_sum)
+        entering = [y1[a] for a in in_arcs.get(v, ())]
+        leaving = [y1[a] for a in out_arcs.get(v, ())]
+        if entering:
+            out_sum = gp.quicksum(leaving) if leaving else 0
+            model.addConstr(gp.quicksum(entering) <= out_sum)
 
     # Constraint 8: indegree at most outdegree per terminal group
     for group_id_k in group_indices:
@@ -1105,27 +1261,27 @@ def build_model_gurobi(
             ))
         )
         for v in remaining_vertices:
-            in_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[1] == v]
-            out_arcs = [y2[group_id_k, a] for a in steiner_problem.arcs if a[0] == v]
-            if in_arcs:
-                out_sum = gp.quicksum(out_arcs) if out_arcs else 0
-                model.addConstr(gp.quicksum(in_arcs) <= out_sum)
+            entering = [y2[group_id_k, a] for a in in_arcs.get(v, ())]
+            leaving = [y2[group_id_k, a] for a in out_arcs.get(v, ())]
+            if entering:
+                out_sum = gp.quicksum(leaving) if leaving else 0
+                model.addConstr(gp.quicksum(entering) <= out_sum)
 
     # Constraint 9: connect y2 and z
     for group_id_k in group_indices:
         for group_id_l in group_indices:
             if group_id_l > group_id_k:
                 incoming = [y2[group_id_k, a]
-                            for a in steiner_problem.arcs
-                            if a[1] == steiner_problem.roots[group_id_l]]
+                            for a in in_arcs.get(steiner_problem.roots[group_id_l], ())]
                 if incoming:
                     model.addConstr(gp.quicksum(incoming) <= z[group_id_k, group_id_l])
 
     # Optional degree constraints
     if getattr(steiner_problem, 'max_degree', None) is not None:
         max_degree = steiner_problem.max_degree
+        incident_edges = _incident_edges(steiner_problem.edges)
         for v in steiner_problem.nodes:
-            incident = [x[e] for e in steiner_problem.edges if v in e]
+            incident = [x[e] for e in incident_edges.get(v, ())]
             if incident:
                 model.addConstr(gp.quicksum(incident) <= max_degree)
 
@@ -1310,7 +1466,47 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
             if terms:
                 model.addConstr(sum(terms) >= 1)
 
-    # MIP warm start from the dual-ascent primal.
+    # NOTE: deliberately do NOT pass da_ub to HiGHS as `objective_bound`. Unlike
+    # Gurobi's `Params.Cutoff` (a true pruning cutoff), HiGHS treats objective_bound
+    # as a termination target inside the cut loop: a loose dual-ascent UB makes a
+    # re-solve stop kOptimal at a feasible-but-suboptimal incumbent, which the loop
+    # then reports as "proven optimal" (false-optimal bug observed on PCSPG P400).
+    # da_ub is still used below only to report an honest gap on a non-proven solve.
+
+    obj = sum(xa[a] * view.graph.edges[a][view.weight] for a in arcs)
+
+    start = time.time()
+
+    # Phase 1 — root cuts on the LP relaxation (see _lp_cut_rounds).
+    lp_rounds = _lp_cut_rounds()
+    if lp_rounds > 0:
+        num_col = model.getNumCol()
+        for col in range(num_col):
+            model.changeColIntegrality(col, hp.HighsVarType.kContinuous)
+        try:
+            for _ in range(lp_rounds):
+                remaining = time_limit - (time.time() - start)
+                if remaining <= 0:
+                    break
+                model.setOptionValue("time_limit", remaining)
+                model.minimize(obj)
+                if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
+                        or not model.getSolution().value_valid):
+                    break
+                col_value = model.getSolution().col_value
+                xa_vals = {(0, a): col_value[xa[a].index] for a in arcs}
+                violated = find_violated_cuts_from_values(view, xa_vals, {(0, 0): 1.0})
+                if not violated:
+                    break
+                for (_k, _l, cut_arcs) in violated:
+                    if cut_arcs:
+                        model.addConstr(sum(xa[a] for a in cut_arcs) >= 1)
+        finally:
+            for col in range(num_col):
+                model.changeColIntegrality(col, hp.HighsVarType.kInteger)
+
+    # MIP warm start from the dual-ascent primal (applied after the LP phase,
+    # which would otherwise clear it).
     if primal:
         try:
             import numpy as np
@@ -1322,16 +1518,7 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         except Exception:
             pass
 
-    # NOTE: deliberately do NOT pass da_ub to HiGHS as `objective_bound`. Unlike
-    # Gurobi's `Params.Cutoff` (a true pruning cutoff), HiGHS treats objective_bound
-    # as a termination target inside the cut loop: a loose dual-ascent UB makes a
-    # re-solve stop kOptimal at a feasible-but-suboptimal incumbent, which the loop
-    # then reports as "proven optimal" (false-optimal bug observed on PCSPG P400).
-    # da_ub is still used below only to report an honest gap on a non-proven solve.
-
-    obj = sum(xa[a] * view.graph.edges[a][view.weight] for a in arcs)
-
-    start = time.time()
+    # Phase 2 — the integer cut loop.
     converged = False
     _STOP = (
         hp.HighsModelStatus.kInfeasible,
@@ -1508,17 +1695,18 @@ def build_mwcsb_model(steiner_problem, time_limit: float = 300, logfile: str = "
     root = steiner_problem.roots[0]
 
     node_vars = {
-        v: model.addVariable(0, 1, hp.HighsVarType.kInteger, name=f"node[{v}]")
+        v: model.addVariable(0, 1, type=hp.HighsVarType.kInteger, name=f"node[{v}]")
         for v in steiner_problem.nodes
     }
     # The root is always part of the subgraph; every other selected node has exactly
     # one entering arc, so node[v] equals its indegree in the arborescence.
+    in_arcs, _out_arcs = _arc_adjacency(steiner_problem.arcs)
     model.addConstr(node_vars[root] == 1)
     for v in steiner_problem.nodes:
         if v == root:
             continue
-        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
-        model.addConstr(node_vars[v] == (sum(in_arcs) if in_arcs else 0))
+        entering = [y1[a] for a in in_arcs.get(v, ())]
+        model.addConstr(node_vars[v] == (sum(entering) if entering else 0))
 
     # Optional reachability for each positive node, scaled by its node variable.
     connection_vars = {
@@ -1579,39 +1767,43 @@ def build_mwcsb_model_gurobi(steiner_problem, time_limit: float = 300, logfile: 
                  for v in steiner_problem.nodes}
     model.update()
 
+    in_arcs, out_arcs = _arc_adjacency(steiner_problem.arcs)
+
     model.addConstr(node_vars[root] == 1)
     for v in steiner_problem.nodes:
         if v == root:
             continue
-        in_arcs = [y1[a] for a in steiner_problem.arcs if a[1] == v]
-        model.addConstr(node_vars[v] == (gp.quicksum(in_arcs) if in_arcs else 0))
+        entering = [y1[a] for a in in_arcs.get(v, ())]
+        model.addConstr(node_vars[v] == (gp.quicksum(entering) if entering else 0))
 
     # Optional flow for each positive node, scaled by its node variable.
-    f = {(t, a): model.addVar(vtype=GRB.BINARY, name=f"f[{t},{a}]")
+    # Continuous in [0, 1]: with integral y2/node_vars each t-block is a unit
+    # flow with integral capacities and f never enters the objective.
+    f = {(t, a): model.addVar(lb=0.0, ub=1.0, name=f"f[{t},{a}]")
          for t in non_root for a in steiner_problem.arcs}
     model.update()
     for v in steiner_problem.nodes:
-        out_arcs = [a for a in steiner_problem.arcs if a[0] == v]
-        in_arcs = [a for a in steiner_problem.arcs if a[1] == v]
+        arcs_out = out_arcs.get(v, ())
+        arcs_in = in_arcs.get(v, ())
         for t in non_root:
             if v == root:
                 demand = node_vars[t]
             elif v == t:
                 demand = -node_vars[t]
             else:
-                if not out_arcs and not in_arcs:
+                if not arcs_out and not arcs_in:
                     continue
                 demand = 0
             model.addConstr(
-                gp.quicksum(f[t, a] for a in out_arcs)
-                - gp.quicksum(f[t, a] for a in in_arcs) == demand
+                gp.quicksum(f[t, a] for a in arcs_out)
+                - gp.quicksum(f[t, a] for a in arcs_in) == demand
             )
     for t in non_root:
         for a in steiner_problem.arcs:
             model.addConstr(f[t, a] <= y2[(0, a)])
-        out_arcs = [a for a in steiner_problem.arcs if a[0] == t]
-        if out_arcs:
-            model.addConstr(gp.quicksum(f[t, a] for a in out_arcs) == 0)
+        terminal_out = out_arcs.get(t, ())
+        if terminal_out:
+            model.addConstr(gp.quicksum(f[t, a] for a in terminal_out) == 0)
 
     node_costs = steiner_problem.node_costs
     model.addConstr(

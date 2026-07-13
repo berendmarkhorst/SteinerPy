@@ -63,6 +63,41 @@ It composes with `da_reduce=True` and `dual_ascent=True`; a good "throw everythi
 SteinerProblem(graph, terminals, da_reduce=True, dual_ascent=True)
 ```
 
+## Terminal contraction
+
+Four *inclusion* tests run alongside the deletion tests (on by default, `contract_terminals=False` opts out; Steiner **tree** only):
+
+- **Degree-1 terminal contraction** — a terminal's sole incident edge is in *every* feasible solution, so it is fixed and the terminal merged into its neighbour.
+- **Adjacent-terminal contraction** — an edge between two terminals that is a cheapest edge incident to one of them is in *at least one* optimal solution (the classic cut-exchange argument), so it is fixed and the terminals merged.
+- **Nearest Vertex (NV)** ([Polzin & Vahdati Daneshmand 1998](https://doi.org/10.1016/S0166-218X(00)00319-X), Obs. 3.2) — a terminal's cheapest incident edge `{t, v'}` is fixed when `c(e') + d(v', tj) ≤ c(e'')` for another terminal `tj` (second-cheapest incident cost `c(e'')`), certified from the two-label Voronoi diagram.
+- **Short Links (SL)** (ibid., Obs. 3.3) — the cheapest edge leaving a terminal's Voronoi region is fixed when every other leaving edge costs at least its full link length `d(t,u) + c(u,w) + d(w, base(w))`; the merged endpoint is *promoted to a terminal*.
+
+Fixing an edge moves its cost out of the reduced model (it is added back to every reported objective) and **shrinks the terminal set**, which in turn strengthens the Special-Distance and replacement tests — the cascade can solve an instance outright during preprocessing, in which case no solver runs at all.
+Solutions still map back to the original graph, and the optimum **value** is preserved exactly.
+
+## Bound-based deletions (BND)
+
+Using the terminals' Voronoi **radii** (cheapest way to leave each region) and a shortest-path-heuristic upper bound, any node with `d1(v) + d2(v) + Σ smallest (s−2) radii > UB` — and any edge with `c(e) + d1(u) + d1(w) + Σ radii > UB` — is provably not needed in any optimal solution and is deleted ([Polzin & Vahdati Daneshmand 1998](https://doi.org/10.1016/S0166-218X(00)00319-X), Obs. 3.5/3.6).
+On by default with the heavy tests; opt out with `bound_based=False`.
+
+## Few-terminal dynamic program
+
+For a plain (undirected, single-group, unconstrained) Steiner tree with **few terminals**, the exact [Dreyfus–Wagner (1971)](https://doi.org/10.1002/net.3230010302) dynamic program — in the [Erickson–Monma–Veinott (1987)](https://doi.org/10.1287/moor.12.4.634) formulation — solves the reduced instance outright, bypassing the ILP entirely.
+This is the reductions + DP recipe of the winning PACE 2018 solvers; it is `O(3^k)` in the terminal count `k` but only linearithmic in the graph size, so for small `k` it beats any branch-and-cut by a wide margin (4–30× on benchmarked instances).
+
+It is **auto-selected** after preprocessing whenever the (reduced) terminal count is at most `STEINERPY_DW_MAX_TERMINALS` (default `10`; `0` disables), returns the identical optimum with `gap == 0.0`, and transparently accelerates the transformed group-Steiner, terminal-leaf and rectilinear variants as well.
+
+## Cut-separation accelerators
+
+The exact solve enforces connectivity lazily with directed Steiner cuts found by minimum-cut separation.
+Three classic accelerators are applied automatically (no flags needed):
+
+- **LP-first separation** ([Koch & Martin 1998](<https://doi.org/10.1002/(SICI)1097-0037(199810)32:3%3C207::AID-NET5%3E3.0.CO;2-O>)) — on the HiGHS path the cut loop first runs on the **LP relaxation**: each round is a cheap LP re-solve, and the accumulated root cuts strengthen every subsequent MIP solve (5–10× on benchmarked tree instances). Tune or disable with `STEINERPY_LP_CUT_ROUNDS` (default `50`, `0` disables). The Gurobi path separates fractional points inside its branch-and-cut callback instead.
+- **Creep flows** and **back cuts** ([Schmidt, Zey & Margot 2021](https://doi.org/10.1007/s10107-019-01460-6), §4.1) — bias each minimum cut towards few arcs, and add the terminal-side cut alongside the root-side one.
+- **Nested cuts** ([Koch & Martin 1998](<https://doi.org/10.1002/(SICI)1097-0037(199810)32:3%3C207::AID-NET5%3E3.0.CO;2-O>)) — after a violated cut is found, its arcs are saturated and the max-flow re-run, yielding a second, structurally different violated cut per round. Extra max-flows are spent only on violated terminals. Tune or disable with the `STEINERPY_NESTED_CUTS` environment variable (default `1`, `0` disables; higher values add more cuts per round but grow the model faster than they save re-solve rounds on the HiGHS path).
+
+All of these change only how fast the cut loop converges, never the optimum.
+
 ## Heuristic-only mode
 
 An exact solver can't match a polynomial-time heuristic such as `networkx.steiner_tree` in general.

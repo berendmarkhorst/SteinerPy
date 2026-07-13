@@ -84,6 +84,17 @@ class BaseSteinerProblem:
         le_opt = kwargs.get('long_edge', self.heavy_reduce)
         rn_opt = kwargs.get('replace_nodes', self.heavy_reduce)
 
+        # Terminal contraction (fixed-edge) tests: degree-1 terminals,
+        # adjacent-terminal cheapest edges, the Nearest-Vertex and the
+        # Short-Links tests fix edges provably in >= one optimal solution and
+        # contract them — the terminal set shrinks, which strengthens every
+        # other test. Steiner tree only; requires the plain edge-cost
+        # objective (like the heavy tests). On by default.
+        ct_opt = kwargs.get('contract_terminals', True)
+        # Bound-based (BND) node/edge deletions using Voronoi radii + an SPH
+        # upper bound (Polzin & Vahdati 1998). Grouped with the heavy tests.
+        bb_opt = kwargs.get('bound_based', self.heavy_reduce)
+
         if preprocess:
             if isinstance(graph, nx.DiGraph):
                 raise ValueError("Graph preprocessing is not supported for directed graphs. Use preprocess=False.")
@@ -94,7 +105,23 @@ class BaseSteinerProblem:
                 special_distance=bool(sd_opt) and _heavy_ok,
                 long_edge=bool(le_opt) and _heavy_ok,
                 replace_nodes=bool(rn_opt) and _heavy_ok,
+                contract=bool(ct_opt) and _heavy_ok,
+                bound_based=bool(bb_opt) and _heavy_ok,
             )
+            if self.reduction_tracker.terminal_merges or self.reduction_tracker.added_terminals:
+                # Contractions merged terminals away (and the SL test may have
+                # promoted new ones): point the groups at the surviving
+                # representatives (order-preserving de-dup) and append the
+                # SL-promoted terminals to the single group.
+                terminal_groups = [
+                    list(dict.fromkeys(
+                        self.reduction_tracker.resolve_terminal(t) for t in group))
+                    for group in terminal_groups
+                ]
+                if self.reduction_tracker.added_terminals:
+                    extra = [self.reduction_tracker.resolve_terminal(v)
+                             for v in self.reduction_tracker.added_terminals]
+                    terminal_groups[0] = list(dict.fromkeys(terminal_groups[0] + extra))
             if self.da_reduce and kwargs.get('budget') is None and kwargs.get('max_degree') is None:
                 from .dual_ascent import reduce_graph_with_dual_ascent
                 self.graph = reduce_graph_with_dual_ascent(
@@ -146,6 +173,46 @@ class BaseSteinerProblem:
             return False
         return True
 
+    def _dw_eligible(self) -> bool:
+        """Whether the Dreyfus–Wagner dynamic program can solve this instance.
+
+        The DP is exact for a plain, undirected, single-group Steiner tree with
+        no budget/degree/hop modifier.  It is exponential in the terminal count
+        so it is only auto-selected for at most
+        :func:`~steinerpy.dreyfus_wagner.dw_max_terminals` terminals (default
+        10, ``STEINERPY_DW_MAX_TERMINALS`` overrides, ``0`` disables), with a
+        memory guard on ``2^(k-1)`` label arrays of length ``n``.
+        """
+        if isinstance(self.graph, nx.DiGraph):
+            return False
+        if len(self.terminal_groups) != 1:
+            return False
+        if self.budget is not None:
+            return False
+        if getattr(self, 'max_degree', None) is not None:
+            return False
+        if getattr(self, 'hop_limit', None) is not None:
+            return False
+        from ._fastgraph import HAS_SCIPY
+        if not HAS_SCIPY:
+            return False
+        from .dreyfus_wagner import dw_max_terminals
+        k = len(set(self.terminal_groups[0]))
+        if k < 2 or k > dw_max_terminals():
+            return False
+        # ~3 arrays of 2^(k-1) x (n+1) doubles/ints; keep the footprint modest.
+        if (1 << (k - 1)) * (self.graph.number_of_nodes() + 1) > 50_000_000:
+            return False
+        return True
+
+    def _fixed_cost(self) -> float:
+        """Cost of edges fixed into every solution by terminal contraction.
+
+        The reduced problem's objective excludes these; every reporting site
+        adds this constant back so objectives refer to the original graph.
+        """
+        return self.reduction_tracker.fixed_cost if self.preprocess else 0.0
+
     def _solution_from_da(self, da, t0, gap) -> 'Solution':
         """Build a :class:`Solution` from a dual-ascent result (no ILP).
 
@@ -160,7 +227,8 @@ class BaseSteinerProblem:
         else:
             original = da.primal_edges
         return Solution(
-            gap=gap, runtime=_time.time() - t0, objective=da.upper_bound,
+            gap=gap, runtime=_time.time() - t0,
+            objective=da.upper_bound + self._fixed_cost(),
             selected_edges=da.primal_edges, original_selected_edges=original,
             was_preprocessed=self.preprocess,
         )
@@ -246,8 +314,12 @@ class BaseSteinerProblem:
                     rcost = _edges_cost(graph, refined, self.weight)
                     if rcost < best_cost:
                         best_edges, best_cost = refined, rcost
-            gap = (_math.inf if _math.isinf(da.lower_bound)
-                   else (best_cost - da.lower_bound) / max(1.0, abs(best_cost)))
+            # Lower bound for the ORIGINAL problem: the dual-ascent bound is for
+            # the reduced problem, whose optimum sits fixed_cost below the
+            # original one.
+            lb = da.lower_bound + self._fixed_cost()
+            gap = (_math.inf if _math.isinf(lb)
+                   else (best_cost - lb) / max(1.0, abs(best_cost)))
             return Solution(
                 gap=gap, runtime=_time.time() - t0, objective=best_cost,
                 selected_edges=best_edges, original_selected_edges=best_edges,
@@ -392,7 +464,7 @@ class BaseSteinerProblem:
                 union[frozenset((u, v))] = (u, v)
 
         selected_edges = list(union.values())
-        objective = sum(G.edges[e][self.weight] for e in selected_edges)
+        objective = sum(G.edges[e][self.weight] for e in selected_edges) + self._fixed_cost()
         if self.preprocess:
             original = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
         else:
@@ -437,6 +509,27 @@ class BaseSteinerProblem:
         if solver not in ("highs", "gurobi"):
             raise ValueError(
                 f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'."
+            )
+        if solver == "gurobi":
+            # Fail loudly up front when the requested backend is unavailable,
+            # even on paths that end up not building an ILP (dual-ascent
+            # early-exit, Dreyfus-Wagner DP).
+            from .mathematical_model import _check_gurobipy
+            _check_gurobipy()
+
+        # Trivial after preprocessing: when every group is down to <= 1
+        # terminal (e.g. terminal contraction solved the whole instance), the
+        # optimum is exactly the fixed edges — nothing is left to optimise.
+        if self.budget is None and all(len(g) <= 1 for g in self.terminal_groups):
+            import time as _time_triv
+            _t0 = _time_triv.time()
+            original = (map_solution_to_original([], self.reduction_tracker, self.graph)
+                        if self.preprocess else [])
+            return Solution(
+                gap=0.0, runtime=_time_triv.time() - _t0,
+                objective=self._fixed_cost(),
+                selected_edges=[], original_selected_edges=original,
+                was_preprocessed=self.preprocess,
             )
 
         # Heuristic-only mode: return the dual-ascent primal with no ILP. Much
@@ -493,6 +586,38 @@ class BaseSteinerProblem:
             if dec is not None:
                 return dec
 
+        # Few-terminal exact dynamic program (Dreyfus & Wagner 1971, in the
+        # Erickson-Monma-Veinott formulation): for a small terminal count the
+        # O(3^k) DP solves the (already reduced) instance outright, bypassing
+        # the ILP entirely — the PACE 2018 winning recipe of reductions + DP.
+        # Exactness-preserving; auto-selected, cap via STEINERPY_DW_MAX_TERMINALS.
+        if self._dw_eligible():
+            import math as _math_dw
+            import time as _time_dw
+            from .dreyfus_wagner import dreyfus_wagner
+            _t0 = _time_dw.time()
+            dw_cost, dw_edges = dreyfus_wagner(
+                self.graph, self.terminal_groups[0], self.weight
+            )
+            if _math_dw.isfinite(dw_cost):
+                runtime = _time_dw.time() - _t0
+                if self.preprocess:
+                    original_selected_edges = map_solution_to_original(
+                        dw_edges, self.reduction_tracker, self.graph
+                    )
+                else:
+                    original_selected_edges = dw_edges
+                return Solution(
+                    gap=0.0,
+                    runtime=runtime,
+                    objective=dw_cost + self._fixed_cost(),
+                    selected_edges=dw_edges,
+                    original_selected_edges=original_selected_edges,
+                    was_preprocessed=self.preprocess,
+                )
+            # Terminals not connected: fall through to the ILP so infeasible
+            # instances keep the exact same behaviour as the default path.
+
         # Optional dual-ascent accelerator: lower bound + primal heuristic +
         # reduced-cost variable fixing. Early-exits when proven optimal.
         use_da = self.dual_ascent if dual_ascent is None else dual_ascent
@@ -537,6 +662,7 @@ class BaseSteinerProblem:
                 gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
+            reapply_start = None
             if da_cuts is not None:
                 from .dual_ascent import (
                     apply_fixes_highs, set_highs_warm_start,
@@ -546,7 +672,11 @@ class BaseSteinerProblem:
                 apply_fixes_highs(model, x, y1, y2, fixing)
                 set_highs_warm_start(model, x, da_primal)
                 set_highs_cutoff(model, da_ub)
-            gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
+                # run_model's LP cut phase clears a pending MIP start; hand it a
+                # callback to re-apply the dual-ascent primal afterwards.
+                _m, _x, _p = model, x, da_primal
+                reapply_start = lambda: set_highs_warm_start(_m, _x, _p)  # noqa: E731
+            gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z, reapply_start=reapply_start)
             if da_cuts is not None and _math.isinf(objective):
                 # The acceleration over-constrained a feasible instance into
                 # infeasibility; re-solve from a clean, un-accelerated model.
@@ -558,6 +688,16 @@ class BaseSteinerProblem:
             original_selected_edges = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
         else:
             original_selected_edges = selected_edges
+
+        # Shift the objective by the terminal-contraction fixed cost; rescale a
+        # finite nonzero relative gap so it refers to the shifted objective.
+        fc = self._fixed_cost()
+        if fc:
+            import math as _m
+            if _m.isfinite(objective):
+                if gap and _m.isfinite(gap):
+                    gap = gap * abs(objective) / max(1.0, abs(objective + fc))
+                objective = objective + fc
 
         solution = Solution(
             gap=gap,

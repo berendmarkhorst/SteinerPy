@@ -8,6 +8,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Nearest-Vertex (NV), Short-Links (SL) and bound-based (BND) reductions**
+  (Polzin & Vahdati Daneshmand 1998, Obs. 3.2/3.3/3.5/3.6; Steiner **tree**
+  only): NV contracts a terminal's cheapest incident edge when
+  `c(e') + d(v', tj) <= c(e'')` for another terminal `tj` (certified via the
+  two-label Voronoi diagram); SL contracts a Voronoi region's cheapest
+  boundary link when every other link costs at least its full link length —
+  promoting the merged endpoint to a **new terminal** when needed
+  (`ReductionTracker.added_terminals`); BND deletes nodes/edges whose
+  Voronoi-radius lower bound `d1 + d2 + sum of smallest (s-2) radii` exceeds a
+  Mehlhorn-SPH upper bound (`bound_based=` flag, grouped with `heavy`).
+  NV/SL join the `contract_terminals` cascade; contraction sub-rounds run on a
+  fresh Voronoi diagram and the diagram is rebuilt before the deletion tests
+  (whose bounds must remain lower bounds). Validated by randomized sweeps
+  against unreduced solves, including zero-weight-edge (group-Steiner-style)
+  instances.
+- **Terminal contraction (fixed-edge) reductions** (on by default, opt out with
+  `contract_terminals=False`; Steiner **tree** only): two inclusion tests that
+  *fix* an edge into the solution and merge its endpoints — **degree-1
+  terminals** (the sole incident edge is in every feasible solution) and
+  **adjacent terminals** whose connecting edge is cheapest at one endpoint (in
+  at least one optimal solution, by the classic cut-exchange argument). The
+  new fixed-edge channel on `ReductionTracker` (`fixed_cost`, `fixed_edges`,
+  `terminal_merges`) moves the fixed cost out of the reduced model (every
+  reporting site adds it back), re-homes the merged node's edges with full
+  back-mapping support, and remaps the terminal groups to the surviving
+  representatives. Contraction shrinks the terminal set, which strengthens the
+  Special-Distance/replacement tests and can solve instances outright during
+  preprocessing (the solver then returns immediately). Validated against
+  `preprocess=False` solves and a brute-force oracle on hundreds of random
+  instances. The full NSV/SL terminal-to-non-terminal contractions remain
+  future work; the infrastructure now supports them.
+- **Few-terminal exact dynamic program** (Dreyfus & Wagner 1971, in the
+  Erickson–Monma–Veinott formulation): plain undirected single-group Steiner
+  tree instances with at most `STEINERPY_DW_MAX_TERMINALS` terminals (default
+  10, `0` disables) are now solved by an `O(3^k·n + 2^k·(m + n log n))` dynamic
+  program instead of the ILP — the reductions + DP recipe of the PACE 2018
+  winning solvers. Vectorised merge steps (numpy) and virtual-source scipy
+  Dijkstra grow steps; auto-selected after preprocessing, exactness-preserving
+  (validated against a brute-force oracle and the ILP), 4–30x faster than the
+  accelerated ILP on benchmarked instances. Applies transparently to the
+  transformed group-Steiner, terminal-leaf, and rectilinear variants.
+- **LP-first cut loop (HiGHS)**: before the integer cut loop starts, the
+  directed Steiner cuts are separated on the **LP relaxation** — each round is
+  a cheap LP re-solve instead of a full branch-and-bound run, and the
+  accumulated root cuts strengthen every subsequent MIP solve (the classic
+  root-separation scheme of branch-and-cut Steiner codes, Koch & Martin 1998).
+  Applies to the iterative HiGHS path (`run_model`, `solve_sap_highs`); the
+  Gurobi path already separates fractional points in its callback.  Configure
+  with `STEINERPY_LP_CUT_ROUNDS` (default 50, `0` disables).  Speedups of
+  5–10x on seeded tree instances and ~1.6x on a forest instance, with
+  identical optima.  A dual-ascent MIP warm start set before `run_model` is
+  re-applied after the LP phase via the new `reapply_start` callback.
+- **Nested cuts in the directed-cut separation** (Koch & Martin 1998): when a
+  terminal's minimum cut is violated, the cut's arcs are saturated (capacity
+  raised to 1) and the max-flow re-run, emitting up to `STEINERPY_NESTED_CUTS`
+  (default 1, `0` disables) further violated cuts per separation round. Extra
+  max-flows are spent only on violated terminals, and capacities are only ever
+  raised, so every nested cut is guaranteed violated at the current solution.
+  Joins the existing creep-flow and back-cut accelerators; scipy path only.
+
+### Changed
+- **Flow variables are now continuous**: the flow-based models (prize-collecting
+  penalty ILP, budget-constrained, MWCSPB) declared every per-terminal arc-flow
+  variable as a binary integer — O(|T|·|A|) integer columns. Flow integrality
+  follows from the integral arc/connection variables (each block is a unit s–t
+  flow with integral capacities, and flow never enters the objective), so the
+  variables are now continuous in `[0, 1]`. Same optimum, far smaller MIP.
+- **Model construction is now O(|A|) instead of O(|V|·|A|) per group**: the
+  HiGHS and Gurobi builders scanned the full arc list per node (indegree,
+  flow-conservation, degree, and root-linking constraints, plus the per-call
+  terminal-group lookup in `demand_and_supply_directed`). Incoming/outgoing arc
+  adjacency and the terminal→group map are now precomputed once per build.
+
+### Fixed
+- **Mixed node-type crash in the reduction Dijkstras**: the long-edge test and
+  the terminal-Voronoi construction pushed `(distance, node)` pairs onto their
+  heaps, so a distance tie compared node labels — a `TypeError` when labels mix
+  types (e.g. the group-Steiner transform's string super-terminals next to int
+  nodes). Heap entries now carry a sequence tiebreaker.
+- **HiGHS variable typing in the penalty/budget/MWCSPB models**:
+  `addVariable(0, 1, hp.HighsVarType.kInteger)` passed the integrality enum as
+  the *objective coefficient* (the third positional argument is `obj`, not
+  `type`), so the prize-collecting node/penalty variables, the budget
+  penalty/connection variables, and the MWCSPB node variables were silently
+  created as continuous columns. They are implied-integral at any optimum with
+  integral arc variables (which is why results were still correct), but they
+  are now declared integer explicitly via the `type=` keyword.
 - **Degree-k node replacement / pseudo-elimination** (`replace_nodes=`, part of
   `heavy`): the Rehfeldt & Koch (2023, Prop. 4) test eliminates a non-terminal
   that provably has degree ≤ 2 in at least one minimum Steiner tree (checked
