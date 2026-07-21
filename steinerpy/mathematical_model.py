@@ -925,7 +925,7 @@ def add_degree_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProble
 
 def add_hop_constraint(model: hp.HighsModel, steiner_problem: 'SteinerProblem', y1: Dict) -> None:
     """
-    Add a hop-limit constraint to the directed model (thesis Ch. 5.8).
+    Add a hop-limit constraint to the directed model (Rehfeldt 2021, Ch. 5.8).
 
     The number of arcs in the arborescence equals ``sum(y1[a])``; bounding it by
     ``hop_limit`` enforces ``|A(S)| <= H``.  Used by the hop-constrained directed

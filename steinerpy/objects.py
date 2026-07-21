@@ -728,7 +728,28 @@ class Solution:
 
 
 class SteinerProblem(BaseSteinerProblem):
-    pass
+    """
+    Classic (edge-weighted) Steiner Tree / Steiner Forest Problem.
+
+    Find a minimum-cost subgraph connecting all terminals within each terminal
+    group.  Solved with the DO-D directed-cut ILP formulation of Markhorst et
+    al. (2025), which builds on the Steiner forest formulations of Schmidt, Zey
+    & Margot (2021); see :mod:`steinerpy.mathematical_model`.
+
+    References:
+
+    - B. Markhorst, J. Berkhout, A. Zocca, J. Pruyn, R. van der Mei (2025),
+      *Future-proof ship pipe routing: Navigating the energy transition*,
+      Ocean Engineering 319, 120113, doi:10.1016/j.oceaneng.2024.120113 —
+      the DO-D formulation implemented here.
+    - D. Schmidt, B. Zey, F. Margot (2021), *Stronger MIP formulations for the
+      Steiner forest problem*, Mathematical Programming 186, 373-407,
+      doi:10.1007/s10107-019-01460-6 — the underlying directed-cut
+      formulations and the branch-and-cut accelerations.
+
+    A full bibliography (reductions, dual ascent, heuristics) is collected at
+    https://steinerpy.readthedocs.io/en/latest/extras/references.html.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -737,12 +758,13 @@ class SteinerProblem(BaseSteinerProblem):
 
 class PartialTerminalSteinerProblem(SteinerProblem):
     """
-    Partial Terminal Steiner Tree Problem (PTSTP), thesis Ch. 5.1.
+    Partial Terminal Steiner Tree Problem (PTSTP), Rehfeldt (2021), Ch. 5.1.
 
     A Steiner tree problem with the extra requirement that a designated subset of the
     terminals — the *partial terminals* — must be **leaves** of the solution tree.
 
-    Solved by the transformation to a plain Steiner tree problem (thesis Sec. 5.1):
+    Solved by the transformation to a plain Steiner tree problem (Rehfeldt 2021,
+    Sec. 5.1):
 
     1. remove every edge whose *both* endpoints are partial terminals, and
     2. add a large constant ``M`` (the sum of all edge weights) to every edge incident
@@ -755,6 +777,11 @@ class PartialTerminalSteinerProblem(SteinerProblem):
 
     Follows the thesis assumption of at least three terminals; with one or two
     terminals the problem is trivial and the leaf requirement is vacuous.
+
+    References:
+
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.1.
     """
 
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], partial_terminals,
@@ -812,8 +839,9 @@ class PartialTerminalSteinerProblem(SteinerProblem):
 
 class FullTerminalSteinerProblem(PartialTerminalSteinerProblem):
     """
-    Full Terminal Steiner Tree Problem (FTSTP), thesis Ch. 5.1 — the special case of
-    :class:`PartialTerminalSteinerProblem` in which *every* terminal must be a leaf.
+    Full Terminal Steiner Tree Problem (FTSTP), Rehfeldt (2021), Ch. 5.1 — the special
+    case of :class:`PartialTerminalSteinerProblem` in which *every* terminal must be a
+    leaf.  See :class:`PartialTerminalSteinerProblem` for the reference.
     """
 
     def __init__(self, graph: nx.Graph, terminal_groups: List[List],
@@ -829,7 +857,7 @@ class FullTerminalSteinerProblem(PartialTerminalSteinerProblem):
 
 class GroupSteinerProblem(SteinerProblem):
     """
-    Group Steiner Tree Problem (GSTP), thesis Ch. 5.7.
+    Group Steiner Tree Problem (GSTP), Rehfeldt (2021), Ch. 5.7.
 
     Given vertex *groups*, find a minimum-cost tree that contains at least one vertex
     from each group.  Solved by the Voss (1999) transformation to a plain Steiner tree
@@ -837,6 +865,14 @@ class GroupSteinerProblem(SteinerProblem):
     to every vertex of that group, then solve the Steiner tree problem whose terminals
     are the super-terminals.  The zero-cost connector edges are stripped from the
     reported solution (they contribute nothing to the objective).
+
+    References:
+
+    - S. Voß (1999), *The Steiner tree problem with hop constraints*, Annals of
+      Operations Research 86, 321-345, doi:10.1023/A:1018967121276 — the
+      super-terminal transformation.
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.7.
     """
 
     def __init__(self, graph: nx.Graph, groups: List[List], weight: str = "weight", **kwargs):
@@ -908,7 +944,7 @@ class RectilinearSolution(Solution):
 
 class RectilinearSteinerProblem(SteinerProblem):
     """
-    Rectilinear Steiner Minimum Tree (RSMT), thesis Ch. 5.4.
+    Rectilinear Steiner Minimum Tree (RSMT), Rehfeldt (2021), Ch. 5.4.
 
     Given points in the plane, find a minimum-total-length tree that uses only
     horizontal and vertical segments (the L1 / Manhattan metric), allowing extra
@@ -917,6 +953,14 @@ class RectilinearSteinerProblem(SteinerProblem):
     for modest point counts (the grid has up to ``k^2`` nodes for ``k`` points).
 
     Nodes of the underlying graph are ``(x, y)`` coordinate tuples.
+
+    References:
+
+    - M. Hanan (1966), *On Steiner's problem with rectilinear distance*, SIAM
+      Journal on Applied Mathematics 14(2), 255-265, doi:10.1137/0114025 — the
+      Hanan grid reduction.
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.4.
     """
 
     def __init__(self, points, weight: str = "weight", **kwargs):
@@ -941,6 +985,31 @@ class RectilinearSteinerProblem(SteinerProblem):
 
 
 class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem instead of BaseSteinerProblem
+    """
+    Prize-Collecting Steiner Tree Problem (PCSTP).
+
+    A Steiner tree problem in which terminals carry *prizes* and may be left
+    unconnected at a cost: the objective trades edge costs against forgone
+    prizes / penalties.  The default solve path is a penalty-based flow ILP on
+    top of the DO-D formulation (see :class:`SteinerProblem`); the opt-in
+    ``pc_transform=`` path solves the classic forgo-prize PCSTP exactly via the
+    PCSTP -> Steiner Arborescence (SAP) transformation, and ``pc_reduce=``
+    applies prize-safe edge deletions, both following Rehfeldt & Koch (2020).
+
+    References:
+
+    - D. Rehfeldt, T. Koch (2020), *On the exact solution of prize-collecting
+      Steiner tree problems*, ZIB-Report 20-11 (published in INFORMS Journal on
+      Computing, doi:10.1287/ijoc.2021.1087) — the SAP transformation
+      (:mod:`steinerpy.pc_transform`) and the prize-constrained-distance
+      reductions (:mod:`steinerpy.pc_reductions`).
+    - M. Leitner, I. Ljubić, M. Luipersbeck, M. Sinnl (2018), *A dual
+      ascent-based branch-and-bound framework for the prize-collecting Steiner
+      tree and related problems*, INFORMS Journal on Computing 30(2), 402-420,
+      doi:10.1287/ijoc.2017.0788 — reduced-cost variable fixing used by the
+      dual-ascent accelerator (:mod:`steinerpy.dual_ascent`).
+    """
+
     def __init__(self, graph, terminal_groups, node_prizes, penalty_cost=1000, penalty_budget=None, **kwargs):
         """
         Prize Collecting Steiner Problem - extends regular Steiner problem.
@@ -1254,6 +1323,11 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
 
     Terminal node costs are always incurred (they are part of every solution) and
     are added as a constant to the reported objective value.
+
+    The node-splitting reduction is the standard (folklore) device for moving
+    node weights onto edges and is not taken from a single dedicated paper; the
+    transformed instance is solved with the machinery documented in
+    :class:`SteinerProblem`.
     """
 
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], node_weights: Dict,
@@ -1386,6 +1460,14 @@ class MaxWeightConnectedSubgraph(PrizeCollectingProblem):
     negative weights are treated as Steiner points that are included only when
     they are necessary connectors.  A user-supplied (or automatically chosen)
     root node anchors the solution.
+
+    References:
+
+    - D. Rehfeldt, T. Koch (2020), *On the exact solution of prize-collecting
+      Steiner tree problems*, ZIB-Report 20-11 (published in INFORMS Journal on
+      Computing, doi:10.1287/ijoc.2021.1087), Sec. 2.2 — the exact
+      MWCSP -> PCSTP -> SAP transformation used by the opt-in
+      ``pc_transform=`` path (:mod:`steinerpy.pc_transform`).
     """
 
     def __init__(self, graph: nx.Graph, node_weights: Dict, root=None,
@@ -1460,7 +1542,8 @@ class MaxWeightConnectedSubgraph(PrizeCollectingProblem):
 
 class BudgetedMaxWeightConnectedSubgraph(MaxWeightConnectedSubgraph):
     """
-    Maximum-Weight Connected Subgraph with a vertex-cost Budget (MWCSPB), thesis Ch. 5.6.
+    Maximum-Weight Connected Subgraph with a vertex-cost Budget (MWCSPB),
+    Rehfeldt (2021), Ch. 5.6.
 
     Like :class:`MaxWeightConnectedSubgraph`, but every chosen vertex consumes a
     vertex *cost* and the total cost of the chosen connected subgraph may not exceed a
@@ -1472,6 +1555,11 @@ class BudgetedMaxWeightConnectedSubgraph(MaxWeightConnectedSubgraph):
     the ``"highs"`` and ``"gurobi"`` backends.  This variant does not use the
     SAP-transform / dual-ascent accelerators (same opt-out convention as the
     budget/degree variants).
+
+    References:
+
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.6.
     """
 
     def __init__(self, graph: nx.Graph, node_weights: Dict, node_costs: Dict,
@@ -1619,6 +1707,27 @@ class DirectedSteinerProblem(BaseSteinerProblem):
     The graph is a directed graph (nx.DiGraph).  A designated root node must
     have a directed path to every terminal node.  Edges only allow flow in the
     direction they are defined; reverse arcs are not added.
+
+    There is no single dedicated source paper for this implementation: it is the
+    directed-graph specialisation of the DO-D directed-cut formulation used for
+    the undirected problem (see :class:`SteinerProblem`), with the difference
+    that only the arcs present in the ``DiGraph`` are used instead of both
+    orientations of every undirected edge.  The Steiner arborescence model and
+    its directed-cut formulation go back to Wong (1984).
+
+    References:
+
+    - B. Markhorst, J. Berkhout, A. Zocca, J. Pruyn, R. van der Mei (2025),
+      *Future-proof ship pipe routing: Navigating the energy transition*,
+      Ocean Engineering 319, 120113, doi:10.1016/j.oceaneng.2024.120113 —
+      the DO-D formulation solved here.
+    - D. Schmidt, B. Zey, F. Margot (2021), *Stronger MIP formulations for the
+      Steiner forest problem*, Mathematical Programming 186, 373-407,
+      doi:10.1007/s10107-019-01460-6 — the formulation the DO-D model builds on.
+    - R. T. Wong (1984), *A dual ascent approach for Steiner tree problems on a
+      directed graph*, Mathematical Programming 28, 271-287,
+      doi:10.1007/BF02612335 — the Steiner arborescence directed-cut model and
+      the dual-ascent accelerator (:mod:`steinerpy.dual_ascent`).
     """
 
     def __init__(self, graph: nx.DiGraph, root, terminals: List, weight: str = "weight", **kwargs):
@@ -1646,7 +1755,7 @@ class DirectedSteinerProblem(BaseSteinerProblem):
 
 class HopConstrainedSteinerProblem(DirectedSteinerProblem):
     """
-    Hop-Constrained Directed Steiner Tree Problem (HCDSTP), thesis Ch. 5.8.
+    Hop-Constrained Directed Steiner Tree Problem (HCDSTP), Rehfeldt (2021), Ch. 5.8.
 
     A Steiner arborescence in which the number of arcs (hops) is bounded by
     ``hop_limit`` and no terminal (other than the root) has outgoing arcs.
@@ -1656,6 +1765,11 @@ class HopConstrainedSteinerProblem(DirectedSteinerProblem):
     constraint ``sum(y1) <= hop_limit`` (see
     :func:`steinerpy.mathematical_model.add_hop_constraint`).  The dual-ascent
     accelerator is skipped automatically because ``hop_limit`` is set.
+
+    References:
+
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.8.
     """
 
     def __init__(self, graph: nx.DiGraph, root, terminals: List, hop_limit: int,

@@ -1,5 +1,5 @@
 """
-Rectilinear Steiner minimum tree helpers (thesis Ch. 5.4).
+Rectilinear Steiner minimum tree helpers (Rehfeldt 2021, Ch. 5.4).
 
 The rectilinear Steiner minimum tree (RSMT) of a set of points in the plane is
 reduced *exactly* to a Steiner tree problem on the Hanan grid (Hanan 1966): the grid
