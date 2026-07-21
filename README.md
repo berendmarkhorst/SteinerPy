@@ -61,6 +61,12 @@ If you use SteinerPy in your research, please cite:
 }
 ```
 
+## Contributing
+
+Contributions are very welcome! Please read the
+[contributing guidelines](CONTRIBUTING.md) and open an issue to discuss your
+idea before starting on a pull request.
+
 ## License
 
 SteinerPy is available under the [MIT license](LICENSE).
