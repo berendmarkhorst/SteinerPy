@@ -5,6 +5,7 @@ The algorithms below are credited inline in the relevant source modules; this pa
 
 ## Formulation & exact solving
 
+- B. Markhorst, J. Berkhout, A. Zocca, J. Pruyn, R. van der Mei (2025), *Future-proof ship pipe routing: Navigating the energy transition*, Ocean Engineering 319, 120113, [doi:10.1016/j.oceaneng.2024.120113](https://doi.org/10.1016/j.oceaneng.2024.120113) — the DO-D directed-cut formulation implemented by SteinerPy (`steinerpy/mathematical_model.py`); also the paper to cite when using this package (see [Citing](../setup/citing.md)).
 - R. T. Wong (1984), *A dual ascent approach for Steiner tree problems on a directed graph*, Mathematical Programming 28, 271–287, [doi:10.1007/BF02612335](https://doi.org/10.1007/BF02612335) — dual ascent for the directed-cut (arborescence) dual (`steinerpy/dual_ascent.py`).
 - M. Leitner, I. Ljubić, M. Luipersbeck, M. Sinnl (2018), *A dual ascent-based branch-and-bound framework for the prize-collecting Steiner tree and related problems*, INFORMS Journal on Computing 30(2), 402–420, [doi:10.1287/ijoc.2017.0788](https://doi.org/10.1287/ijoc.2017.0788) — reduced-cost variable fixing (`steinerpy/dual_ascent.py`).
 - D. Schmidt, B. Zey, F. Margot (2021), *Stronger MIP formulations for the Steiner forest problem*, Mathematical Programming 186, 373–407, [doi:10.1007/s10107-019-01460-6](https://doi.org/10.1007/s10107-019-01460-6) — branch-and-cut acceleration via creep flows and back cuts, used in the directed-cut separation (`steinerpy/mathematical_model.py`).
