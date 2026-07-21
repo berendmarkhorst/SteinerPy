@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "steinerpy"
-version = "1.0.6"
+version = "1.0.7"
 description = "Package to solve Steiner Tree and Steiner Forest Problems with the HiGHS solver"
 readme = "README.md"
 license = "MIT"
