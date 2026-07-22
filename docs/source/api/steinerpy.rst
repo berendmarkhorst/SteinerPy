@@ -61,6 +61,11 @@ Further variants
    :show-inheritance:
    :special-members: __init__
 
+.. autoclass:: steinerpy.DirectedGroupSteinerProblem
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
 .. autoclass:: steinerpy.HopConstrainedSteinerProblem
    :members:
    :show-inheritance:
