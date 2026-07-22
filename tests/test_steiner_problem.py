@@ -1,5 +1,7 @@
 """Basic tests for SteinerProblem class."""
 
+import math
+import random
 import warnings
 
 import networkx as nx
@@ -1000,6 +1002,112 @@ def test_directed_steiner_inherits_base():
     DG.add_edge('A', 'B', weight=1)
     problem = DirectedSteinerProblem(DG, root='A', terminals=['B'])
     assert isinstance(problem, BaseSteinerProblem)
+
+
+def test_directed_steiner_unused_back_arc_not_forced():
+    """Regression for GH issue #30: an unused reverse arc between two nodes
+    on the optimal path must not get its own edge variable forced on. The
+    directed-cut model used to conflate a genuine 2-cycle's two independent
+    arcs with the "shared edge, two directions" case synthesized for
+    undirected graphs, forcing x on the unused direction and inflating the
+    objective while still certifying gap == 0.0."""
+    DG = nx.DiGraph()
+    DG.add_edge(0, 3, weight=9)
+    DG.add_edge(3, 2, weight=8)
+    DG.add_edge(2, 1, weight=7)
+    DG.add_edge(1, 2, weight=3)  # unused reverse arc, not needed for any path
+
+    solution = DirectedSteinerProblem(DG, root=0, terminals=[3, 1]).get_solution()
+    assert solution.gap == pytest.approx(0.0)
+    assert solution.objective == pytest.approx(24.0)
+    assert (1, 2) not in solution.selected_edges
+
+
+# ---------------------------------------------------------------------------
+# Brute-force oracle for DirectedSteinerProblem, biased towards graphs with
+# "back arcs" (2-cycles) -- the class of instance that triggered issue #30.
+# ---------------------------------------------------------------------------
+
+def brute_directed_steiner(graph, root, terminals, weight="weight"):
+    """Optimal cost via enumerating edge subsets: min cost subgraph such that
+    every terminal is reachable from root. ``math.inf`` if none works."""
+    edges = list(graph.edges(data=True))
+    n = len(edges)
+    best = math.inf
+    for mask in range(1 << n):
+        adj = {}
+        cost = 0.0
+        for i in range(n):
+            if mask & (1 << i):
+                u, v, d = edges[i]
+                adj.setdefault(u, []).append(v)
+                cost += d.get(weight, 1)
+        if cost >= best:
+            continue
+        reachable = {root}
+        stack = [root]
+        while stack:
+            x = stack.pop()
+            for y in adj.get(x, []):
+                if y not in reachable:
+                    reachable.add(y)
+                    stack.append(y)
+        if all(t in reachable for t in terminals):
+            best = cost
+    return best
+
+
+def random_digraph_with_back_arcs(seed, n=6):
+    """Random rooted DiGraph with a directed backbone (guaranteeing every
+    instance is feasible) plus deliberate reverse ("back") arcs on backbone
+    pairs and a few extra random arcs, to stress-test the arc/edge-variable
+    bundling in Constraint 3."""
+    rng = random.Random(seed)
+    nodes = list(range(n))
+    root = 0
+    rest = nodes[1:]
+    rng.shuffle(rest)
+    order = [root] + rest
+    g = nx.DiGraph()
+    g.add_nodes_from(nodes)
+    for i in range(len(order) - 1):
+        g.add_edge(order[i], order[i + 1], weight=rng.randint(1, 9))
+    for i in range(len(order) - 1):
+        if rng.random() < 0.5:
+            u, v = order[i + 1], order[i]
+            if not g.has_edge(u, v):
+                g.add_edge(u, v, weight=rng.randint(1, 9))
+    for _ in range(rng.randint(0, 3)):
+        u, v = rng.sample(nodes, 2)
+        if not g.has_edge(u, v):
+            g.add_edge(u, v, weight=rng.randint(1, 9))
+    terminals = rng.sample(rest, k=min(3, len(rest)))
+    return g, root, terminals
+
+
+@pytest.mark.parametrize("seed", range(30))
+def test_directed_steiner_matches_oracle_with_back_arcs(seed):
+    g, root, terminals = random_digraph_with_back_arcs(seed)
+    opt = brute_directed_steiner(g, root, terminals)
+    prob = DirectedSteinerProblem(g.copy(), root=root, terminals=terminals)
+    sol = prob.get_solution()
+
+    assert sol.gap == pytest.approx(0.0, abs=1e-9)
+    assert sol.objective == pytest.approx(opt)
+
+    adj = {}
+    for u, v in sol.selected_edges:
+        adj.setdefault(u, []).append(v)
+    reachable = {root}
+    stack = [root]
+    while stack:
+        x = stack.pop()
+        for y in adj.get(x, []):
+            if y not in reachable:
+                reachable.add(y)
+                stack.append(y)
+    for t in terminals:
+        assert t in reachable
 
 
 # ---------------------------------------------------------------------------

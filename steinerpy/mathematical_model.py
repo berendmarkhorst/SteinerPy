@@ -223,9 +223,16 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
             model.addConstr(sum(incoming) <= 1)
 
     # Constraint 3: connection between y1 and x
-    # For directed graphs only one arc direction exists per edge
+    # (v, u) in y1 but not in x means the reverse direction is only a
+    # synthesized arc for an undirected edge (objects.py mirrors every edge
+    # into arcs, but x is keyed on edges only) -- both directions share the
+    # one edge-cost variable x[(u, v)]. If (v, u) is *also* in x, it is a
+    # genuine independent edge/arc (e.g. a real 2-cycle in a DiGraph) with its
+    # own cost, so it must not be bundled with (u, v): otherwise selecting one
+    # direction forces x on the other, unused direction too, inflating the
+    # objective (see https://github.com/berendmarkhorst/SteinerPy/issues/30).
     for u, v in steiner_problem.edges:
-        if (v, u) in y1:
+        if (v, u) in y1 and (v, u) not in x:
             model.addConstr(y1[(u, v)] + y1[(v, u)] <= x[(u, v)])
         else:
             model.addConstr(y1[(u, v)] <= x[(u, v)])
@@ -1218,8 +1225,12 @@ def build_model_gurobi(
             model.addConstr(gp.quicksum(incoming) <= 1)
 
     # Constraint 3: connection between y1 and x
+    # (v, u) in y1 but not in x means the reverse direction is only a
+    # synthesized arc for an undirected edge (see the HiGHS builder above for
+    # the full explanation); a genuine independent edge/arc in x must not be
+    # bundled with (u, v)'s cost variable.
     for u, v in steiner_problem.edges:
-        if (v, u) in y1:
+        if (v, u) in y1 and (v, u) not in x:
             model.addConstr(y1[(u, v)] + y1[(v, u)] <= x[(u, v)])
         else:
             model.addConstr(y1[(u, v)] <= x[(u, v)])
