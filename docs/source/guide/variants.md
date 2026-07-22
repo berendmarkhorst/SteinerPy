@@ -12,6 +12,7 @@ Simply pass a list of terminal lists as `terminal_groups` — one list for a tre
 | Directed Steiner tree (arborescence) | {class}`~steinerpy.DirectedSteinerProblem` | The graph is directed (`nx.DiGraph`) and a designated root node must reach every terminal via directed paths. |
 | Partial / full terminal Steiner tree | {class}`~steinerpy.PartialTerminalSteinerProblem`, {class}`~steinerpy.FullTerminalSteinerProblem` | Designated terminals (or *all* terminals, for the full variant) must be **leaves** of the tree. Transformed to a plain Steiner tree problem (Rehfeldt thesis §5.1). |
 | Group Steiner tree | {class}`~steinerpy.GroupSteinerProblem` | Connect at least one vertex from each of several vertex *groups*. Voss (1988) super-terminal transformation to a plain Steiner tree problem (thesis §5.7). |
+| Directed group Steiner tree (arborescence) | {class}`~steinerpy.DirectedGroupSteinerProblem` | Directed variant of `GroupSteinerProblem`: a rooted arborescence that reaches at least one vertex from each group. |
 | Hop-constrained directed Steiner tree | {class}`~steinerpy.HopConstrainedSteinerProblem` | Directed arborescence with a bound on the number of arcs (hops); terminals have no outgoing arcs (thesis §5.8). |
 | Rectilinear Steiner minimum tree | {class}`~steinerpy.RectilinearSteinerProblem` | Minimum-length tree of horizontal/vertical segments through a set of points (L1 metric), solved exactly on the Hanan grid (thesis §5.4). |
 | Max-weight connected subgraph with budget | {class}`~steinerpy.BudgetedMaxWeightConnectedSubgraph` | Maximise total node weight subject to a **vertex-cost budget** on the chosen subgraph (thesis §5.6). |
@@ -21,7 +22,7 @@ Several of these variants implement the "further related problems" of Chapter 5 
 ```python
 from steinerpy import (
     PartialTerminalSteinerProblem, FullTerminalSteinerProblem, GroupSteinerProblem,
-    HopConstrainedSteinerProblem, RectilinearSteinerProblem,
+    DirectedGroupSteinerProblem, HopConstrainedSteinerProblem, RectilinearSteinerProblem,
     BudgetedMaxWeightConnectedSubgraph,
 )
 
@@ -30,6 +31,9 @@ PartialTerminalSteinerProblem(G, [['A', 'B', 'D']], partial_terminals=['B', 'D']
 
 # Group Steiner tree (one vertex from each group):
 GroupSteinerProblem(G, [['A', 'B'], ['C', 'D']]).get_solution()
+
+# Directed Group Steiner tree (arborescence from 'r' reaching one vertex from each group):
+DirectedGroupSteinerProblem(DG, [['A', 'B'], ['C', 'D']], root='r').get_solution()
 
 # Hop-constrained directed Steiner tree (<= 3 arcs):
 HopConstrainedSteinerProblem(DG, root='r', terminals=['x', 'y'], hop_limit=3).get_solution()

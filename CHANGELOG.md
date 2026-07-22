@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`DirectedGroupSteinerProblem`**: the directed (rooted-arborescence)
+  variant of `GroupSteinerProblem` — minimum-cost directed tree from a
+  `root` reaching at least one vertex of each group. Uses the same
+  super-terminal transformation as the undirected case, but with directed
+  zero-cost arcs running from each group's real vertices into its
+  super-terminal, then solves it with the directed-cut model shared with
+  `DirectedSteinerProblem`.
 - **Nearest-Vertex (NV), Short-Links (SL) and bound-based (BND) reductions**
   (Polzin & Vahdati Daneshmand 1998, Obs. 3.2/3.3/3.5/3.6; Steiner **tree**
   only): NV contracts a terminal's cheapest incident edge when

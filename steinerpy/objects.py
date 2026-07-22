@@ -866,6 +866,8 @@ class GroupSteinerProblem(SteinerProblem):
     are the super-terminals.  The zero-cost connector edges are stripped from the
     reported solution (they contribute nothing to the objective).
 
+    For directed graphs, see :class:`DirectedGroupSteinerProblem`.
+
     References:
 
     - S. Voß (1999), *The Steiner tree problem with hop constraints*, Annals of
@@ -875,25 +877,15 @@ class GroupSteinerProblem(SteinerProblem):
       problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.7.
     """
 
-    def __init__(self, graph: nx.Graph, groups: List[List], weight: str = "weight", **kwargs):
+    def __init__(self, graph: nx.Graph, groups: List[List], weight: str = "weight",
+                 **kwargs):
         if isinstance(graph, nx.DiGraph):
-            raise ValueError("GroupSteinerProblem requires an undirected graph.")
-        if not groups or any(len(g) == 0 for g in groups):
-            raise ValueError("Each group must contain at least one vertex.")
-
-        augmented = graph.copy()
-        existing = set(graph.nodes())
-        super_terminals = []
-        for i, grp in enumerate(groups):
-            g_node = self._fresh_label(f"__group_{i}__", existing)
-            existing.add(g_node)
-            super_terminals.append(g_node)
-            augmented.add_node(g_node)
-            for v in grp:
-                if v not in graph:
-                    raise ValueError(f"group vertex {v!r} is not in the graph.")
-                augmented.add_edge(g_node, v, **{weight: 0})
-
+            raise ValueError(
+                "GroupSteinerProblem requires an undirected graph; "
+                "use DirectedGroupSteinerProblem for directed graphs."
+            )
+        augmented, super_terminals = self._build_augmented(
+            graph, groups, weight, directed=False)
         self._gstp_super_terminals = set(super_terminals)
         super().__init__(augmented, [super_terminals], weight=weight, **kwargs)
 
@@ -905,6 +897,40 @@ class GroupSteinerProblem(SteinerProblem):
         while f"{base}{i}" in existing:
             i += 1
         return f"{base}{i}"
+
+    @staticmethod
+    def _build_augmented(
+        graph: nx.Graph, groups: List[List], weight: str, directed: bool
+    ):
+        """Add one zero-cost super-terminal per group to a copy of *graph*.
+
+        Shared by :class:`GroupSteinerProblem` (undirected connector edges,
+        both directions) and :class:`DirectedGroupSteinerProblem` (connector
+        arcs run from each real group vertex into its super-terminal, so the
+        super-terminal is only reachable once the arborescence reaches a real
+        group member).
+
+        :return: (augmented_graph, super_terminals) — one super-terminal label
+            per group.
+        """
+        if not groups or any(len(g) == 0 for g in groups):
+            raise ValueError("Each group must contain at least one vertex.")
+        augmented = graph.copy()
+        existing = set(graph.nodes())
+        super_terminals = []
+        for i, grp in enumerate(groups):
+            g_node = GroupSteinerProblem._fresh_label(f"__group_{i}__", existing)
+            existing.add(g_node)
+            super_terminals.append(g_node)
+            augmented.add_node(g_node)
+            for v in grp:
+                if v not in graph:
+                    raise ValueError(f"group vertex {v!r} is not in the graph.")
+                if directed:
+                    augmented.add_edge(v, g_node, **{weight: 0})
+                else:
+                    augmented.add_edge(g_node, v, **{weight: 0})
+        return augmented, super_terminals
 
     def get_solution(self, *args, **kwargs) -> 'Solution':
         import math as _math
@@ -923,6 +949,54 @@ class GroupSteinerProblem(SteinerProblem):
         sol.original_selected_edges = real
         sol.selected_edges = real
         return sol
+
+
+class DirectedGroupSteinerProblem(GroupSteinerProblem):
+    """
+    Directed Group Steiner Tree Problem — the rooted-arborescence variant of
+    :class:`GroupSteinerProblem`.
+
+    Given a root and vertex *groups*, find a minimum-cost arborescence rooted at
+    ``root`` that reaches at least one vertex from each group via directed paths.
+    Uses the same super-terminal transformation as :class:`GroupSteinerProblem`,
+    except each group's zero-cost connector arcs run *from* the group's real
+    vertices *into* its super-terminal (instead of both directions), so a
+    super-terminal is only reachable once the arborescence reaches one of its
+    real group members. The transformed instance is then solved with the same
+    directed-cut model used by :class:`DirectedSteinerProblem`, rooted at
+    ``root`` with the super-terminals as its terminal set.
+
+    References:
+
+    - S. Voß (1999), *The Steiner tree problem with hop constraints*, Annals of
+      Operations Research 86, 321-345, doi:10.1023/A:1018967121276 — the
+      super-terminal transformation.
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.7.
+    - R. T. Wong (1984), *A dual ascent approach for Steiner tree problems on a
+      directed graph*, Mathematical Programming 28, 271-287,
+      doi:10.1007/BF02612335 — the underlying Steiner arborescence model (see
+      :class:`DirectedSteinerProblem`).
+    """
+
+    def __init__(self, graph: nx.DiGraph, groups: List[List], root,
+                 weight: str = "weight", **kwargs):
+        if not isinstance(graph, nx.DiGraph):
+            raise ValueError(
+                "DirectedGroupSteinerProblem requires a directed graph (nx.DiGraph)."
+            )
+        if root not in graph:
+            raise ValueError(f"root {root!r} is not in the graph.")
+
+        augmented, super_terminals = self._build_augmented(
+            graph, groups, weight, directed=True)
+        self._gstp_super_terminals = set(super_terminals)
+        kwargs['preprocess'] = False
+        # Bypass GroupSteinerProblem.__init__ (which rejects DiGraph and wires
+        # undirected connector edges); go straight to BaseSteinerProblem via
+        # SteinerProblem, as DirectedSteinerProblem does.
+        SteinerProblem.__init__(
+            self, augmented, [[root] + super_terminals], weight=weight, **kwargs)
 
 
 # ---------------------------------------------------------------------------
