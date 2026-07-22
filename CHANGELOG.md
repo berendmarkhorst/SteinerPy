@@ -82,6 +82,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- **Directed-cut model inflated the objective when a real 2-cycle existed
+  between two nodes on the optimal path** (HiGHS and Gurobi builders):
+  Constraint 3 (`y1` -> `x`) bundled arc `(u, v)` with its reverse `(v, u)`
+  into a single edge-cost variable `x[(u, v)]` whenever `(v, u)` appeared as
+  an arc — the intended behaviour for the reverse arcs `objects.py` mirrors
+  onto every *undirected* edge, which share one edge-cost variable. On a
+  genuine `nx.DiGraph` with an explicit two-way arc pair, each direction is
+  its own edge with its own `x` variable, so bundling forced the unused
+  direction's `x` to 1 whenever the used direction was selected, inflating
+  the reported objective while `gap` was still (incorrectly) certified as
+  `0.0`. Fixed by only bundling when the reverse arc has no `x` variable of
+  its own (i.e. it is the synthesized undirected companion, not a real
+  independent edge). Affects `DirectedSteinerProblem` and anything built on
+  the same directed-cut kernel (e.g. `HopConstrainedSteinerProblem`).
 - **Mixed node-type crash in the reduction Dijkstras**: the long-edge test and
   the terminal-Voronoi construction pushed `(distance, node)` pairs onto their
   heaps, so a distance tie compared node labels — a `TypeError` when labels mix
