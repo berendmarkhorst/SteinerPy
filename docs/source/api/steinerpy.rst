@@ -29,6 +29,11 @@ Prize-collecting and node-weighted problems
    :show-inheritance:
    :special-members: __init__
 
+.. autoclass:: steinerpy.DirectedPrizeCollectingProblem
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
 .. autoclass:: steinerpy.NodeWeightedSteinerProblem
    :members:
    :special-members: __init__

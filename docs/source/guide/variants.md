@@ -10,6 +10,7 @@ Simply pass a list of terminal lists as `terminal_groups` — one list for a tre
 | Node-weighted Steiner tree / forest | {class}`~steinerpy.NodeWeightedSteinerProblem` | Nodes carry costs instead of (or in addition to) edges. Internally uses a node-splitting transformation to convert the problem to a standard edge-weighted formulation. |
 | Maximum-weight connected subgraph | {class}`~steinerpy.MaxWeightConnectedSubgraph` | Finds a connected subgraph maximising the total node weight. Nodes with negative weights are included only when they are needed as connectors. Convenience subclass of `PrizeCollectingProblem`. |
 | Directed Steiner tree (arborescence) | {class}`~steinerpy.DirectedSteinerProblem` | The graph is directed (`nx.DiGraph`) and a designated root node must reach every terminal via directed paths. |
+| Directed prize-collecting Steiner tree (arborescence) | {class}`~steinerpy.DirectedPrizeCollectingProblem` | Prize-collecting on a directed graph (`nx.DiGraph`): minimises arc cost plus forgone prizes over a directed arborescence, rooted anywhere (`root=None`) or at a mandatory root. Solved exactly via a directed PCSTP → SAP transformation (Rehfeldt & Koch 2020, adapted to digraphs). |
 | Partial / full terminal Steiner tree | {class}`~steinerpy.PartialTerminalSteinerProblem`, {class}`~steinerpy.FullTerminalSteinerProblem` | Designated terminals (or *all* terminals, for the full variant) must be **leaves** of the tree. Transformed to a plain Steiner tree problem (Rehfeldt thesis §5.1). |
 | Group Steiner tree | {class}`~steinerpy.GroupSteinerProblem` | Connect at least one vertex from each of several vertex *groups*. Voss (1988) super-terminal transformation to a plain Steiner tree problem (thesis §5.7). |
 | Directed group Steiner tree (arborescence) | {class}`~steinerpy.DirectedGroupSteinerProblem` | Directed variant of `GroupSteinerProblem`: a rooted arborescence that reaches at least one vertex from each group. |
@@ -23,7 +24,7 @@ Several of these variants implement the "further related problems" of Chapter 5 
 from steinerpy import (
     PartialTerminalSteinerProblem, FullTerminalSteinerProblem, GroupSteinerProblem,
     DirectedGroupSteinerProblem, HopConstrainedSteinerProblem, RectilinearSteinerProblem,
-    BudgetedMaxWeightConnectedSubgraph,
+    BudgetedMaxWeightConnectedSubgraph, DirectedPrizeCollectingProblem,
 )
 
 # Partial-terminal (terminals B and D must be leaves):
@@ -37,6 +38,9 @@ DirectedGroupSteinerProblem(DG, [['A', 'B'], ['C', 'D']], root='r').get_solution
 
 # Hop-constrained directed Steiner tree (<= 3 arcs):
 HopConstrainedSteinerProblem(DG, root='r', terminals=['x', 'y'], hop_limit=3).get_solution()
+
+# Directed prize-collecting Steiner tree (rooted arborescence from 'r'):
+DirectedPrizeCollectingProblem(DG, node_prizes={'x': 5, 'y': 3}, root='r').get_solution()
 
 # Rectilinear Steiner minimum tree through points in the plane:
 RectilinearSteinerProblem([(0, 0), (2, 0), (0, 2)]).get_solution()

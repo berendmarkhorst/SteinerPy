@@ -1384,6 +1384,195 @@ class PrizeCollectingSolution(Solution):
 
 
 # ---------------------------------------------------------------------------
+# Directed Prize-Collecting Steiner Tree (prize-collecting Steiner arborescence)
+# ---------------------------------------------------------------------------
+
+class DirectedPrizeCollectingProblem(PrizeCollectingProblem):
+    """
+    Directed Prize-Collecting Steiner Tree Problem (prize-collecting Steiner
+    arborescence).
+
+    The graph is directed (``nx.DiGraph``) and arcs are used only in the
+    direction they are defined — no reverse arcs are added.  The solver finds a
+    directed arborescence ``S`` minimising the classic forgo-prize objective
+
+        ``C(S) = sum_{a in S} c(a) + sum_{v not in S} p(v)``
+
+    with arc costs ``c >= 0`` and node prizes ``p >= 0``: every prize node left
+    out of the arborescence forgoes its prize.
+
+    Two variants are supported:
+
+    * **unrooted** (``root=None``, default): the arborescence may be rooted at
+      any vertex (including a prize-less one), and the empty tree is allowed;
+    * **rooted** (``root=r``): the arborescence must grow from ``r`` via
+      directed paths, and ``r`` is always part of the solution — the rooted
+      prize-collecting Steiner arborescence used e.g. for retrieving candidate
+      subgraphs from knowledge graphs (He et al. 2024, "G-Retriever").
+
+    Solved exactly via the directed PCSTP -> Steiner Arborescence (SAP)
+    transformation (:func:`steinerpy.pc_transform.transform_directed_pcstp_to_sap`,
+    the digraph adaptation of Rehfeldt & Koch 2020, Transformation 2) and the
+    existing dual-ascent + directed-cut machinery; the back-map preserves arc
+    orientation.  Graph preprocessing and the prize-constrained-distance
+    reductions are undirected-only and therefore disabled.
+
+    References:
+
+    - D. Rehfeldt, T. Koch (2020), *On the exact solution of prize-collecting
+      Steiner tree problems*, ZIB-Report 20-11 (published in INFORMS Journal on
+      Computing, doi:10.1287/ijoc.2021.1087) — the PCSTP -> SAP transformation
+      adapted here to directed graphs.
+    - R. T. Wong (1984), *A dual ascent approach for Steiner tree problems on a
+      directed graph*, Mathematical Programming 28, 271-287,
+      doi:10.1007/BF02612335 — the Steiner arborescence model and the
+      dual-ascent accelerator (:mod:`steinerpy.dual_ascent`).
+    - X. He, Y. Tian, Y. Sun, N. V. Chawla, T. Laurent, Y. LeCun, X. Bresson,
+      B. Hooi (2024), *G-Retriever: Retrieval-augmented generation for textual
+      graph understanding and question answering*, NeurIPS 2024 — the rooted
+      prize-collecting application on knowledge graphs (issue #28).
+    """
+
+    def __init__(self, graph: nx.DiGraph, node_prizes: Dict, root=None,
+                 weight: str = "weight", **kwargs):
+        """
+        :param graph: networkx DiGraph with non-negative arc costs.
+        :param node_prizes: dict mapping node -> prize value (``>= 0``).
+        :param root: optional mandatory root of the arborescence; ``None`` for
+            the unrooted variant.
+        :param weight: edge attribute for arc weights.
+        """
+        if not isinstance(graph, nx.DiGraph):
+            raise ValueError(
+                "DirectedPrizeCollectingProblem requires a directed graph (nx.DiGraph)."
+            )
+        if graph.number_of_nodes() == 0:
+            raise ValueError("graph must contain at least one node.")
+        if root is not None and root not in graph:
+            raise ValueError(f"root {root!r} is not in the graph.")
+        if kwargs.pop('pc_reduce', False):
+            raise ValueError(
+                "pc_reduce is not supported for directed graphs (the "
+                "prize-constrained-distance reductions are undirected-only)."
+            )
+        for bad in ('budget', 'max_degree', 'hop_limit', 'penalty_budget'):
+            if kwargs.get(bad) is not None:
+                raise ValueError(
+                    f"{bad} is not supported by DirectedPrizeCollectingProblem."
+                )
+        kwargs.pop('penalty_budget', None)
+
+        self.pc_root = root
+
+        # The potential terminals are exactly the prize-bearing nodes; the
+        # group's first entry anchors ``self.roots`` for the base class.
+        prize_nodes = [v for v in graph.nodes() if node_prizes.get(v, 0) > 0]
+        if root is not None:
+            anchor = root
+        elif prize_nodes:
+            anchor = prize_nodes[0]
+        else:
+            anchor = next(iter(graph.nodes()))
+        terminal_group = [anchor] + [v for v in prize_nodes if v != anchor]
+
+        # Preprocessing is undirected-only (as in DirectedSteinerProblem), and
+        # the transform path is the only directed-aware solve path.
+        kwargs['preprocess'] = False
+        kwargs.setdefault('pc_transform', True)
+        super().__init__(graph, [terminal_group], node_prizes,
+                         penalty_cost=0, weight=weight, **kwargs)
+
+    def _build_pc_transform(self):
+        """Build the *directed* PCSTP -> SAP transform context."""
+        from .pc_transform import transform_directed_pcstp_to_sap
+        return transform_directed_pcstp_to_sap(
+            self.graph, self.node_prizes, self.weight, root=self.pc_root
+        )
+
+    def _pc_finalize(self, ctx, edges, nodes, pcstp_obj, gap, runtime) -> 'PrizeCollectingSolution':
+        """Rooted: skip the unrooted trivial baselines (empty tree / arbitrary
+        single vertex), which are infeasible when the root is mandatory; the
+        SAP already represents every rooted solution including the root-only
+        tree.  Unrooted: same trivial compare as the undirected path."""
+        if self.pc_root is not None:
+            if not nodes:
+                nodes = [self.pc_root]
+            return self._pc_make_solution(ctx, edges, nodes, pcstp_obj, gap, runtime)
+        return super()._pc_finalize(ctx, edges, nodes, pcstp_obj, gap, runtime)
+
+    def _pc_heuristic_solution(self) -> 'PrizeCollectingSolution':
+        """Heuristic-only mode: the dual-ascent SAP primal, no ILP, valid gap.
+
+        The undirected refinement portfolio (MST / Dijkstra insertion / leaf
+        pruning) does not apply to arborescences, so the primal is the mapped
+        dual-ascent solution compared against the trivial baselines.
+        ``gap == 0.0`` certifies the primal is provably optimal.
+        """
+        import time as _time, math as _math
+        from .pc_transform import map_sap_solution_to_pcstp, best_trivial_pcstp
+        from .dual_ascent import dual_ascent as _run_da
+
+        ctx = self._build_pc_transform()
+        view = DirectedSteinerProblem(ctx.sap_graph, ctx.root, ctx.terminals, weight=ctx.weight)
+        t0 = _time.time()
+        da = _run_da(view, ctx.weight)
+        if not da.feasible or _math.isinf(da.upper_bound):
+            raise RuntimeError(
+                "dual-ascent heuristic found no feasible solution for the transformed SAP."
+            )
+        edges, nodes, pcstp_obj = map_sap_solution_to_pcstp(ctx, da.primal_edges)
+        if self.pc_root is None:
+            triv_nodes, triv_obj = best_trivial_pcstp(ctx.node_prizes)
+            if triv_obj < pcstp_obj - 1e-9:
+                edges, nodes, pcstp_obj = [], triv_nodes, triv_obj
+        elif not nodes:
+            nodes = [self.pc_root]
+
+        if _math.isinf(da.lower_bound):
+            gap = _math.inf
+        else:
+            lb = da.lower_bound - ctx.offset
+            gap = max(0.0, (pcstp_obj - lb) / max(1.0, abs(pcstp_obj)))
+        return self._pc_make_solution(ctx, edges, nodes, pcstp_obj, gap, _time.time() - t0)
+
+    def get_solution(self, time_limit: float = 300, log_file: str = "",
+                     solver: str = "highs", pc_transform: bool = None,
+                     exact: bool = True, threads: int = None) -> 'PrizeCollectingSolution':
+        """Solve the directed prize-collecting problem.
+
+        Always routes through the directed PCSTP -> SAP transformation with the
+        dual-ascent-accelerated directed-cut ILP (the penalty/Big-M flow ILP of
+        the undirected :class:`PrizeCollectingProblem` supports undirected
+        graphs only).  ``exact=False`` returns the dual-ascent primal with a
+        *valid* optimality gap and no ILP; ``solver`` selects ``"highs"``
+        (default) or ``"gurobi"``.
+        """
+        solver = solver.lower()
+        if solver not in ("highs", "gurobi"):
+            raise ValueError(f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'.")
+        if pc_transform is not None and not pc_transform:
+            raise NotImplementedError(
+                "DirectedPrizeCollectingProblem always solves via the directed "
+                "PCSTP -> SAP transformation; the penalty flow ILP path supports "
+                "undirected graphs only."
+            )
+
+        # No prizes at all: the optimum is trivial — the empty tree (unrooted)
+        # or the bare root (rooted) — and the SAP would be degenerate.
+        if not any(self.node_prizes.get(v, 0) > 0 for v in self.graph.nodes()):
+            nodes = [self.pc_root] if self.pc_root is not None else []
+            return PrizeCollectingSolution(
+                gap=0.0, runtime=0.0, objective=0.0, selected_edges=[],
+                original_selected_edges=[], selected_nodes=nodes, penalties={},
+                total_prize=0.0, edge_cost=0.0, was_preprocessed=False,
+            )
+
+        if not exact:
+            return self._pc_heuristic_solution()
+        return self._pc_exact_solution(time_limit, log_file, solver, threads=threads)
+
+
+# ---------------------------------------------------------------------------
 # Node-Weighted Steiner Tree (NWST) and Maximum-Weight Connected Subgraph (MWCS)
 # ---------------------------------------------------------------------------
 
