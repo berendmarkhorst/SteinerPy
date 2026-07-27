@@ -183,6 +183,19 @@ def test_steiner_tree_example_from_notebook():
     expected_edges = {('A', 'C'), ('B', 'C'), ('C', 'D')}
     assert selected_undirected == expected_edges, f"Expected edges {expected_edges}, got {selected_undirected}"
 
+
+def test_zero_edge_graph_with_unconnected_terminals_raises():
+    """A zero-edge graph with >= 1 terminal group still holding >= 2 distinct
+    members is infeasible: nothing can connect them. get_solution() must raise
+    a clean RuntimeError instead of falling through to the solver."""
+    G = nx.Graph()
+    G.add_node('A')
+    G.add_node('B')
+
+    with pytest.raises(RuntimeError):
+        SteinerProblem(G, [['A', 'B']], preprocess=False).get_solution()
+
+
 def test_prize_collecting_problem_initialization():
     """Test PrizeCollectingProblem initialization."""
     G = nx.Graph()
