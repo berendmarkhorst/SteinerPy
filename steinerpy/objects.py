@@ -532,6 +532,26 @@ class BaseSteinerProblem:
                 was_preprocessed=self.preprocess,
             )
 
+        # Reduction emptied the graph but left >= 2 distinct terminals in some
+        # group: since every fixed edge (the only way an edge leaves self.graph
+        # without a plain non-optimal-edge deletion) also merges its endpoints
+        # in self.terminal_groups (see _contract_terminal_edge), reaching this
+        # point with a still-multi-terminal group and zero edges means no edge
+        # remains anywhere to connect them -- the reduced instance is
+        # infeasible, not solved. Mirrors PartialTerminalSteinerProblem.
+        # get_solution's own "graph has 0 edges" guard; without this, an empty
+        # edge set falls through to build_model/run_model, whose objective
+        # `sum(x[e] * ... for e in self.edges)` collapses to the plain int 0
+        # for an empty self.edges, and highspy's setObjective unconditionally
+        # reads `expr.bounds`, raising `AttributeError: 'int' object has no
+        # attribute 'bounds'` deep inside the solver instead of a clean,
+        # already-anticipated infeasibility error.
+        if self.budget is None and self.graph.number_of_edges() == 0:
+            raise RuntimeError(
+                "no Steiner tree connects the terminal groups (graph reduction "
+                "left an empty graph with unconnected terminals remaining)"
+            )
+
         # Heuristic-only mode: return the dual-ascent primal with no ILP. Much
         # faster (no MIP), and unlike a pure heuristic it carries a proven
         # optimality gap (gap == 0.0 ⇒ provably optimal).
