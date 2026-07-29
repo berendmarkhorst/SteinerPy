@@ -142,6 +142,10 @@ class BaseSteinerProblem:
         else:
             self.arcs = self.edges + [(v, u) for (u, v) in self.edges]
         self.nodes = list(self.graph.nodes())
+        # Stays a real `set` (tests compare it with == {...}, and callers may
+        # rely on set semantics); build_model's Constraint 7 is the one that
+        # needs a deterministic *iteration* order over it, so that fix lives
+        # there (iterate self.nodes, filtered by membership) rather than here.
         self.steiner_points = set(self.nodes) - set([t for group in terminal_groups for t in group])
         self.roots = [group[0] for group in self.terminal_groups]
 
