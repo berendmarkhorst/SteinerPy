@@ -504,6 +504,9 @@ class BaseSteinerProblem:
         :return: :class:`Solution` (or :class:`BudgetSolution` when a budget is set).
         :raises ValueError: if an unknown solver name is provided.
         :raises ImportError: if ``solver="gurobi"`` but gurobipy is not installed.
+        :raises RuntimeError: if graph reduction left an empty graph while a
+            group still holds >= 2 distinct terminals — the reduced instance is
+            infeasible (no Steiner tree can connect them).
         """
         solver = solver.lower()
         if solver not in ("highs", "gurobi"):
@@ -518,9 +521,13 @@ class BaseSteinerProblem:
             _check_gurobipy()
 
         # Trivial after preprocessing: when every group is down to <= 1
-        # terminal (e.g. terminal contraction solved the whole instance), the
+        # *distinct* terminal (e.g. terminal contraction solved the whole
+        # instance, or the caller passed duplicate terminals in a group), the
         # optimum is exactly the fixed edges — nothing is left to optimise.
-        if self.budget is None and all(len(g) <= 1 for g in self.terminal_groups):
+        # len(set(g)) (not len(g)) so a group like ['A', 'A'] -- one distinct
+        # terminal repeated -- is correctly treated as trivial instead of
+        # falling through to the zero-edge infeasibility guard below.
+        if self.budget is None and all(len(set(g)) <= 1 for g in self.terminal_groups):
             import time as _time_triv
             _t0 = _time_triv.time()
             original = (map_solution_to_original([], self.reduction_tracker, self.graph)

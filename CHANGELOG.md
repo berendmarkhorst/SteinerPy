@@ -89,6 +89,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- **Zero-edge reductions crashed instead of reporting infeasibility, on both
+  the plain and budget-constrained solve paths**: when graph reduction left an
+  empty `self.graph` while a group still held >= 2 distinct terminals, the
+  empty edge set made `sum(x[e] * ... for e in self.edges)` collapse to the
+  plain Python value `0` — `0 <= budget` then evaluates eagerly to a Python
+  `bool`/`int` rather than building a HiGHS expression, and highspy's
+  `setObjective`/`addConstr` unconditionally read `expr.bounds`, raising a
+  bare `AttributeError` deep inside the solver instead of a clean error.
+  `get_solution()` now raises a `RuntimeError` up front on the plain path; the
+  budget-constrained path (`build_budget_model`) instead skips the now-vacuous
+  budget constraint, since an empty edge set is not actually infeasible there
+  (all non-root terminals are simply penalised). The trivial-instance
+  fast-path also now de-duplicates each group (`len(set(g))` instead of
+  `len(g)`) so a group with a repeated terminal (e.g. `['A', 'A']`) is
+  correctly recognised as already-solved instead of falsely tripping the new
+  infeasibility guard.
 - **Directed-cut model inflated the objective when a real 2-cycle existed
   between two nodes on the optimal path** (HiGHS and Gurobi builders):
   Constraint 3 (`y1` -> `x`) bundled arc `(u, v)` with its reverse `(v, u)`
