@@ -1,7 +1,58 @@
 import networkx as nx
 from collections import deque
+from collections.abc import MutableSet
 from itertools import count
 from typing import Set, Union, List, Tuple, Dict
+
+
+class OrderedSet(MutableSet):
+    """A set that iterates in insertion order.
+
+    Several reduction passes below build worklists / deletion sets that feed
+    straight back into a worklist, or into a solved MILP's own constraint
+    order (see steinerpy.mathematical_model's Constraint 6/7/8) -- a plain
+    `set`'s iteration order is randomized per-process by PYTHONHASHSEED, so
+    using one there would make *which* of several simultaneously-valid
+    reductions/contractions fires first (and hence the reduced graph's own
+    shape, or which of several tied-cost solutions a MILP solver returns)
+    silently depend on the process's hash seed rather than on the problem
+    itself -- non-reproducible across runs of the very same input and
+    `--seed`. Backed by a plain dict (whose insertion order *is* guaranteed
+    by the language, regardless of hash randomization) purely for its O(1)
+    membership/insertion/removal -- the dict's values are never read.
+
+    Comparable to a plain `set`/`frozenset` via the inherited `Set.__eq__`
+    (both are registered `collections.abc.Set` subclasses, so equality is
+    content-based, not type-based) -- existing `x == {...}`-style assertions
+    keep working unchanged even where this class replaces a real `set`.
+    """
+
+    __slots__ = ("_d",)
+
+    def __init__(self, iterable=()):
+        self._d = dict.fromkeys(iterable)
+
+    def __contains__(self, x):
+        return x in self._d
+
+    def __iter__(self):
+        return iter(self._d)
+
+    def __len__(self):
+        return len(self._d)
+
+    def add(self, x):
+        self._d[x] = None
+
+    def discard(self, x):
+        self._d.pop(x, None)
+
+    def update(self, iterable):
+        for x in iterable:
+            self._d[x] = None
+
+    def __repr__(self):
+        return f"{type(self).__name__}({list(self._d)!r})"
 
 
 class ReductionTracker:
@@ -65,7 +116,7 @@ class ReductionTracker:
 
 
 def _contract_terminal_edge(G: nx.Graph, keep, gone, weight: str,
-                            terminals: Set, tracker: ReductionTracker) -> Set:
+                            terminals: OrderedSet, tracker: ReductionTracker) -> OrderedSet:
     """Fix edge ``{keep, gone}`` into every solution and merge ``gone`` into ``keep``.
 
     The caller guarantees the edge lies in at least one optimal solution of the
@@ -77,13 +128,16 @@ def _contract_terminal_edge(G: nx.Graph, keep, gone, weight: str,
     becomes (or stays) a terminal; a merged-away terminal is recorded so the
     caller can remap its terminal groups.
 
-    Returns the set of nodes whose degree changed (worklist seeds).
+    Returns the worklist seeds (nodes whose degree changed), in
+    `G.neighbors(gone)`'s own deterministic order (see `OrderedSet`'s own
+    docstring for why that matters): callers feed this straight into
+    `_structural_fixpoint`'s worklist.
     """
     data = G[keep][gone]
     edge_id = data.get('edge_id') if data.get('edge_type') == 'contracted' else None
     if tracker:
         tracker.add_fixed_edge(keep, gone, data.get(weight, 1), edge_id)
-    seeds = {keep}
+    seeds = OrderedSet([keep])
     for x in list(G.neighbors(gone)):
         if x == keep or x == gone:
             continue
@@ -112,8 +166,8 @@ def _contract_terminal_edge(G: nx.Graph, keep, gone, weight: str,
     return seeds
 
 
-def _adjacent_terminal_pass(G: nx.Graph, terminals: Set, weight: str,
-                            tracker: ReductionTracker) -> Set:
+def _adjacent_terminal_pass(G: nx.Graph, terminals: OrderedSet, weight: str,
+                            tracker: ReductionTracker) -> OrderedSet:
     """Contract terminal-terminal edges that are cheapest at one endpoint.
 
     Classic MST-style inclusion test: let ``e = {t, t'}`` with both endpoints
@@ -124,9 +178,10 @@ def _adjacent_terminal_pass(G: nx.Graph, terminals: Set, weight: str,
     reconnects it at no larger cost.  Hence ``e`` is in at least one optimal
     tree and can be contracted.  Single terminal group only.
 
-    Returns worklist seeds for the structural fixpoint.
+    Returns worklist seeds for the structural fixpoint (dict-as-ordered-set;
+    see _contract_terminal_edge's own docstring for why).
     """
-    seeds: Set = set()
+    seeds = OrderedSet()
     progress = True
     while progress and len(terminals) >= 2:
         progress = False
@@ -149,8 +204,8 @@ def _adjacent_terminal_pass(G: nx.Graph, terminals: Set, weight: str,
     return seeds
 
 
-def _nv_pass(G: nx.Graph, terminals: Set, weight: str,
-             tracker: ReductionTracker, vor) -> Set:
+def _nv_pass(G: nx.Graph, terminals: OrderedSet, weight: str,
+             tracker: ReductionTracker, vor) -> OrderedSet:
     """Nearest-Vertex (NV) inclusion test (Polzin & Vahdati 1998, Obs. 3.2).
 
     For a terminal ``t`` with cheapest incident edge ``e' = {t, v'}`` and
@@ -171,10 +226,12 @@ def _nv_pass(G: nx.Graph, terminals: Set, weight: str,
     checked against the *current* terminal identities.  Incident-edge costs
     are re-read from ``G`` at every step.
 
-    Returns worklist seeds; loops to a fixpoint internally.
+    Returns worklist seeds (dict-as-ordered-set; see
+    _contract_terminal_edge's own docstring for why); loops to a fixpoint
+    internally.
     """
     d1, b1, d2, b2 = vor
-    seeds: Set = set()
+    seeds = OrderedSet()
     changed = True
     while changed and len(terminals) >= 2:
         changed = False
@@ -207,8 +264,8 @@ def _nv_pass(G: nx.Graph, terminals: Set, weight: str,
     return seeds
 
 
-def _sl_pass(G: nx.Graph, terminals: Set, weight: str,
-             tracker: ReductionTracker, vor) -> Set:
+def _sl_pass(G: nx.Graph, terminals: OrderedSet, weight: str,
+             tracker: ReductionTracker, vor) -> OrderedSet:
     """Short-Links (SL) inclusion test (Polzin & Vahdati 1998, Obs. 3.3).
 
     A *link* of terminal ``t`` is an edge ``{u, w}`` leaving its Voronoi
@@ -228,10 +285,11 @@ def _sl_pass(G: nx.Graph, terminals: Set, weight: str,
     pass requires a **fresh** ``vor`` and applies at most **one** contraction
     per invocation; the caller rebuilds the diagram before other passes.
 
-    Returns worklist seeds (empty when nothing fired).
+    Returns worklist seeds (empty when nothing fired); see OrderedSet's own
+    docstring for why not a plain `set`.
     """
     if len(terminals) < 2:
-        return set()
+        return OrderedSet()
     d1, b1, _d2, _b2 = vor
     inf = float("inf")
     links: Dict = {}  # base -> list of (cost, length, u, w)
@@ -266,10 +324,10 @@ def _sl_pass(G: nx.Graph, terminals: Set, weight: str,
             best = cand
 
     if best is None:
-        return set()
+        return OrderedSet()
     _length, u, w = best
     if not G.has_edge(u, w):
-        return set()
+        return OrderedSet()
     return _contract_terminal_edge(G, u, w, weight, terminals, tracker)
 
 
@@ -304,9 +362,9 @@ def _sph_upper_bound(G: nx.Graph, terminals, weight: str) -> float:
         return float("inf")
 
 
-def bound_based_deletions(G: nx.Graph, terminals: Set, weight: str,
+def bound_based_deletions(G: nx.Graph, terminals: OrderedSet, weight: str,
                           vor, tmst=None, eps: float = 1e-9
-                          ) -> Tuple[Set, Set[Tuple]]:
+                          ) -> Tuple[OrderedSet, OrderedSet]:
     """Bound-based (BND) node and edge deletions.
 
     Implements Observations 3.5 and 3.6 of Polzin & Vahdati Daneshmand (1998;
@@ -331,24 +389,28 @@ def bound_based_deletions(G: nx.Graph, terminals: Set, weight: str,
     provably not a lower bound — a 3-terminal star with unit edges has
     optimum 3 but boundary-MST weight 4.)
 
-    :returns: ``(nodes_to_delete, edges_to_delete)``.
+    :returns: ``(nodes_to_delete, edges_to_delete)``, each in
+        G.nodes()/G.edges()'s own deterministic order (see `OrderedSet`'s
+        own docstring for why a plain `set` here would leak PYTHONHASHSEED
+        into the worklist order preprocess_graph seeds from these
+        deletions).
     """
     s = len(terminals)
     if s < 3:
-        return set(), set()
+        return OrderedSet(), OrderedSet()
     d1, b1, d2, _b2 = vor
 
     ub = _sph_upper_bound(G, terminals, weight)
     if not (ub < float("inf")):
-        return set(), set()
+        return OrderedSet(), OrderedSet()
 
     radius = _voronoi_radii(G, d1, b1, weight)
     radii = sorted(radius.get(t, float("inf")) for t in terminals)
     R = sum(radii[: s - 2])
     if not (R < float("inf")):
-        return set(), set()
+        return OrderedSet(), OrderedSet()
 
-    nodes: Set = set()
+    nodes = OrderedSet()
     for v in G.nodes():
         if v in terminals:
             continue
@@ -358,7 +420,7 @@ def bound_based_deletions(G: nx.Graph, terminals: Set, weight: str,
         if D1 + D2 + R > ub + eps:
             nodes.add(v)
 
-    edges: Set[Tuple] = set()
+    edges = OrderedSet()
     for u, w, attr in G.edges(data=True):
         if u in nodes or w in nodes:
             continue  # already covered by the node deletion
@@ -370,7 +432,7 @@ def bound_based_deletions(G: nx.Graph, terminals: Set, weight: str,
     return nodes, edges
 
 
-def _structural_fixpoint(G: nx.Graph, terminals: Set, weight: str,
+def _structural_fixpoint(G: nx.Graph, terminals: OrderedSet, weight: str,
                          tracker: ReductionTracker = None, seeds=None,
                          do_deg1: bool = True, do_deg2: bool = True,
                          contract_terminals: bool = False) -> bool:
@@ -455,17 +517,17 @@ def _structural_fixpoint(G: nx.Graph, terminals: Set, weight: str,
     return changed
 
 
-def degree_one_reduction(G: nx.Graph, terminals: Set[any],
+def degree_one_reduction(G: nx.Graph, terminals: Union[Set, List],
                         tracker: ReductionTracker = None) -> nx.Graph:
     """
     Iteratively remove degree-1 nodes that are not terminals.
     """
     reduced_graph = G.copy()
-    _structural_fixpoint(reduced_graph, set(terminals), None, tracker, do_deg2=False)
+    _structural_fixpoint(reduced_graph, OrderedSet(terminals), None, tracker, do_deg2=False)
     return reduced_graph
 
 
-def degree_two_reduction(G: nx.Graph, terminals: Set[any], weight: str = "weight",
+def degree_two_reduction(G: nx.Graph, terminals: Union[Set, List], weight: str = "weight",
                         tracker: ReductionTracker = None) -> nx.Graph:
     """
     Replace degree-2 non-terminal nodes with direct edges between their neighbors.
@@ -478,7 +540,7 @@ def degree_two_reduction(G: nx.Graph, terminals: Set[any], weight: str = "weight
         if 'edge_type' not in reduced_graph[u][v]:
             reduced_graph[u][v]['edge_type'] = 'original'
 
-    _structural_fixpoint(reduced_graph, set(terminals), weight, tracker, do_deg1=False)
+    _structural_fixpoint(reduced_graph, OrderedSet(terminals), weight, tracker, do_deg1=False)
     return reduced_graph
 
 
@@ -546,8 +608,13 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
     reproduces at equal cost).  The shared data is rebuilt at the top of each
     round; set ``_REBUILD_PER_SUBPASS`` to force a rebuild per sub-pass.
     """
-    # Flatten terminal groups to get all terminals
-    all_terminals = set()
+    # Flatten terminal groups to get all terminals. An OrderedSet (not a
+    # plain `set`) deliberately: `terminals` is iterated directly by
+    # _adjacent_terminal_pass/_nv_pass (which terminal is *tried first* among
+    # several that equally satisfy a contraction test) and by _voronoi/
+    # _voronoi2 (seed order breaks exact-distance Voronoi-boundary ties) --
+    # see OrderedSet's own docstring for the fuller reasoning.
+    all_terminals = OrderedSet()
     for group in terminal_groups:
         all_terminals.update(group)
     single_group = len(terminal_groups) == 1
@@ -568,7 +635,7 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
         rounds += 1
         n0 = reduced_graph.number_of_nodes()
         m0 = reduced_graph.number_of_edges()
-        seeds: Set = set()
+        seeds = OrderedSet()
 
         # Terminal contractions first: they change the terminal set, so they
         # must run before this round's Voronoi diagram / terminal MST is built.
@@ -614,8 +681,8 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
         # solution). Applied with an undo log; a connectivity guard reverts the
         # batch — which a sound deletion can never trigger, so this only
         # protects against numerical edge cases.
-        dels: Set[Tuple] = set()
-        bnd_nodes: Set = set()
+        dels = OrderedSet()
+        bnd_nodes = OrderedSet()
         if sd_on:
             dels |= special_distance_deletions(reduced_graph, all_terminals, weight,
                                                vor=vor, bott=bott)
@@ -1028,8 +1095,8 @@ def _sd_bound(u, v, vor, bott) -> float:
     return best
 
 
-def special_distance_deletions(G: nx.Graph, terminals: Set, weight: str = "weight",
-                               eps: float = 1e-9, vor=None, bott=None) -> Set[Tuple]:
+def special_distance_deletions(G: nx.Graph, terminals: OrderedSet, weight: str = "weight",
+                               eps: float = 1e-9, vor=None, bott=None) -> OrderedSet:
     """Edges deletable by the Special Distance (bottleneck Steiner distance) test.
 
     For an edge ``e = {v, w}`` let ``s(v, w)`` be the bottleneck distance between
@@ -1055,9 +1122,12 @@ def special_distance_deletions(G: nx.Graph, terminals: Set, weight: str = "weigh
     Steiner tree).  The caller is responsible for only invoking it in that case;
     for the Steiner forest use :func:`long_edge_deletions` instead.
     """
-    terminals = set(terminals)
+    # Caller must pass an OrderedSet, not a plain set/list: _voronoi2's seed
+    # order breaks ties among nodes at an exact equal distance from two
+    # terminals, so the given order must survive here rather than being
+    # re-randomized -- see OrderedSet's own docstring for the full reasoning.
     if not terminals:
-        return set()
+        return OrderedSet()
 
     if vor is None:
         vor = _voronoi2(G, terminals, weight)
@@ -1066,7 +1136,7 @@ def special_distance_deletions(G: nx.Graph, terminals: Set, weight: str = "weigh
             _terminal_mst(G, terminals, vor[0], vor[1], weight), terminals)
 
     b1 = vor[1]
-    to_delete: Set[Tuple] = set()
+    to_delete = OrderedSet()
     for u, v, data in G.edges(data=True):
         c = data.get(weight, 1)
         if b1.get(u) is None or b1.get(v) is None:
@@ -1123,7 +1193,7 @@ def _long_edge_for_vertex(v0):
 
 def long_edge_deletions(G: nx.Graph, weight: str = "weight",
                         max_settle: int = 2000, eps: float = 1e-9,
-                        jobs: int = None) -> Set[Tuple]:
+                        jobs: int = None) -> OrderedSet:
     """Edges deletable because a strictly cheaper detour exists in ``G \\ e``.
 
     If the shortest-path distance between the endpoints of ``e = {v, w}`` is below
@@ -1155,14 +1225,14 @@ def long_edge_deletions(G: nx.Graph, weight: str = "weight",
     results = pmap(_long_edge_for_vertex, nodes, njobs, (adj, max_settle, eps),
                    min_items=_LONG_EDGE_PARALLEL_MIN_NODES)
 
-    to_delete: Set[Tuple] = set()
+    to_delete = OrderedSet()
     for r in results:
         to_delete.update(r)
     return to_delete
 
 def heavy_edge_deletions(G: nx.Graph, terminal_groups: List[List], weight: str = "weight",
                          special_distance: bool = True, long_edge: bool = True,
-                         max_settle: int = 2000) -> Set[Tuple]:
+                         max_settle: int = 2000) -> OrderedSet:
     """Combined sound edge-deletion set for one reduction pass.
 
     Applies the Special Distance test (only when there is a single terminal
@@ -1170,8 +1240,8 @@ def heavy_edge_deletions(G: nx.Graph, terminal_groups: List[List], weight: str =
     tree and forest), returning the union of edges that are provably in no
     optimal solution.
     """
-    all_terms = {t for g in terminal_groups for t in g}
-    dels: Set[Tuple] = set()
+    all_terms = OrderedSet(t for g in terminal_groups for t in g)
+    dels = OrderedSet()
     if special_distance and len(terminal_groups) == 1:
         dels |= special_distance_deletions(G, all_terms, weight)
     if long_edge:
@@ -1189,10 +1259,10 @@ def heavy_edge_deletions(G: nx.Graph, terminal_groups: List[List], weight: str =
 _NTD_MAX_DEGREE = 4
 
 
-def _pseudo_eliminate_pass(G: nx.Graph, terminals: Set, weight: str,
+def _pseudo_eliminate_pass(G: nx.Graph, terminals: OrderedSet, weight: str,
                            tracker: ReductionTracker, vor, bott,
                            mst_weights_desc: List[float],
-                           eps: float = 1e-9) -> Set:
+                           eps: float = 1e-9) -> OrderedSet:
     """One pass of degree-k non-terminal replacement (Rehfeldt & Koch 2023, Prop. 4).
 
     Let ``Y`` be an MST of the terminal distance network (the Mehlhorn boundary
@@ -1225,16 +1295,17 @@ def _pseudo_eliminate_pass(G: nx.Graph, terminals: Set, weight: str,
     skipped entirely unless at most ``deg(v)`` genuinely new edges result.
 
     Single terminal group only (the reconnection argument fails across groups).
-    Returns the set of touched neighbour nodes for worklist seeding.
+    Returns the touched neighbour nodes for worklist seeding (see
+    OrderedSet's own docstring for why not a plain `set`).
     """
     if mst_weights_desc is None:
-        return set()
+        return OrderedSet()
     # W[k] = sum of the k largest Y-MST weights.
     W = [0.0]
     for wq in mst_weights_desc:
         W.append(W[-1] + wq)
     n_terms = len(terminals)
-    touched: Set = set()
+    touched = OrderedSet()
 
     for v in list(G.nodes()):
         if v in terminals or v not in G:

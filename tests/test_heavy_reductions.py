@@ -18,6 +18,7 @@ import networkx as nx
 import pytest
 
 from steinerpy.graph_reducer import (
+    OrderedSet,
     special_distance_deletions,
     long_edge_deletions,
     heavy_edge_deletions,
@@ -120,7 +121,7 @@ def test_special_distance_deletes_via_terminal_bottleneck():
         G.add_edge(terms[i], terms[i + 1], weight=1)
     # a chord t0-t3 of cost 3: special distance (terminal bottleneck) is 1 < 3
     G.add_edge("t0", "t3", weight=3)
-    dels = special_distance_deletions(G, set(terms), "weight")
+    dels = special_distance_deletions(G, OrderedSet(terms), "weight")
     assert {"t0", "t3"} in [set(e) for e in dels]
 
 
@@ -315,7 +316,7 @@ def test_second_nearest_terminal_certifies_extra_sd_deletion():
     G.add_edge("u", "tc", weight=2)
     G.add_edge("tc", "tb", weight=1)
     G.add_edge("u", "v", weight=2.5)
-    terminals = {"ta", "tb", "tc"}
+    terminals = OrderedSet(["ta", "tb", "tc"])
 
     vor = _voronoi2(G, terminals, "weight")
     bott = _mehlhorn_terminal_mst(G, terminals, vor[0], vor[1], "weight")

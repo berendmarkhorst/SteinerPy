@@ -164,9 +164,16 @@ def get_terminals(terminal_group: List[List]) -> List:
     """
     return [t for group in terminal_group for t in group]
 
-def terminal_groups_without_root(terminal_group: List[List], roots: List, group_index: int) -> Set:
+def terminal_groups_without_root(terminal_group: List[List], roots: List, group_index: int) -> List:
     """
     Get terminal groups until index k without kth root.
+
+    Order-preserving (first-occurrence) and deduplicated -- callers iterate
+    this directly to add model constraints, and a plain ``set`` would make
+    that iteration order (and therefore, when multiple optima exist, which
+    tied solution HiGHS/Gurobi returns) depend on Python's per-process
+    ``PYTHONHASHSEED``-randomized string hashing rather than on the problem
+    itself.
 
     :param terminal_group: nested list of terminals.
     :param roots: list of roots.
@@ -174,19 +181,25 @@ def terminal_groups_without_root(terminal_group: List[List], roots: List, group_
     :return: subset of terminal groups from index k to K.
     """
     if len(terminal_group[0]) > 0:
-        return set(get_terminals(terminal_group[group_index:])) - set([roots[group_index]])
+        root = roots[group_index]
+        return [t for t in dict.fromkeys(get_terminals(terminal_group[group_index:])) if t != root]
     else:
-        return set()
+        return []
 
-def get_terminal_groups_until_k(terminal_groups: List[List], group_index: int) -> Set:
+def get_terminal_groups_until_k(terminal_groups: List[List], group_index: int) -> List:
     """
     Get terminal groups until index k.
+
+    Order-preserving (first-occurrence) and deduplicated -- see
+    :func:`terminal_groups_without_root` for why plain ``set`` iteration
+    order here would leak ``PYTHONHASHSEED``-dependent non-determinism into
+    the model.
 
     :param terminal_groups: nested list of terminals.
     :param group_index: index of the terminal group.
     :return: subset of terminal groups up till index k.
     """
-    return set(get_terminals(terminal_groups[:group_index]))
+    return list(dict.fromkeys(get_terminals(terminal_groups[:group_index])))
 
 def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem') -> Tuple[hp.HighsModel, Dict[str, hp.HighsVarType]]:
     """
@@ -256,7 +269,11 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
                 model.addConstr(sum(incoming) == 0)
 
     # Constraint 7: indegree at most outdegree for Steiner points
-    for v in steiner_problem.steiner_points:
+    # Iterate steiner_problem.nodes' own order, not steiner_points' raw `set`
+    # order directly -- see Constraint 8 below for why that matters.
+    for v in steiner_problem.nodes:
+        if v not in steiner_problem.steiner_points:
+            continue
         entering = [y1[a] for a in in_arcs.get(v, ())]
         leaving = [y1[a] for a in out_arcs.get(v, ())]
         if entering:
@@ -265,8 +282,14 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
 
     # Constraint 8: indegree at most outdegree per terminal group
     for group_id_k in group_indices:
-        remaining_vertices = set(steiner_problem.nodes) - set(terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id_k))
-        for v in remaining_vertices:
+        # Iterate steiner_problem.nodes in its own order, not the arbitrary
+        # (PYTHONHASHSEED-dependent) order a `set` difference would yield --
+        # see terminal_groups_without_root's own docstring for why that
+        # matters for constraint-order determinism.
+        excluded = set(terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id_k))
+        for v in steiner_problem.nodes:
+            if v in excluded:
+                continue
             entering = [y2[group_id_k, a] for a in in_arcs.get(v, ())]
             leaving = [y2[group_id_k, a] for a in out_arcs.get(v, ())]
             if entering:
@@ -808,6 +831,18 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     """
     logging.info("Started running the model with iterative cut generation.")
 
+    # No edges survive in the (possibly preprocessed) graph: there is no MIP
+    # to solve (sum() over an empty edge set is a plain 0, and HiGHS's
+    # model.minimize() requires an actual linear-expression object, not a
+    # bare int -- passing one crashes deep inside the Python bindings rather
+    # than reporting infeasibility). A single surviving node means every
+    # terminal group already coincides there (feasible at zero cost); two or
+    # more with no edges between them can never be connected.
+    if not steiner_problem.edges:
+        if steiner_problem.graph.number_of_nodes() <= 1:
+            return 0.0, 0.0, 0.0, []
+        return float("inf"), 0.0, float("inf"), []
+
     objective_expr = sum(
         x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
         for e in steiner_problem.edges
@@ -1256,7 +1291,11 @@ def build_model_gurobi(
                 model.addConstr(gp.quicksum(incoming) == 0)
 
     # Constraint 7: indegree at most outdegree for Steiner points
-    for v in steiner_problem.steiner_points:
+    # See the HiGHS build_model's own Constraint 7 for why this iterates
+    # steiner_problem.nodes rather than steiner_points' raw `set` order.
+    for v in steiner_problem.nodes:
+        if v not in steiner_problem.steiner_points:
+            continue
         entering = [y1[a] for a in in_arcs.get(v, ())]
         leaving = [y1[a] for a in out_arcs.get(v, ())]
         if entering:
@@ -1265,13 +1304,14 @@ def build_model_gurobi(
 
     # Constraint 8: indegree at most outdegree per terminal group
     for group_id_k in group_indices:
-        remaining_vertices = (
-            set(steiner_problem.nodes)
-            - set(terminal_groups_without_root(
-                steiner_problem.terminal_groups, steiner_problem.roots, group_id_k
-            ))
-        )
-        for v in remaining_vertices:
+        # See the HiGHS build_model's own Constraint 8 for why this iterates
+        # steiner_problem.nodes in its own order rather than over a `set`.
+        excluded = set(terminal_groups_without_root(
+            steiner_problem.terminal_groups, steiner_problem.roots, group_id_k
+        ))
+        for v in steiner_problem.nodes:
+            if v in excluded:
+                continue
             entering = [y2[group_id_k, a] for a in in_arcs.get(v, ())]
             leaving = [y2[group_id_k, a] for a in out_arcs.get(v, ())]
             if entering:
@@ -1337,6 +1377,14 @@ def run_model_gurobi(
     from gurobipy import GRB
 
     logging.info("Started running the Gurobi model with lazy cut callback.")
+
+    # See run_model's own guard for the HiGHS backend: no edges survive in
+    # the (possibly preprocessed) graph, so there is nothing to connect the
+    # terminal groups with.
+    if not steiner_problem.edges:
+        if steiner_problem.graph.number_of_nodes() <= 1:
+            return 0.0, 0.0, 0.0, []
+        return float("inf"), 0.0, float("inf"), []
 
     group_indices = range(len(steiner_problem.terminal_groups))
 
