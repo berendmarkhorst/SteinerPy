@@ -183,6 +183,51 @@ def test_steiner_tree_example_from_notebook():
     expected_edges = {('A', 'C'), ('B', 'C'), ('C', 'D')}
     assert selected_undirected == expected_edges, f"Expected edges {expected_edges}, got {selected_undirected}"
 
+
+def test_zero_edge_graph_with_unconnected_terminals_raises():
+    """A zero-edge graph with >= 1 terminal group still holding >= 2 distinct
+    members is infeasible: nothing can connect them. get_solution() must raise
+    a clean RuntimeError instead of falling through to the solver."""
+    G = nx.Graph()
+    G.add_node('A')
+    G.add_node('B')
+
+    with pytest.raises(RuntimeError):
+        SteinerProblem(G, [['A', 'B']], preprocess=False).get_solution()
+
+
+def test_zero_edge_graph_with_budget_does_not_crash():
+    """Same zero-edge scenario as above, but budget-constrained: unlike the
+    plain path this is not infeasible (the budget model tolerates
+    disconnected terminals via penalty variables), so it must solve cleanly
+    instead of raising or hitting the highspy AttributeError that an empty
+    `sum()` over `self.edges` used to trigger in the budget constraint."""
+    G = nx.Graph()
+    G.add_node("A")
+    G.add_node("B")
+
+    solution = SteinerProblem(
+        G, [["A", "B"]], preprocess=False, budget=10
+    ).get_solution()
+    assert solution.selected_edges == []
+    assert solution.connected_terminals < solution.total_terminals
+    assert solution.gap == pytest.approx(0.0)
+
+
+def test_duplicate_terminal_in_group_is_trivially_solved():
+    """A group with a repeated terminal (e.g. ['A', 'A']) has only one
+    *distinct* member, so it is already trivially solved even with zero
+    edges. get_solution() must not confuse the raw group length with the
+    distinct terminal count and falsely raise the zero-edge RuntimeError."""
+    G = nx.Graph()
+    G.add_node("A")
+
+    solution = SteinerProblem(G, [["A", "A"]], preprocess=False).get_solution()
+    assert solution.selected_edges == []
+    assert solution.objective == 0.0
+    assert solution.gap == pytest.approx(0.0)
+
+
 def test_prize_collecting_problem_initialization():
     """Test PrizeCollectingProblem initialization."""
     G = nx.Graph()

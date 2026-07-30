@@ -508,6 +508,9 @@ class BaseSteinerProblem:
         :return: :class:`Solution` (or :class:`BudgetSolution` when a budget is set).
         :raises ValueError: if an unknown solver name is provided.
         :raises ImportError: if ``solver="gurobi"`` but gurobipy is not installed.
+        :raises RuntimeError: if graph reduction left an empty graph while a
+            group still holds >= 2 distinct terminals — the reduced instance is
+            infeasible (no Steiner tree can connect them).
         """
         solver = solver.lower()
         if solver not in ("highs", "gurobi"):
@@ -522,9 +525,13 @@ class BaseSteinerProblem:
             _check_gurobipy()
 
         # Trivial after preprocessing: when every group is down to <= 1
-        # terminal (e.g. terminal contraction solved the whole instance), the
+        # *distinct* terminal (e.g. terminal contraction solved the whole
+        # instance, or the caller passed duplicate terminals in a group), the
         # optimum is exactly the fixed edges — nothing is left to optimise.
-        if self.budget is None and all(len(g) <= 1 for g in self.terminal_groups):
+        # len(set(g)) (not len(g)) so a group like ['A', 'A'] -- one distinct
+        # terminal repeated -- is correctly treated as trivial instead of
+        # falling through to the zero-edge infeasibility guard below.
+        if self.budget is None and all(len(set(g)) <= 1 for g in self.terminal_groups):
             import time as _time_triv
             _t0 = _time_triv.time()
             original = (map_solution_to_original([], self.reduction_tracker, self.graph)
@@ -534,6 +541,26 @@ class BaseSteinerProblem:
                 objective=self._fixed_cost(),
                 selected_edges=[], original_selected_edges=original,
                 was_preprocessed=self.preprocess,
+            )
+
+        # Reduction emptied the graph but left >= 2 distinct terminals in some
+        # group: since every fixed edge (the only way an edge leaves self.graph
+        # without a plain non-optimal-edge deletion) also merges its endpoints
+        # in self.terminal_groups (see _contract_terminal_edge), reaching this
+        # point with a still-multi-terminal group and zero edges means no edge
+        # remains anywhere to connect them -- the reduced instance is
+        # infeasible, not solved. Mirrors PartialTerminalSteinerProblem.
+        # get_solution's own "graph has 0 edges" guard; without this, an empty
+        # edge set falls through to build_model/run_model, whose objective
+        # `sum(x[e] * ... for e in self.edges)` collapses to the plain int 0
+        # for an empty self.edges, and highspy's setObjective unconditionally
+        # reads `expr.bounds`, raising `AttributeError: 'int' object has no
+        # attribute 'bounds'` deep inside the solver instead of a clean,
+        # already-anticipated infeasibility error.
+        if self.budget is None and self.graph.number_of_edges() == 0:
+            raise RuntimeError(
+                "no Steiner tree connects the terminal groups (graph reduction "
+                "left an empty graph with unconnected terminals remaining)"
             )
 
         # Heuristic-only mode: return the dual-ascent primal with no ILP. Much

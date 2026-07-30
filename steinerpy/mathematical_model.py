@@ -1137,11 +1137,21 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
     # Flow constraints that respect the optional connectivity
     model, f = add_optional_flow_constraints(model, steiner_problem, y2, connection_vars)
 
-    # Budget constraint: total edge cost <= budget
-    model.addConstr(
-        sum(x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
-            for e in steiner_problem.edges) <= steiner_problem.budget
-    )
+    # Budget constraint: total edge cost <= budget. Skip when the graph has no
+    # edges: an empty edge set trivially respects any non-negative budget (cost
+    # 0), but `sum(... for e in steiner_problem.edges)` over an empty generator
+    # collapses to the plain Python int 0, so `0 <= budget` evaluates eagerly to
+    # a bool instead of building a HighsExpr -- highspy's addConstr
+    # unconditionally reads `expr.bounds`, raising
+    # AttributeError: 'bool' object has no attribute 'bounds'.
+    if steiner_problem.edges:
+        model.addConstr(
+            sum(
+                x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
+                for e in steiner_problem.edges
+            )
+            <= steiner_problem.budget
+        )
 
     return model, x, y1, y2, z, f, penalty_vars
 
