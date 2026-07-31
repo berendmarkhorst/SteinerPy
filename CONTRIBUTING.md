@@ -3,6 +3,12 @@
 Thank you for considering contributing to SteinerPy! We welcome bug reports,
 feature requests, documentation improvements, and pull requests.
 
+## Code of Conduct
+
+Participation in this project is governed by our
+[Code of Conduct](.github/CODE_OF_CONDUCT.md). Please read it before opening an
+issue or pull request.
+
 ## Before you start
 
 Conversations about new features and non-trivial changes belong in the
