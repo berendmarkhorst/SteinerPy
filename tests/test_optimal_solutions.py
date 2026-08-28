@@ -15,6 +15,7 @@ import pytest
 
 from steinerpy import (
     SteinerProblem,
+    DirectedSteinerProblem,
     OptimalSolutionPool,
     GroupSteinerProblem,
     PartialTerminalSteinerProblem,
@@ -233,3 +234,68 @@ def test_gurobi_optimal_solutions_matches_highs():
 
     assert pool_gurobi.exhausted == pool_highs.exhausted
     assert edge_sets(pool_gurobi) == edge_sets(pool_highs)
+
+
+def test_negative_limit_raises_value_error():
+    g = diamond_graph()
+    problem = SteinerProblem(g, [["A", "D"]], preprocess=False)
+    with pytest.raises(ValueError, match="limit"):
+        problem.get_optimal_solutions(limit=-1)
+
+
+def test_directed_antiparallel_arcs_not_treated_as_the_same_edge():
+    """steinerpy#42: no-good cuts keyed with frozenset(e) discard arc
+    direction, so an antiparallel pair (u, v) / (v, u) collapses to one key.
+    The re-solve then fails to exclude the previous solution and returns it
+    again, which used to trip the "sol_key not in found" assertion."""
+    g = nx.DiGraph()
+    g.add_weighted_edges_from([
+        ("A", "B", 1),
+        ("B", "A", 1),
+        ("B", "C", 1),
+    ])
+
+    problem = DirectedSteinerProblem(g, "A", ["C"])
+    pool = problem.get_optimal_solutions(limit=10)
+
+    assert pool.exhausted is True
+    assert len(pool) == 1
+    sol = list(pool)[0]
+    assert sol.objective == 2.0
+    assert set(sol.selected_edges) == {("A", "B"), ("B", "C")}
+
+
+def test_time_limit_zero_stops_with_not_exhausted_instead_of_crashing():
+    """steinerpy#42: a probe that times out before ever solving the MIP used
+    to fall through to an unsolved model, reporting a bogus zero-cost empty
+    solution on every iteration and tripping the duplicate-solution
+    assertion. It must instead cleanly report exhausted=False with no
+    (unproven) solutions."""
+    g = diamond_graph()
+    problem = SteinerProblem(g, [["A", "D"]], preprocess=False)
+
+    pool = problem.get_optimal_solutions(limit=10, time_limit=0)
+
+    assert isinstance(pool, OptimalSolutionPool)
+    assert pool.exhausted is False
+    assert len(pool) == 0
+
+
+def test_zero_cost_unused_edge_not_counted_as_distinct_solution():
+    """steinerpy#42: a zero-cost edge disconnected from the tree could be
+    toggled on in the `x` indicator without being used by the arborescence
+    (`y1`), free of objective cost, so the no-good cut (keyed on `x`) counted
+    it as a second "distinct" solution even though the induced edge set is
+    disconnected and not a valid Steiner tree."""
+    g = nx.Graph()
+    g.add_edge("A", "C", weight=1)
+    g.add_edge("D", "E", weight=0)  # unrelated, zero-cost, not needed
+
+    problem = SteinerProblem(g, [["A", "C"]], preprocess=False)
+    pool = problem.get_optimal_solutions(limit=10)
+
+    assert pool.exhausted is True
+    assert len(pool) == 1
+    sol = list(pool)[0]
+    assert sol.objective == 1.0
+    assert set(sol.selected_edges) == {("A", "C")}

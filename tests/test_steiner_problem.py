@@ -1470,10 +1470,11 @@ def test_run_model_exhausted_time_limit_reports_infinite_gap():
     prob = SteinerProblem(g, [[0, 3, 6]], preprocess=False)
 
     model, x, y1, y2, z = build_model(prob, time_limit=0.0, logfile="", threads=None)
-    gap, _runtime, _obj, edges = run_model(model, prob, x, y2, z)
+    gap, _runtime, _obj, edges, status = run_model(model, prob, x, y2, z)
     # Deadline hit before any cut round -> not proven optimal -> no spurious ~0 gap.
     assert gap == float("inf")
     assert edges == []
+    assert status == "incomplete"
 
 
 def test_solve_sap_highs_exhausted_time_limit_gap():

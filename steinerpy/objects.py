@@ -684,13 +684,13 @@ class BaseSteinerProblem:
                 seed_cuts_gurobi(model, y2, z, da_cuts)
                 apply_fixes_gurobi(model, x, y1, y2, fixing)
                 set_gurobi_cutoff(model, da_ub)
-            gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
+            gap, runtime, objective, selected_edges, _status = run_model_gurobi(model, self, x, y2, z)
             if da_cuts is not None and _math.isinf(objective):
                 # The dual-ascent acceleration (cutoff / fixing / seeded cuts)
                 # over-constrained the model into infeasibility although the
                 # instance is feasible; re-solve from a clean model.
                 model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
-                gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
+                gap, runtime, objective, selected_edges, _status = run_model_gurobi(model, self, x, y2, z)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
             reapply_start = None
@@ -707,12 +707,12 @@ class BaseSteinerProblem:
                 # callback to re-apply the dual-ascent primal afterwards.
                 _m, _x, _p = model, x, da_primal
                 reapply_start = lambda: set_highs_warm_start(_m, _x, _p)  # noqa: E731
-            gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z, reapply_start=reapply_start)
+            gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z, reapply_start=reapply_start)
             if da_cuts is not None and _math.isinf(objective):
                 # The acceleration over-constrained a feasible instance into
                 # infeasibility; re-solve from a clean, un-accelerated model.
                 model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
-                gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
+                gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z)
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
@@ -780,9 +780,15 @@ class BaseSteinerProblem:
             ``"gurobi"``.
         :param threads: solver thread count.
         :return: :class:`OptimalSolutionPool` holding every distinct optimal
-            solution found and whether enumeration was exhaustive.
-        :raises ValueError: if ``preprocess=True`` or the solver name is
-            unknown.
+            solution found and whether enumeration was exhaustive. Exhaustion
+            is only ever ``True`` when a probe solve *proved* no more
+            tied-optimal solutions exist (infeasibility of the no-good-cut
+            model); a probe that merely ran out of ``time_limit`` before
+            proving anything stops enumeration early with ``exhausted=False``,
+            the same "there might be more, we didn't look" signal already
+            used when ``limit`` is reached.
+        :raises ValueError: if ``preprocess=True``, ``limit`` is negative, or
+            the solver name is unknown.
         :raises NotImplementedError: for budget-constrained instances, or for
             problem classes whose :meth:`get_solution` transforms the model in
             a way this method's plain edge-indicator enumeration can't
@@ -801,6 +807,8 @@ class BaseSteinerProblem:
                 "instances (a different model, connection/penalty variables "
                 "instead of a plain edge indicator, is used)."
             )
+        if limit < 0:
+            raise ValueError(f"limit must be >= 0, got {limit}.")
         solver = solver.lower()
         if solver not in ("highs", "gurobi"):
             raise ValueError(
@@ -813,7 +821,17 @@ class BaseSteinerProblem:
         else:
             build_fn, run_fn = build_model, run_model
 
-        import math
+        # Directed arcs are oriented: (u, v) and (v, u) are different arcs and
+        # must be tracked as such, or a no-good cut built from one direction
+        # would also (incorrectly) exclude re-selecting the other -- an
+        # antiparallel pair then makes the model re-return the very solution
+        # the cut was meant to rule out. Undirected edges have no inherent
+        # orientation (networkx may report either endpoint order), so those
+        # are still normalised with frozenset.
+        directed = isinstance(self.graph, nx.DiGraph)
+
+        def _edge_key(e):
+            return tuple(e) if directed else frozenset(e)
 
         # found: membership-only set of previously-seen solutions -- never
         # iterated to produce output order, so a plain set of frozensets (not
@@ -829,13 +847,28 @@ class BaseSteinerProblem:
                 self, time_limit=time_limit, logfile=log_file, threads=threads
             )
             for sol_key in found:
-                s1 = [x[e] for e in self.edges if frozenset(e) in sol_key]
-                s0 = [x[e] for e in self.edges if frozenset(e) not in sol_key]
+                s1 = [x[e] for e in self.edges if _edge_key(e) in sol_key]
+                s0 = [x[e] for e in self.edges if _edge_key(e) not in sol_key]
                 model.addConstr(sum((1 - v) for v in s1) + sum(v for v in s0) >= 1)
-            gap, runtime, objective, selected_edges = run_fn(model, self, x, y2, z)
+            gap, runtime, objective, selected_edges, status = run_fn(model, self, x, y2, z)
 
-            if objective is None or math.isinf(objective):
+            if status == "infeasible":
+                # Proven: no distinct optimal solution remains beyond what's
+                # already in `solutions`.
                 exhausted = True
+                break
+            if status == "incomplete":
+                # The time limit (or another non-optimal termination) was hit
+                # before this probe could be proven optimal or infeasible.
+                # Any objective/selected_edges returned are an unproven
+                # incumbent, not a confirmed tied-optimal solution or a proof
+                # there are no more -- stop without asserting either.
+                logger.warning(
+                    "get_optimal_solutions: probe %d did not converge within "
+                    "time_limit=%s; stopping enumeration early with "
+                    "exhausted=False.", len(solutions), time_limit,
+                )
+                exhausted = False
                 break
             if best_obj is None:
                 best_obj = objective
@@ -848,7 +881,7 @@ class BaseSteinerProblem:
                 exhausted = False
                 break
 
-            sol_key = frozenset(frozenset(e) for e in selected_edges)
+            sol_key = frozenset(_edge_key(e) for e in selected_edges)
             assert sol_key not in found
             solutions.append(Solution(
                 gap=gap, runtime=runtime, objective=objective,
@@ -1840,10 +1873,10 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
 
         if solver == "gurobi":
             model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
-            gap, runtime, objective, _ = run_model_gurobi(model, self, x, y2, z)
+            gap, runtime, objective, _, _status = run_model_gurobi(model, self, x, y2, z)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
-            gap, runtime, objective, _ = run_model(model, self, x, y2, z)
+            gap, runtime, objective, _, _status = run_model(model, self, x, y2, z)
 
         # Use arc (y1) variables for the actual directed tree structure instead of edge
         # (x) variables, to avoid degenerate zero-weight cross-edges being included.
