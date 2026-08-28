@@ -1477,6 +1477,31 @@ def test_run_model_exhausted_time_limit_reports_infinite_gap():
     assert status == "incomplete"
 
 
+def test_run_model_reports_incomplete_on_non_infeasible_non_optimal_status(monkeypatch):
+    """A solve that neither proves optimality nor infeasibility (e.g. hits
+    the time limit mid-solve with no usable incumbent, surfaced by HiGHS as
+    kUnbounded/kObjectiveBound/kUnboundedOrInfeasible, or simply an invalid
+    solution) must be reported as status="incomplete", not lumped in with a
+    genuine kInfeasible proof. Forced deterministically via monkeypatch since
+    provoking this status combination from real solver timing is flaky."""
+    import highspy as hp
+    from steinerpy.mathematical_model import build_model, run_model
+
+    g = nx.cycle_graph(8)
+    for a, b in g.edges:
+        g.edges[a, b]["weight"] = 1
+    prob = SteinerProblem(g, [[0, 3, 6]], preprocess=False)
+
+    model, x, y1, y2, z = build_model(prob, time_limit=5.0, logfile="", threads=None)
+    monkeypatch.setattr(model, "getModelStatus", lambda: hp.HighsModelStatus.kUnbounded)
+
+    gap, _runtime, _obj, edges, status = run_model(model, prob, x, y2, z)
+
+    assert status == "incomplete"
+    assert gap == float("inf")
+    assert edges == []
+
+
 def test_solve_sap_highs_exhausted_time_limit_gap():
     from steinerpy.mathematical_model import solve_sap_highs
 

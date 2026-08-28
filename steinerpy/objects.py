@@ -890,6 +890,15 @@ class BaseSteinerProblem:
             ))
             found.append(sol_key)
 
+            if not self.edges:
+                # No edge variables exist to build a no-good cut from (e.g. a
+                # single-node instance where every terminal group already
+                # coincides): the empty edge set is the only feasible
+                # solution, so a second probe would return the exact same
+                # trivial result and trip the duplicate-solution assert above.
+                exhausted = True
+                break
+
         return OptimalSolutionPool(solutions, exhausted)
 
 

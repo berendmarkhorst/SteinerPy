@@ -299,3 +299,22 @@ def test_zero_cost_unused_edge_not_counted_as_distinct_solution():
     sol = list(pool)[0]
     assert sol.objective == 1.0
     assert set(sol.selected_edges) == {("A", "C")}
+
+
+def test_single_node_trivial_instance_does_not_repeat_forever():
+    """A single-node, zero-edge instance has exactly one feasible edge set
+    (the empty one): there is nothing to build a no-good cut from, so a naive
+    second probe would return the identical trivial solution and trip the
+    duplicate-solution assert. get_optimal_solutions must recognise this and
+    stop after the first (and only) solution instead."""
+    g = nx.Graph()
+    g.add_node("A")
+
+    problem = SteinerProblem(g, [["A"]], preprocess=False)
+    pool = problem.get_optimal_solutions(limit=10)
+
+    assert pool.exhausted is True
+    assert len(pool) == 1
+    sol = list(pool)[0]
+    assert sol.objective == 0.0
+    assert sol.selected_edges == []
