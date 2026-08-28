@@ -8,6 +8,7 @@ using the HiGHS solver with NetworkX graphs.
 from .objects import (
     SteinerProblem,
     Solution,
+    OptimalSolutionPool,
     PrizeCollectingProblem,
     PrizeCollectingSolution,
     DirectedPrizeCollectingProblem,
@@ -35,6 +36,7 @@ __email__ = "berend.markhorst@cwi.nl"
 __all__ = [
     "SteinerProblem",
     "Solution",
+    "OptimalSolutionPool",
     "PrizeCollectingProblem",
     "PrizeCollectingSolution",
     "DirectedPrizeCollectingProblem",

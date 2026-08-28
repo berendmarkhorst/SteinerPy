@@ -741,6 +741,125 @@ class BaseSteinerProblem:
 
         return solution
 
+    def get_optimal_solutions(
+        self, limit: int = 10, time_limit: float = 300, log_file: str = "",
+        solver: str = "highs", threads: int = None,
+    ) -> 'OptimalSolutionPool':
+        """
+        Enumerate up to ``limit`` distinct optimal (equal-cost) Steiner trees.
+
+        Unlike :meth:`get_solution`, which returns one arbitrary optimum, this
+        method solves repeatedly with a no-good cut excluding every edge set
+        already found, so that ties for the optimal objective are surfaced
+        instead of silently discarded. Requires ``preprocess=False``: graph
+        reduction can arbitrarily collapse tied-cost alternatives (e.g.
+        terminal contraction) before any ILP runs, silently erasing them from
+        enumeration.
+
+        Every speedup dispatch used by :meth:`get_solution` is bypassed
+        (trivial-instance early exit, ``exact=False`` heuristic mode,
+        biconnected-component decomposition, the Dreyfus-Wagner DP, and the
+        dual-ascent accelerator) — in particular, dual ascent's reduced-cost
+        variable fixing is derived from a single incumbent and could soundly
+        fix away an edge that appears only in a different tied-cost solution,
+        so ``self.dual_ascent`` is ignored here.
+
+        On ``solver="gurobi"`` this uses the same external no-good-cut loop as
+        HiGHS (rebuilding the model fresh each iteration), not Gurobi's native
+        solution pool (``PoolSearchMode``) — whether that pool respects this
+        model's lazy connectivity cuts is an open, version-dependent question
+        that cannot be verified in this project's test suite, so the provably
+        correct external loop is used for both backends. This gives up
+        Gurobi's single-solve pooling speed advantage; a future PR could
+        revisit this with a licensed Gurobi environment to verify it.
+
+        :param limit: maximum number of optimal solutions to return.
+        :param time_limit: time limit in seconds, per solve.
+        :param log_file: path to the log file.
+        :param solver: which MIP solver to use — ``"highs"`` (default) or
+            ``"gurobi"``.
+        :param threads: solver thread count.
+        :return: :class:`OptimalSolutionPool` holding every distinct optimal
+            solution found and whether enumeration was exhaustive.
+        :raises ValueError: if ``preprocess=True`` or the solver name is
+            unknown.
+        :raises NotImplementedError: for budget-constrained instances, or for
+            problem classes whose :meth:`get_solution` transforms the model in
+            a way this method's plain edge-indicator enumeration can't
+            replicate (see each class's override).
+        """
+        if self.preprocess:
+            raise ValueError(
+                "get_optimal_solutions requires preprocess=False: graph reduction "
+                "can arbitrarily collapse tied-cost alternatives (e.g. terminal "
+                "contraction) before any ILP runs, silently erasing them from "
+                "enumeration. Reconstruct the problem with preprocess=False."
+            )
+        if self.budget is not None:
+            raise NotImplementedError(
+                "get_optimal_solutions does not support budget-constrained "
+                "instances (a different model, connection/penalty variables "
+                "instead of a plain edge indicator, is used)."
+            )
+        solver = solver.lower()
+        if solver not in ("highs", "gurobi"):
+            raise ValueError(
+                f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'."
+            )
+        if solver == "gurobi":
+            from .mathematical_model import _check_gurobipy
+            _check_gurobipy()
+            build_fn, run_fn = build_model_gurobi, run_model_gurobi
+        else:
+            build_fn, run_fn = build_model, run_model
+
+        import math
+
+        # found: membership-only set of previously-seen solutions -- never
+        # iterated to produce output order, so a plain set of frozensets (not
+        # an OrderedSet) doesn't reintroduce the PYTHONHASHSEED nondeterminism
+        # PR #38 fixed.
+        found: List[frozenset] = []
+        solutions: List[Solution] = []
+        best_obj = None
+        exhausted = False
+
+        for _ in range(limit + 1):  # probe ONE iteration past `limit`
+            model, x, y1, y2, z = build_fn(
+                self, time_limit=time_limit, logfile=log_file, threads=threads
+            )
+            for sol_key in found:
+                s1 = [x[e] for e in self.edges if frozenset(e) in sol_key]
+                s0 = [x[e] for e in self.edges if frozenset(e) not in sol_key]
+                model.addConstr(sum((1 - v) for v in s1) + sum(v for v in s0) >= 1)
+            gap, runtime, objective, selected_edges = run_fn(model, self, x, y2, z)
+
+            if objective is None or math.isinf(objective):
+                exhausted = True
+                break
+            if best_obj is None:
+                best_obj = objective
+            elif objective > best_obj + 1e-9:
+                exhausted = True
+                break
+            if len(solutions) >= limit:
+                # A further tied-optimal solution exists beyond `limit` --
+                # discard it, don't return it.
+                exhausted = False
+                break
+
+            sol_key = frozenset(frozenset(e) for e in selected_edges)
+            assert sol_key not in found
+            solutions.append(Solution(
+                gap=gap, runtime=runtime, objective=objective,
+                selected_edges=selected_edges, original_selected_edges=selected_edges,
+                was_preprocessed=False,
+            ))
+            found.append(sol_key)
+
+        return OptimalSolutionPool(solutions, exhausted)
+
+
 class Solution:
     def __init__(self, gap: float, runtime: float, objective: float, 
                  selected_edges: List[Tuple], original_selected_edges: List[Tuple] = None,
@@ -756,6 +875,30 @@ class Solution:
     def edges(self):
         """Return the edges in the original graph."""
         return self.original_selected_edges
+
+
+class OptimalSolutionPool:
+    """Result of :meth:`BaseSteinerProblem.get_optimal_solutions`.
+
+    :ivar solutions: distinct optimal Solution objects found, all sharing the
+        same (minimum) objective value.
+    :ivar exhausted: True iff every optimal solution was found — enumeration
+        stopped because no further tied-cost alternative exists, not because
+        ``limit`` was reached.
+    """
+
+    def __init__(self, solutions: List[Solution], exhausted: bool):
+        self.solutions = solutions
+        self.exhausted = exhausted
+
+    def __len__(self):
+        return len(self.solutions)
+
+    def __iter__(self):
+        return iter(self.solutions)
+
+    def __repr__(self):
+        return f"OptimalSolutionPool({len(self.solutions)} solution(s), exhausted={self.exhausted})"
 
 
 class SteinerProblem(BaseSteinerProblem):
@@ -840,6 +983,13 @@ class PartialTerminalSteinerProblem(SteinerProblem):
 
         self._ptstp_big_m = big_m
         super().__init__(transformed, terminal_groups, weight=weight, **kwargs)
+
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for "
+            "PartialTerminalSteinerProblem: the objective needs the Big-M "
+            "penalty subtracted per solution; see steinerpy#41 follow-up."
+        )
 
     def get_solution(self, *args, **kwargs) -> 'Solution':
         import math as _math
@@ -963,6 +1113,15 @@ class GroupSteinerProblem(SteinerProblem):
                     augmented.add_edge(g_node, v, **{weight: 0})
         return augmented, super_terminals
 
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for GroupSteinerProblem: "
+            "two distinct raw ILP solutions can strip to the same real edge set "
+            "(differing only in which connector vertex was used), needing "
+            "de-dup on the stripped set, not the raw one; see steinerpy#41 "
+            "follow-up."
+        )
+
     def get_solution(self, *args, **kwargs) -> 'Solution':
         import math as _math
         sol = super().get_solution(*args, **kwargs)
@@ -1074,6 +1233,14 @@ class RectilinearSteinerProblem(SteinerProblem):
         grid, terminals = hanan_grid(self.points, weight=weight)
         self._rsmt_terminals = set(terminals)
         super().__init__(grid, [terminals], weight=weight, **kwargs)
+
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for "
+            "RectilinearSteinerProblem: solutions are wrapped in "
+            "RectilinearSolution (segments/steiner_points), which "
+            "OptimalSolutionPool does not hold; see steinerpy#41 follow-up."
+        )
 
     def get_solution(self, *args, **kwargs) -> 'RectilinearSolution':
         sol = super().get_solution(*args, **kwargs)
@@ -1322,6 +1489,15 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             lb = da.lower_bound - ctx.offset
             gap = max(0.0, (pcstp_obj - lb) / max(1.0, abs(pcstp_obj)))
         return self._pc_make_solution(ctx, edges, nodes, pcstp_obj, gap, _time.time() - t0)
+
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for "
+            "PrizeCollectingProblem (and its subclasses): the penalty ILP "
+            "(node_vars/penalty_vars) or the SAP-transform path has no shared "
+            "plain edge indicator to enumerate against; see steinerpy#41 "
+            "follow-up."
+        )
 
     def get_solution(self, time_limit: float = 300, log_file: str = "",
                      solver: str = "highs", pc_transform: bool = None,
@@ -1645,6 +1821,14 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         # The transformed graph is a DiGraph; preprocessing is not applicable
         super().__init__(transformed_graph, new_terminal_groups, weight=weight,
                          preprocess=False, **kwargs)
+
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for "
+            "NodeWeightedSteinerProblem: get_solution reads the tree from arc "
+            "(y1) values, not the plain edge indicator x this method's "
+            "no-good cut enumerates against; see steinerpy#41 follow-up."
+        )
 
     def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs", threads: int = None) -> 'NodeWeightedSolution':
         """Solve and map solution back to the original node-weighted graph."""
