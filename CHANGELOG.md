@@ -89,6 +89,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- **`get_optimal_solutions()` correctness fixes** (PR #42 review): the no-good
+  cuts identified edges with `frozenset(e)`, discarding arc orientation, so an
+  antiparallel arc pair `(u, v)`/`(v, u)` in a directed graph collapsed to one
+  key and a cut could fail to exclude the previous solution — directed arcs
+  now keep their ordered `tuple` identity, only undirected edges are
+  `frozenset`-normalised. The directed-cut model's `x` <-> `y1` link
+  (Constraint 3) is now an equality instead of `y1 <= x`, so a zero-cost edge
+  unused by the tree can no longer be toggled on in `x` for free and counted
+  as a spurious extra "distinct" solution. The enumeration loop now inspects
+  the solver status (`run_model`/`run_model_gurobi` return an added `status`
+  of `"optimal"`/`"infeasible"`/`"incomplete"`) instead of only checking
+  whether the objective is finite: a probe that times out before proving
+  optimality or infeasibility (e.g. `time_limit=0`) used to either be
+  silently treated as proof enumeration is exhausted, or, when the model was
+  never actually solved, fall through to a bogus zero-cost empty "solution"
+  repeated across iterations and trip an internal duplicate-solution
+  assertion. Such a probe now stops enumeration with `exhausted=False`
+  instead of raising or misreporting. `limit < 0` now raises `ValueError`
+  instead of silently returning an empty, non-exhausted pool.
 - **Zero-edge reductions crashed instead of reporting infeasibility, on both
   the plain and budget-constrained solve paths**: when graph reduction left an
   empty `self.graph` while a group still held >= 2 distinct terminals, the

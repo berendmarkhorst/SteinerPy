@@ -52,9 +52,11 @@ It returns an `OptimalSolutionPool`:
 
 - `pool.solutions` — the distinct optimal `Solution` objects found, all
   sharing the same (minimum) objective value.
-- `pool.exhausted` — `True` iff every optimal solution was found (enumeration
-  stopped because no further tied-cost alternative exists); `False` if
-  `limit` was reached while ties still remained.
+- `pool.exhausted` — `True` iff a probe solve *proved* no further tied-cost
+  alternative exists. `False` if `limit` was reached while ties still
+  remained, or if a probe hit `time_limit` (or otherwise terminated) before
+  it could be proven optimal or infeasible — in the latter case enumeration
+  stops early rather than returning an unproven solution.
 
 ### Example: the diamond-graph tie
 
