@@ -108,6 +108,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assertion. Such a probe now stops enumeration with `exhausted=False`
   instead of raising or misreporting. `limit < 0` now raises `ValueError`
   instead of silently returning an empty, non-exhausted pool.
+- **`get_optimal_solutions()` correctness fixes, round 2** (PR #42 review):
+  the zero-cost-edge fix to Constraint 3 (`x` <-> `y1` equality) was only
+  applied to the HiGHS builder; `build_model_gurobi()` still used `<=`, so an
+  unused zero-cost edge could still be toggled on in `x` and double-counted
+  as a distinct solution when `solver="gurobi"` — the Gurobi builder now
+  mirrors the equality. Also, `run_model()`/`run_model_gurobi()` are public
+  (re-exported from `steinerpy`), and adding the `status` return value as an
+  unconditional 5th tuple element broke existing 4-value callers; both now
+  take a `return_status: bool = False` parameter and default back to their
+  original 4-value `(gap, runtime, objective, selected_edges)` signature,
+  with `status` only appended when `return_status=True`.
 - **Zero-edge reductions crashed instead of reporting infeasibility, on both
   the plain and budget-constrained solve paths**: when graph reduction left an
   empty `self.graph` while a group still held >= 2 distinct terminals, the

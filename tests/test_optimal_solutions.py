@@ -301,6 +301,38 @@ def test_zero_cost_unused_edge_not_counted_as_distinct_solution():
     assert set(sol.selected_edges) == {("A", "C")}
 
 
+def test_gurobi_zero_cost_unused_edge_not_counted_as_distinct_solution():
+    """Same as test_zero_cost_unused_edge_not_counted_as_distinct_solution but
+    against the Gurobi backend: build_model_gurobi's own Constraint 3 had the
+    same "<=" (rather than "==") link between y1 and x, so it needed the same
+    fix (steinerpy#42)."""
+    if importlib.util.find_spec("gurobipy") is None:
+        pytest.skip("gurobipy is not installed.")
+    try:
+        import gurobipy as gp
+
+        env = gp.Env(empty=True)
+        env.setParam("OutputFlag", 0)
+        env.start()
+        gp.Model(env=env).dispose()
+        env.dispose()
+    except Exception:
+        pytest.skip("Gurobi license not available.")
+
+    g = nx.Graph()
+    g.add_edge("A", "C", weight=1)
+    g.add_edge("D", "E", weight=0)  # unrelated, zero-cost, not needed
+
+    problem = SteinerProblem(g, [["A", "C"]], preprocess=False)
+    pool = problem.get_optimal_solutions(limit=10, solver="gurobi")
+
+    assert pool.exhausted is True
+    assert len(pool) == 1
+    sol = list(pool)[0]
+    assert sol.objective == 1.0
+    assert set(sol.selected_edges) == {("A", "C")}
+
+
 def test_single_node_trivial_instance_does_not_repeat_forever():
     """A single-node, zero-edge instance has exactly one feasible edge set
     (the empty one): there is nothing to build a no-good cut from, so a naive

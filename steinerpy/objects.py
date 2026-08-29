@@ -684,13 +684,13 @@ class BaseSteinerProblem:
                 seed_cuts_gurobi(model, y2, z, da_cuts)
                 apply_fixes_gurobi(model, x, y1, y2, fixing)
                 set_gurobi_cutoff(model, da_ub)
-            gap, runtime, objective, selected_edges, _status = run_model_gurobi(model, self, x, y2, z)
+            gap, runtime, objective, selected_edges, _status = run_model_gurobi(model, self, x, y2, z, return_status=True)
             if da_cuts is not None and _math.isinf(objective):
                 # The dual-ascent acceleration (cutoff / fixing / seeded cuts)
                 # over-constrained the model into infeasibility although the
                 # instance is feasible; re-solve from a clean model.
                 model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
-                gap, runtime, objective, selected_edges, _status = run_model_gurobi(model, self, x, y2, z)
+                gap, runtime, objective, selected_edges, _status = run_model_gurobi(model, self, x, y2, z, return_status=True)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
             reapply_start = None
@@ -707,12 +707,12 @@ class BaseSteinerProblem:
                 # callback to re-apply the dual-ascent primal afterwards.
                 _m, _x, _p = model, x, da_primal
                 reapply_start = lambda: set_highs_warm_start(_m, _x, _p)  # noqa: E731
-            gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z, reapply_start=reapply_start)
+            gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z, reapply_start=reapply_start, return_status=True)
             if da_cuts is not None and _math.isinf(objective):
                 # The acceleration over-constrained a feasible instance into
                 # infeasibility; re-solve from a clean, un-accelerated model.
                 model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
-                gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z)
+                gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z, return_status=True)
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
@@ -850,7 +850,7 @@ class BaseSteinerProblem:
                 s1 = [x[e] for e in self.edges if _edge_key(e) in sol_key]
                 s0 = [x[e] for e in self.edges if _edge_key(e) not in sol_key]
                 model.addConstr(sum((1 - v) for v in s1) + sum(v for v in s0) >= 1)
-            gap, runtime, objective, selected_edges, status = run_fn(model, self, x, y2, z)
+            gap, runtime, objective, selected_edges, status = run_fn(model, self, x, y2, z, return_status=True)
 
             if status == "infeasible":
                 # Proven: no distinct optimal solution remains beyond what's
@@ -1882,10 +1882,10 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
 
         if solver == "gurobi":
             model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
-            gap, runtime, objective, _, _status = run_model_gurobi(model, self, x, y2, z)
+            gap, runtime, objective, _, _status = run_model_gurobi(model, self, x, y2, z, return_status=True)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
-            gap, runtime, objective, _, _status = run_model(model, self, x, y2, z)
+            gap, runtime, objective, _, _status = run_model(model, self, x, y2, z, return_status=True)
 
         # Use arc (y1) variables for the actual directed tree structure instead of edge
         # (x) variables, to avoid degenerate zero-weight cross-edges being included.
