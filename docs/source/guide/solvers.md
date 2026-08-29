@@ -18,3 +18,83 @@ solution = SteinerProblem(graph, terminal_groups).get_solution(solver="gurobi")
 
 Both solvers implement the same cut-based (DO-D) formulation from Markhorst et al. (2025) and produce identical optimal solutions.
 Gurobi may be faster on larger instances because callbacks avoid repeated re-solves from scratch.
+
+## Enumerating multiple optimal solutions
+
+`get_solution()` returns exactly one optimal Steiner tree. When multiple
+trees tie for the optimal cost, `get_optimal_solutions()` enumerates them
+instead of silently returning an arbitrary one:
+
+```python
+pool = problem.get_optimal_solutions(
+    limit=10, time_limit=300, log_file="", solver="highs", threads=None,
+)
+
+for solution in pool:
+    print(solution.objective, solution.edges)
+
+print(len(pool), pool.exhausted)  # exhausted: every optimal solution was found,
+                                   # not just the first `limit` of them
+```
+
+`get_optimal_solutions()` **requires `preprocess=False`**: graph reduction
+can arbitrarily collapse tied-cost alternatives (e.g. terminal contraction)
+before any ILP runs, silently erasing them from enumeration — calling it on
+a `preprocess=True` instance raises `ValueError`. It also bypasses every
+speedup dispatch used by `get_solution()` (trivial-instance early exit,
+`exact=False` heuristic mode, biconnected-component decomposition, the
+Dreyfus-Wagner DP, and the dual-ascent accelerator), since each of those
+either returns a single arbitrary optimum or, in the case of dual ascent's
+reduced-cost variable fixing, could soundly discard an edge that appears
+only in a different tied-cost solution.
+
+It returns an `OptimalSolutionPool`:
+
+- `pool.solutions` — the distinct optimal `Solution` objects found, all
+  sharing the same (minimum) objective value.
+- `pool.exhausted` — `True` iff a probe solve *proved* no further tied-cost
+  alternative exists. `False` if `limit` was reached while ties still
+  remained, or if a probe hit `time_limit` (or otherwise terminated) before
+  it could be proven optimal or infeasible — in the latter case enumeration
+  stops early rather than returning an unproven solution.
+
+### Example: the diamond-graph tie
+
+```python
+import networkx as nx
+from steinerpy import SteinerProblem
+
+g = nx.Graph()
+for u, v in [("A", "B"), ("B", "C"), ("C", "D"), ("A", "E"), ("E", "F"), ("F", "D")]:
+    g.add_edge(u, v, weight=1)
+
+problem = SteinerProblem(g, [["A", "D"]], preprocess=False)
+pool = problem.get_optimal_solutions()
+
+print(len(pool), pool.exhausted)  # 2 True
+for solution in pool:
+    print(sorted(solution.edges))
+# [('A', 'B'), ('B', 'C'), ('C', 'D')]
+# [('A', 'E'), ('E', 'F'), ('F', 'D')]
+```
+
+### Implementation and scope
+
+Both backends use the same external no-good-cut enumeration loop: the model
+is rebuilt from scratch each iteration, with a cut excluding every
+previously-found edge set added before re-solving. On `solver="gurobi"` this
+means the native Gurobi solution pool (`PoolSearchMode`) is **not** used —
+whether it respects this model's lazily-added connectivity cuts is an open,
+version-dependent question that cannot be verified in this project's test
+suite, so the provably correct external loop is used for both backends
+(at the cost of Gurobi's single-solve pooling speed advantage).
+
+`get_optimal_solutions()` is not yet supported for problem classes whose
+`get_solution()` transforms the model in a way this method's plain
+edge-indicator enumeration can't replicate: `PrizeCollectingProblem` (and
+its subclasses), `PartialTerminalSteinerProblem` (and
+`FullTerminalSteinerProblem`), `GroupSteinerProblem` (and
+`DirectedGroupSteinerProblem`), `RectilinearSteinerProblem`, and
+`NodeWeightedSteinerProblem`. Each raises `NotImplementedError`. Budget-
+constrained instances (`budget=...`) are also unsupported, for the same
+reason.

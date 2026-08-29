@@ -1470,8 +1470,54 @@ def test_run_model_exhausted_time_limit_reports_infinite_gap():
     prob = SteinerProblem(g, [[0, 3, 6]], preprocess=False)
 
     model, x, y1, y2, z = build_model(prob, time_limit=0.0, logfile="", threads=None)
-    gap, _runtime, _obj, edges = run_model(model, prob, x, y2, z)
+    gap, _runtime, _obj, edges, status = run_model(model, prob, x, y2, z, return_status=True)
     # Deadline hit before any cut round -> not proven optimal -> no spurious ~0 gap.
+    assert gap == float("inf")
+    assert edges == []
+    assert status == "incomplete"
+
+
+def test_run_model_default_return_omits_status_for_backward_compatibility():
+    """run_model gained a fifth return value (status) after its first public
+    release; return_status defaults to False so existing 4-value callers of
+    the public run_model/run_model_gurobi API keep working (steinerpy#42)."""
+    from steinerpy.mathematical_model import build_model, run_model
+
+    g = nx.cycle_graph(8)
+    for a, b in g.edges:
+        g.edges[a, b]["weight"] = 1
+    prob = SteinerProblem(g, [[0, 3, 6]], preprocess=False)
+
+    model, x, y1, y2, z = build_model(prob, time_limit=5.0, logfile="", threads=None)
+    result = run_model(model, prob, x, y2, z)
+    assert len(result) == 4
+    gap, _runtime, obj, edges = result
+    assert gap == 0.0
+    assert obj == 5.0
+    assert len(edges) == 5
+
+
+def test_run_model_reports_incomplete_on_non_infeasible_non_optimal_status(monkeypatch):
+    """A solve that neither proves optimality nor infeasibility (e.g. hits
+    the time limit mid-solve with no usable incumbent, surfaced by HiGHS as
+    kUnbounded/kObjectiveBound/kUnboundedOrInfeasible, or simply an invalid
+    solution) must be reported as status="incomplete", not lumped in with a
+    genuine kInfeasible proof. Forced deterministically via monkeypatch since
+    provoking this status combination from real solver timing is flaky."""
+    import highspy as hp
+    from steinerpy.mathematical_model import build_model, run_model
+
+    g = nx.cycle_graph(8)
+    for a, b in g.edges:
+        g.edges[a, b]["weight"] = 1
+    prob = SteinerProblem(g, [[0, 3, 6]], preprocess=False)
+
+    model, x, y1, y2, z = build_model(prob, time_limit=5.0, logfile="", threads=None)
+    monkeypatch.setattr(model, "getModelStatus", lambda: hp.HighsModelStatus.kUnbounded)
+
+    gap, _runtime, _obj, edges, status = run_model(model, prob, x, y2, z, return_status=True)
+
+    assert status == "incomplete"
     assert gap == float("inf")
     assert edges == []
 

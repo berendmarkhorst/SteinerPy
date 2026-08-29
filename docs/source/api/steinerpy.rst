@@ -103,6 +103,9 @@ Solutions
    :members:
    :show-inheritance:
 
+.. autoclass:: steinerpy.OptimalSolutionPool
+   :members:
+
 Deprecated
 ----------
 

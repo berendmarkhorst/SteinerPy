@@ -244,11 +244,16 @@ def add_directed_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProb
     # own cost, so it must not be bundled with (u, v): otherwise selecting one
     # direction forces x on the other, unused direction too, inflating the
     # objective (see https://github.com/berendmarkhorst/SteinerPy/issues/30).
+    # Equality (not merely <=) ties x to actual usage: with only "<=" a
+    # zero-cost edge is free to flip x to 1 without being used by y1 at all,
+    # since doing so leaves the objective unchanged -- get_optimal_solutions'
+    # no-good cuts key off x, so such a phantom edge was counted as a distinct
+    # "solution" even though it isn't part of the arborescence.
     for u, v in steiner_problem.edges:
         if (v, u) in y1 and (v, u) not in x:
-            model.addConstr(y1[(u, v)] + y1[(v, u)] <= x[(u, v)])
+            model.addConstr(y1[(u, v)] + y1[(v, u)] == x[(u, v)])
         else:
-            model.addConstr(y1[(u, v)] <= x[(u, v)])
+            model.addConstr(y1[(u, v)] == x[(u, v)])
 
     # Constraint 4: enforce terminal group rooted at one root
     for group_id_k in group_indices:
@@ -803,7 +808,7 @@ def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logf
     return model, x, y1, y2, z
 
 
-def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType, y2: Dict, z: Dict, reapply_start=None) -> Tuple[float, float, float, List[Tuple]]:
+def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.HighsVarType, y2: Dict, z: Dict, reapply_start=None, return_status: bool = False) -> Tuple:
     """
     Solves the model using an iterative cut-generation (lazy-cut) approach and
     returns the result.
@@ -825,11 +830,25 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     :param reapply_start: optional zero-argument callable that re-applies a MIP
         warm start; called after the LP phase (which would otherwise clear a
         start set before this function).
-    :return: (gap, runtime, objective, selected_edges).
+    :param return_status: if True, also return the solver status as a fifth
+        element -- one of ``"optimal"`` (proven optimal), ``"infeasible"``
+        (proven no feasible solution exists), or ``"incomplete"`` (the time
+        limit or another non-optimal termination was hit; objective/
+        selected_edges, if present, are an unproven incumbent, not a
+        confirmed optimum). Default False preserves the historical
+        4-element return signature.
+    :return: (gap, runtime, objective, selected_edges), or with
+             ``return_status=True``, (gap, runtime, objective, selected_edges,
+             status).
              Note: *runtime* covers only the iterative solve loop and does not
              include the model compilation time reported by :func:`build_model`.
     """
     logging.info("Started running the model with iterative cut generation.")
+
+    def _ret(gap, runtime, objective, selected_edges, status):
+        if return_status:
+            return gap, runtime, objective, selected_edges, status
+        return gap, runtime, objective, selected_edges
 
     # No edges survive in the (possibly preprocessed) graph: there is no MIP
     # to solve (sum() over an empty edge set is a plain 0, and HiGHS's
@@ -840,8 +859,8 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     # more with no edges between them can never be connected.
     if not steiner_problem.edges:
         if steiner_problem.graph.number_of_nodes() <= 1:
-            return 0.0, 0.0, 0.0, []
-        return float("inf"), 0.0, float("inf"), []
+            return _ret(0.0, 0.0, 0.0, [], "optimal")
+        return _ret(float("inf"), 0.0, float("inf"), [], "infeasible")
 
     objective_expr = sum(
         x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
@@ -890,20 +909,30 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
 
     # Phase 2 — the integer cut loop.
     converged = False
+    # ever_solved distinguishes "the time budget ran out before a single MIP
+    # solve completed" (e.g. time_limit=0) from a real incumbent: without it,
+    # falling through to read model.variableValue()/getObjectiveValue() below
+    # on a never-solved model yields a bogus all-zero "solution" rather than
+    # an honest "no result" (see steinerpy#42).
+    ever_solved = False
     while True:
         remaining = total_tl - (time.time() - start_time)
         if remaining <= 0:
             break
         model.setOptionValue("time_limit", remaining)
         model.minimize(objective_expr)
+        ever_solved = True
 
         # If the model has no feasible/valid primal (e.g. an objective cutoff or
         # variable fixing has rendered it infeasible), there is nothing to
         # separate cuts from — reading the empty solution would yield spurious
         # "violations" and loop forever.  Stop the cut loop instead of hanging.
         status = model.getModelStatus()
+        if status == hp.HighsModelStatus.kInfeasible:
+            runtime = time.time() - start_time
+            logging.info("Cut loop: model proved infeasible.")
+            return _ret(float("inf"), runtime, float("inf"), [], "infeasible")
         if status in (
-            hp.HighsModelStatus.kInfeasible,
             hp.HighsModelStatus.kObjectiveBound,
             hp.HighsModelStatus.kUnbounded,
             hp.HighsModelStatus.kUnboundedOrInfeasible,
@@ -913,7 +942,7 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
                 "Cut loop stopped early: model status %s with no valid primal "
                 "solution; returning no solution.", status,
             )
-            return float("inf"), runtime, float("inf"), []
+            return _ret(float("inf"), runtime, float("inf"), [], "incomplete")
 
         violated_cuts = find_violated_cuts(steiner_problem, y2, z, model)
 
@@ -935,17 +964,23 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     runtime = time.time() - start_time
     logging.info(f"Runtime: {runtime:.2f} seconds")
 
+    if not ever_solved:
+        logging.warning("Cut loop: time limit exhausted before any solve completed.")
+        return _ret(float("inf"), runtime, float("inf"), [], "incomplete")
+
     selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
     objective = model.getObjectiveValue()
     if converged:
         gap = model.getInfo().mip_gap
+        result_status = "optimal"
     else:
         # Global time limit hit before all connectivity cuts were separated:
         # selected_edges may be disconnected and the relaxation objective is only a
         # lower bound, so do not report a (spurious) ~0 MIP gap.
         gap = float("inf")
+        result_status = "incomplete"
 
-    return gap, runtime, objective, selected_edges
+    return _ret(gap, runtime, objective, selected_edges, result_status)
 
 
 def add_degree_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: Dict) -> None:
@@ -1273,12 +1308,15 @@ def build_model_gurobi(
     # (v, u) in y1 but not in x means the reverse direction is only a
     # synthesized arc for an undirected edge (see the HiGHS builder above for
     # the full explanation); a genuine independent edge/arc in x must not be
-    # bundled with (u, v)'s cost variable.
+    # bundled with (u, v)'s cost variable. Equality (not merely <=) ties x to
+    # actual usage: with only "<=" a zero-cost edge is free to flip x to 1
+    # without being used by y1 at all (see the HiGHS builder's own Constraint
+    # 3 and https://github.com/berendmarkhorst/SteinerPy/pull/42).
     for u, v in steiner_problem.edges:
         if (v, u) in y1 and (v, u) not in x:
-            model.addConstr(y1[(u, v)] + y1[(v, u)] <= x[(u, v)])
+            model.addConstr(y1[(u, v)] + y1[(v, u)] == x[(u, v)])
         else:
-            model.addConstr(y1[(u, v)] <= x[(u, v)])
+            model.addConstr(y1[(u, v)] == x[(u, v)])
 
     # Constraint 4: enforce terminal group rooted at one root
     for group_id_k in group_indices:
@@ -1366,7 +1404,8 @@ def run_model_gurobi(
     x: Dict,
     y2: Dict,
     z: Dict,
-) -> Tuple[float, float, float, List[Tuple]]:
+    return_status: bool = False,
+) -> Tuple:
     """
     Solve the Steiner model using Gurobi with a lazy-cut callback.
 
@@ -1380,7 +1419,16 @@ def run_model_gurobi(
     :param x: edge selection decision variables.
     :param y2: per-group arc variables {(group_id, arc): var}.
     :param z: connectivity variables {(k, l): var}.
-    :return: (gap, runtime, objective, selected_edges).
+    :param return_status: if True, also return the solver status as a fifth
+        element -- one of ``"optimal"`` (proven optimal), ``"infeasible"``
+        (proven no feasible solution exists), or ``"incomplete"`` (the time
+        limit or another non-optimal termination was hit; objective/
+        selected_edges, if present, are an unproven incumbent, not a
+        confirmed optimum). Default False preserves the historical
+        4-element return signature.
+    :return: (gap, runtime, objective, selected_edges), or with
+             ``return_status=True``, (gap, runtime, objective, selected_edges,
+             status).
     """
     _check_gurobipy()
     import gurobipy as gp
@@ -1388,13 +1436,18 @@ def run_model_gurobi(
 
     logging.info("Started running the Gurobi model with lazy cut callback.")
 
+    def _ret(gap, runtime, objective, selected_edges, status):
+        if return_status:
+            return gap, runtime, objective, selected_edges, status
+        return gap, runtime, objective, selected_edges
+
     # See run_model's own guard for the HiGHS backend: no edges survive in
     # the (possibly preprocessed) graph, so there is nothing to connect the
     # terminal groups with.
     if not steiner_problem.edges:
         if steiner_problem.graph.number_of_nodes() <= 1:
-            return 0.0, 0.0, 0.0, []
-        return float("inf"), 0.0, float("inf"), []
+            return _ret(0.0, 0.0, 0.0, [], "optimal")
+        return _ret(float("inf"), 0.0, float("inf"), [], "infeasible")
 
     group_indices = range(len(steiner_problem.terminal_groups))
 
@@ -1457,14 +1510,30 @@ def run_model_gurobi(
     logging.info(f"Gurobi runtime: {runtime:.2f} seconds")
 
     if model.SolCount == 0:
-        # No feasible solution found within the time limit
-        return float("inf"), runtime, float("inf"), []
+        # No feasible solution found. Distinguish a proven-infeasible model
+        # from one that simply ran out of time before finding any incumbent
+        # (e.g. time_limit=0) -- both previously looked identical (an
+        # infinite objective), so a probe that merely timed out with no
+        # incumbent was silently treated as proof there is no solution.
+        if model.Status in (GRB.INFEASIBLE, GRB.INF_OR_UNBD):
+            return _ret(float("inf"), runtime, float("inf"), [], "infeasible")
+        return _ret(float("inf"), runtime, float("inf"), [], "incomplete")
 
     selected_edges = [e for e in steiner_problem.edges if x[e].X > 0.5]
-    gap = model.MIPGap
     objective = model.ObjVal
+    if model.Status == GRB.OPTIMAL:
+        gap = model.MIPGap
+        status = "optimal"
+    else:
+        # A finite incumbent exists but optimality wasn't proven (e.g. the
+        # time limit was hit): model.MIPGap still reflects Gurobi's best
+        # bound, but since it can be optimistic when the lazy connectivity
+        # cuts weren't fully separated for unexplored branches, don't report
+        # it as a trustworthy gap (mirrors run_model's own gap=inf here).
+        gap = float("inf")
+        status = "incomplete"
 
-    return gap, runtime, objective, selected_edges
+    return _ret(gap, runtime, objective, selected_edges, status)
 
 
 # ---------------------------------------------------------------------------
