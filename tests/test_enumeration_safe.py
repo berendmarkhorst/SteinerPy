@@ -9,11 +9,18 @@ to reductions proven to preserve the *complete set* of optima, so it can be
 safely combined with :meth:`BaseSteinerProblem.get_optimal_solutions`.
 """
 
+import random
+
 import networkx as nx
 import pytest
 
 from steinerpy import SteinerProblem
 from steinerpy.graph_reducer import preprocess_graph
+from tests.test_optimal_solutions import (
+    brute_force_optimal_edge_sets,
+    edge_sets,
+    random_graph,
+)
 
 
 def diamond_graph():
@@ -153,3 +160,114 @@ def test_get_optimal_solutions_still_rejects_plain_preprocess_true():
     problem = SteinerProblem(G, [["A", "D"]])  # preprocess=True, enumeration_safe=False
     with pytest.raises(ValueError, match="preprocess"):
         problem.get_optimal_solutions()
+
+
+# ---------------------------------------------------------------------------
+# PR #44 review regressions (berendmarkhorst)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_weight", [0, -1])
+def test_enumeration_safe_requires_strictly_positive_weights(bad_weight):
+    """A non-positive edge weight breaks the tied-optimum-preservation
+    argument (and the separate, out-of-scope zero-cost-edge enumeration
+    ambiguity), so construction must reject it up front rather than silently
+    mis-preserving ties."""
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=bad_weight)
+    g.add_edge("B", "C", weight=1)
+    with pytest.raises(ValueError, match="strictly positive"):
+        SteinerProblem(g, [["A", "C"]], preprocess=True, enumeration_safe=True)
+
+
+def test_enumeration_safe_allows_strictly_positive_weights():
+    g = diamond_graph()
+    SteinerProblem(g, [["A", "D"]], preprocess=True, enumeration_safe=True)  # no raise
+
+
+@pytest.mark.parametrize("modifier", ["max_degree", "hop_limit"])
+def test_get_optimal_solutions_rejects_preprocess_with_degree_or_hop_modifier(modifier):
+    """Reported in PR #44 review: the structural degree-1/degree-2 fixpoint
+    always runs (unlike the heavy reductions) even when max_degree/hop_limit
+    disables everything else, and is not degree- or hop-aware -- a
+    contraction can map back to a solution that violates the constraint.
+    B has degree 2 in the only feasible tree, so max_degree=1/hop_limit=1
+    makes the original problem infeasible; preprocess=True must not silently
+    "solve" it via the collapsed A-C edge."""
+    g = nx.Graph()
+    g.add_edge("A", "B", weight=1)
+    g.add_edge("B", "C", weight=1)
+
+    raw = SteinerProblem(g, [["A", "C"]], preprocess=False, **{modifier: 1})
+    pool = raw.get_optimal_solutions(limit=10)
+    assert len(pool) == 0 and pool.exhausted is True  # correctly infeasible
+
+    safe = SteinerProblem(g, [["A", "C"]], preprocess=True, enumeration_safe=True,
+                          **{modifier: 1})
+    with pytest.raises(NotImplementedError):
+        safe.get_optimal_solutions(limit=10)
+
+
+def test_da_reduce_forwards_enumeration_safe_to_structural_cascade():
+    """Reported in PR #44 review: reduce_graph_with_dual_ascent()'s own
+    deletions are strict (safe), but its structural cascade used to call
+    _structural_fixpoint() without forwarding enumeration_safe, so a
+    contraction exposed by that cascade could still erase a tied optimum.
+    A-D (cost 2) ties the A-B-D detour (1+1); B-X's prohibitive cost (100)
+    is what dual ascent deletes, which then exposes B for contraction."""
+    g = nx.Graph()
+    g.add_weighted_edges_from([
+        ("A", "D", 2), ("A", "B", 1), ("B", "D", 1), ("A", "X", 1), ("B", "X", 100),
+    ])
+    kwargs = dict(preprocess=True, enumeration_safe=True, heavy=False,
+                  contract_terminals=False)
+
+    safe = SteinerProblem(g, [["A", "D", "X"]], **kwargs).get_optimal_solutions(limit=10)
+    safe_da = SteinerProblem(g, [["A", "D", "X"]], da_reduce=True,
+                             **kwargs).get_optimal_solutions(limit=10)
+
+    assert safe.exhausted is True and safe_da.exhausted is True
+    assert len(safe) == len(safe_da) == 2
+    assert edge_sets(safe) == edge_sets(safe_da)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_enumeration_safe_matches_brute_force_oracle_on_random_graphs(seed):
+    """The core soundness claim, checked directly: enumerating over an
+    enumeration_safe=True preprocessed graph must find exactly the same set
+    of tied-optimal trees as an independent brute-force oracle over the
+    unreduced graph -- not a subset (a lost tie) and not a superset (a bogus
+    extra solution)."""
+    g = random_graph(seed)
+    rng = random.Random(2000 + seed)
+    terminals = rng.sample(list(g.nodes()), 3)
+
+    oracle_cost, oracle_sets = brute_force_optimal_edge_sets(g, terminals)
+    assert oracle_cost is not None
+
+    problem = SteinerProblem(g, [terminals], preprocess=True, enumeration_safe=True)
+    pool = problem.get_optimal_solutions(limit=len(oracle_sets) + 5)
+
+    assert pool.exhausted is True
+    assert all(sol.objective == oracle_cost for sol in pool)
+    assert edge_sets(pool) == oracle_sets
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_enumeration_safe_matches_preprocess_false_on_random_graphs(seed):
+    """Same comparison against the (already-correct) preprocess=False path
+    directly, rather than the brute-force oracle -- the exact regression the
+    PR #44 review asked for."""
+    g = random_graph(seed)
+    rng = random.Random(3000 + seed)
+    terminals = rng.sample(list(g.nodes()), 3)
+
+    raw = SteinerProblem(g, [terminals], preprocess=False)
+    pool_raw = raw.get_optimal_solutions(limit=50)
+
+    safe = SteinerProblem(g, [terminals], preprocess=True, enumeration_safe=True)
+    pool_safe = safe.get_optimal_solutions(limit=50)
+
+    assert pool_raw.exhausted is pool_safe.exhausted is True
+    assert {sol.objective for sol in pool_raw} == {sol.objective for sol in pool_safe}
+    assert edge_sets(pool_raw) == edge_sets(pool_safe)

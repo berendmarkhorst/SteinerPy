@@ -107,6 +107,24 @@ class BaseSteinerProblem:
         if preprocess:
             if isinstance(graph, nx.DiGraph):
                 raise ValueError("Graph preprocessing is not supported for directed graphs. Use preprocess=False.")
+            if self.enumeration_safe:
+                # The tied-optimum-preservation argument for every
+                # enumeration_safe test assumes strictly positive edge costs
+                # (as do the sound deletion tests generally -- e.g. the
+                # long-edge test's "a path shorter than c(e) cannot itself
+                # contain e"); a zero-cost edge also introduces a separate,
+                # pre-existing ambiguity in what get_optimal_solutions()
+                # counts as a *distinct* optimal solution (redundant
+                # zero-cost edges), which is out of scope here. Validate
+                # explicitly rather than silently mis-preserving ties.
+                non_positive = [(u, v) for u, v, d in graph.edges(data=True)
+                                if d.get(weight, 1) <= 0]
+                if non_positive:
+                    raise ValueError(
+                        "enumeration_safe=True requires strictly positive edge "
+                        f"weights; found non-positive weight on {non_positive[:5]}"
+                        f"{' ...' if len(non_positive) > 5 else ''}."
+                    )
             _heavy_ok = (kwargs.get('budget') is None and kwargs.get('max_degree') is None
                          and kwargs.get('hop_limit') is None)
             self.graph, self.reduction_tracker = preprocess_graph(
@@ -135,7 +153,8 @@ class BaseSteinerProblem:
             if self.da_reduce and kwargs.get('budget') is None and kwargs.get('max_degree') is None:
                 from .dual_ascent import reduce_graph_with_dual_ascent
                 self.graph = reduce_graph_with_dual_ascent(
-                    self.graph, terminal_groups, weight, self.reduction_tracker)
+                    self.graph, terminal_groups, weight, self.reduction_tracker,
+                    enumeration_safe=self.enumeration_safe)
             stats = reduction_stats(self.original_graph, self.graph)
             logger.info(f"Graph reduced: {stats['nodes_removed']} nodes ({stats['node_reduction_percent']:.1f}%), "
                   f"{stats['edges_removed']} edges ({stats['edge_reduction_percent']:.1f}%) removed")
@@ -812,7 +831,8 @@ class BaseSteinerProblem:
         :raises ValueError: if ``preprocess=True`` without
             ``enumeration_safe=True``, ``limit`` is negative, or the solver
             name is unknown.
-        :raises NotImplementedError: for budget-constrained instances, or for
+        :raises NotImplementedError: for budget-, max-degree- or hop-limit-
+            constrained instances combined with ``preprocess=True``, or for
             problem classes whose :meth:`get_solution` transforms the model in
             a way this method's plain edge-indicator enumeration can't
             replicate (see each class's override).
@@ -832,6 +852,24 @@ class BaseSteinerProblem:
                 "get_optimal_solutions does not support budget-constrained "
                 "instances (a different model, connection/penalty variables "
                 "instead of a plain edge indicator, is used)."
+            )
+        if self.preprocess and (self.max_degree is not None or self.hop_limit is not None):
+            # The degree-1/degree-2 structural fixpoint (unlike the heavy
+            # reductions) is not degree- or hop-aware: it always runs, even
+            # when max_degree/hop_limit disables everything else, and a
+            # contraction can silently produce a reduced-graph solution that
+            # violates the constraint once mapped back to the original graph
+            # (e.g. a forced degree-2 waypoint disappearing into a single
+            # contracted edge). This is a pre-existing gap in preprocess=True
+            # generally, not specific to enumeration_safe, but it was
+            # previously unreachable here since preprocess=True was always
+            # rejected above.
+            raise NotImplementedError(
+                "get_optimal_solutions with preprocess=True does not support "
+                "max_degree- or hop_limit-constrained instances: the "
+                "structural degree reductions are not degree/hop-aware and "
+                "can map back to a solution that violates the constraint. "
+                "Reconstruct the problem with preprocess=False."
             )
         if limit < 0:
             raise ValueError(f"limit must be >= 0, got {limit}.")

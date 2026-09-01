@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`enumeration_safe=True` preprocessing mode for `get_optimal_solutions()`**
+  (steinerpy#43): `get_optimal_solutions()` previously required
+  `preprocess=False`, since the default reduction pipeline can silently
+  collapse tied-cost alternatives before the ILP ever runs — degree-2
+  contraction against a same-cost parallel edge, node replacement, and the
+  adjacent-terminal/Nearest-Vertex/Short-Links terminal-contraction tests
+  each pick one witness among possibly several tied ones and structurally
+  erase the rest. Constructing with `enumeration_safe=True` now restricts
+  preprocessing to reductions proven to preserve the **complete set** of
+  optima: special distance, long-edge and bound-based deletions, and
+  non-terminal degree-1 removal, are already exact (strict inequalities) and
+  unaffected; degree-2 contraction skips a node instead of contracting it
+  when the contracted path ties an existing parallel edge; node replacement
+  is disabled outright; and of the terminal-contraction tests, only the
+  forced degree-1 case still fires. `get_optimal_solutions()` now accepts
+  `preprocess=True` when `enumeration_safe=True` and back-maps solutions to
+  the original graph accordingly. Requires strictly positive edge weights
+  (`ValueError` otherwise, since the preservation argument assumes positive
+  costs) and is not supported together with `max_degree`/`hop_limit`
+  (`NotImplementedError`), since the structural degree-1/degree-2 fixpoint
+  runs regardless of those modifiers and is not degree- or hop-aware. The
+  dual-ascent bound-based reduction (`da_reduce=True`) now also forwards
+  `enumeration_safe` into its structural cascade, so it composes safely with
+  the new mode.
 - **`DirectedGroupSteinerProblem`**: the directed (rooted-arborescence)
   variant of `GroupSteinerProblem` — minimum-cost directed tree from a
   `root` reaching at least one vertex of each group. Uses the same
