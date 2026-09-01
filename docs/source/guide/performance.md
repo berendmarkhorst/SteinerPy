@@ -85,8 +85,10 @@ On by default with the heavy tests; opt out with `bound_based=False`.
 The reductions above (heavy, terminal contraction, node replacement) all preserve the optimal **value**, but three of them — degree-2 contraction against a tied parallel edge, node replacement, and the adjacent-terminal/NV/SL terminal-contraction tests — pick just *one* witness among possibly several tied-optimal alternatives, and structurally discard the rest. That is fine for `get_solution()` (which only ever needs one optimum), but it means these reductions cannot be combined with {py:meth}`~steinerpy.BaseSteinerProblem.get_optimal_solutions`, which enumerates *every* tied-optimal tree — see [Enumerating multiple optimal solutions](solvers.md) on the solver-backends page.
 
 ```python
-# Keep reduction, but only the tests that preserve every tied optimum.
-solution = SteinerProblem(graph, terminal_groups, preprocess=True, enumeration_safe=True).get_solution()
+# Keep reduction, but only the tests that preserve every tied optimum, so
+# every tied-optimal tree can still be enumerated.
+problem = SteinerProblem(graph, terminal_groups, preprocess=True, enumeration_safe=True)
+pool = problem.get_optimal_solutions()
 ```
 
 `enumeration_safe` (default **False**) restricts preprocessing to reductions proven to preserve the *complete set* of optima:
@@ -98,6 +100,11 @@ solution = SteinerProblem(graph, terminal_groups, preprocess=True, enumeration_s
 - Of the terminal-contraction tests, only the forced degree-1 case still fires (a terminal's sole edge has no alternative to lose); the adjacent-terminal, Nearest-Vertex and Short-Links tests are skipped, since each picks one edge among possibly several that equally satisfy its inclusion test.
 
 Because it gives up real reduction power to make that guarantee, `enumeration_safe` is opt-in rather than folded into `heavy` — use it specifically ahead of `get_optimal_solutions()`, not as a general-purpose default.
+
+Two restrictions apply:
+
+- **Edge weights must be strictly positive.** The tied-optimum-preservation argument (like the sound deletion tests generally) assumes positive costs; constructing with `enumeration_safe=True` and a non-positive edge weight raises `ValueError`.
+- **`get_optimal_solutions()` does not support `preprocess=True` together with `max_degree` or `hop_limit`** (`NotImplementedError`): the structural degree-1/degree-2 fixpoint always runs regardless of these modifiers and is not degree- or hop-aware, so a contraction could silently map back to a solution that violates the constraint. Use `preprocess=False` for degree- or hop-constrained enumeration.
 
 ## Few-terminal dynamic program
 

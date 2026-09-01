@@ -77,6 +77,14 @@ fires (the adjacent-terminal, Nearest-Vertex and Short-Links tests are
 skipped). See `steinerpy.graph_reducer.preprocess_graph`'s docstring for the
 full soundness argument.
 
+`enumeration_safe=True` requires strictly positive edge weights (raises
+`ValueError` otherwise), and `get_optimal_solutions()` does not support
+`preprocess=True` together with `max_degree` or `hop_limit` (raises
+`NotImplementedError`): the structural degree reductions always run
+regardless of those modifiers and are not degree- or hop-aware, so a
+contraction could otherwise map back to a solution that violates the
+constraint. Use `preprocess=False` in that case.
+
 It returns an `OptimalSolutionPool`:
 
 - `pool.solutions` — the distinct optimal `Solution` objects found, all
