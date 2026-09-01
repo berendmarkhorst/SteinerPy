@@ -43,16 +43,39 @@ redundant zero-cost branch or cycle does not create another solution. Distinct
 minimum-cost trees that use zero-cost edges are still enumerated when each of
 their edges is necessary for that tree's terminal connectivity.
 
-`get_optimal_solutions()` **requires `preprocess=False`**: graph reduction
-can arbitrarily collapse tied-cost alternatives (e.g. terminal contraction)
-before any ILP runs, silently erasing them from enumeration — calling it on
-a `preprocess=True` instance raises `ValueError`. It also bypasses every
-speedup dispatch used by `get_solution()` (trivial-instance early exit,
-`exact=False` heuristic mode, biconnected-component decomposition, the
-Dreyfus-Wagner DP, and the dual-ascent accelerator), since each of those
-either returns a single arbitrary optimum or, in the case of dual ascent's
-reduced-cost variable fixing, could soundly discard an edge that appears
-only in a different tied-cost solution.
+`get_optimal_solutions()` **requires `preprocess=False`**: the default graph
+reduction pipeline can arbitrarily collapse tied-cost alternatives (e.g.
+terminal contraction) before any ILP runs, silently erasing them from
+enumeration — calling it on a `preprocess=True` instance raises `ValueError`,
+unless the problem was constructed with `enumeration_safe=True` (see below).
+It also bypasses every speedup dispatch used by `get_solution()`
+(trivial-instance early exit, `exact=False` heuristic mode,
+biconnected-component decomposition, the Dreyfus-Wagner DP, and the
+dual-ascent accelerator), since each of those either returns a single
+arbitrary optimum or, in the case of dual ascent's reduced-cost variable
+fixing, could soundly discard an edge that appears only in a different
+tied-cost solution.
+
+Construct the problem with **`enumeration_safe=True`** instead of
+`preprocess=False` to keep reduction (and its speedup) while still enumerating
+every tied optimum:
+
+```python
+problem = SteinerProblem(g, [["A", "D"]], preprocess=True, enumeration_safe=True)
+pool = problem.get_optimal_solutions()  # no ValueError, and still 2 tied trees
+```
+
+`enumeration_safe` restricts preprocessing to reductions proven to preserve
+the *complete set* of optimal solutions, not merely the optimal value:
+special distance, long-edge and bound-based deletions (already exact — a
+strict inequality proves the deleted edge/node lies in *no* optimum) and
+non-terminal degree-1 removal are unaffected; degree-2 contraction skips a
+node instead of contracting it when the contracted path *ties* an existing
+parallel edge; node replacement (pseudo-elimination) is disabled outright;
+and of the terminal-contraction tests, only the forced degree-1 case still
+fires (the adjacent-terminal, Nearest-Vertex and Short-Links tests are
+skipped). See `steinerpy.graph_reducer.preprocess_graph`'s docstring for the
+full soundness argument.
 
 It returns an `OptimalSolutionPool`:
 
