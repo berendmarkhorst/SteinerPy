@@ -108,6 +108,22 @@ def dreyfus_wagner(graph, terminals: List[Hashable], weight: str = "weight"
         labels[1 << i] = dist
         grow_pred[1 << i] = pred
 
+    # Every grow step uses the same sparsity pattern: the fixed graph arcs plus
+    # one virtual-source arc to each real vertex.  Build that pattern once and
+    # replace only the virtual row's weights below.  Reconstructing a CSR from
+    # concatenated coordinate arrays for every subset is otherwise a sizeable
+    # part of the runtime (and produces short-lived arrays proportional to m).
+    virtual_heads = np.arange(n, dtype=np.int32)
+    grow_csr = csr_matrix(
+        (np.concatenate([base_costs, np.full(n, np.inf, dtype=np.float64)]),
+         (np.concatenate([base_tails, np.full(n, virtual, dtype=np.int32)]),
+          np.concatenate([base_heads, virtual_heads]))),
+        shape=(n + 1, n + 1),
+    )
+    virtual_slice = slice(grow_csr.indptr[virtual],
+                          grow_csr.indptr[virtual + 1])
+    virtual_heads = grow_csr.indices[virtual_slice]
+
     for mask in range(1, full + 1):
         if mask & (mask - 1) == 0:
             continue  # singleton, already done
@@ -128,15 +144,7 @@ def dreyfus_wagner(graph, terminals: List[Hashable], weight: str = "weight"
 
         # Grow: l(S, v) = min_u m(S, u) + d(u, v) — a Dijkstra from a virtual
         # source whose arc to u costs m(S, u).
-        finite = np.isfinite(best[:n])
-        v_heads = np.nonzero(finite)[0].astype(np.int32)
-        v_tails = np.full(v_heads.shape, virtual, dtype=np.int32)
-        grow_csr = csr_matrix(
-            (np.concatenate([base_costs, best[:n][finite]]),
-             (np.concatenate([base_tails, v_tails]),
-              np.concatenate([base_heads, v_heads]))),
-            shape=(n + 1, n + 1),
-        )
+        grow_csr.data[virtual_slice] = best[virtual_heads]
         dist, pred = _sp_dijkstra(grow_csr, directed=True, indices=virtual,
                                   return_predecessors=True)
         labels[mask] = dist

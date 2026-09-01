@@ -199,6 +199,22 @@ def test_infeasible_instance_returns_empty_exhausted_pool():
     assert pool.exhausted is True
 
 
+def test_zero_edge_forest_with_singleton_groups_has_empty_optimum():
+    """Separate singleton groups make the empty forest feasible and optimal."""
+    graph = nx.Graph()
+    graph.add_nodes_from(["A", "B"])
+
+    pool = SteinerProblem(
+        graph, [["A"], ["B"]], preprocess=False
+    ).get_optimal_solutions(limit=10)
+
+    assert pool.exhausted is True
+    assert len(pool) == 1
+    solution = list(pool)[0]
+    assert solution.objective == 0.0
+    assert solution.selected_edges == []
+
+
 def test_dual_ascent_flag_ignored():
     g = diamond_graph()
     problem = SteinerProblem(g, [["A", "D"]], preprocess=False, dual_ascent=True)
@@ -299,6 +315,55 @@ def test_zero_cost_unused_edge_not_counted_as_distinct_solution():
     sol = list(pool)[0]
     assert sol.objective == 1.0
     assert set(sol.selected_edges) == {("A", "C")}
+
+
+@pytest.mark.parametrize(
+    "weighted_edges",
+    [
+        [("A", "C", 1), ("A", "B", 0)],
+        [("A", "X", 1), ("X", "C", 1), ("X", "B", 0)],
+    ],
+    ids=["root-attached-leaf", "internal-node-attached-leaf"],
+)
+def test_zero_cost_redundant_branch_is_not_a_distinct_tree(weighted_edges):
+    """Issue #45: enumeration means inclusion-minimal Steiner trees.
+
+    A removable zero-cost leaf must not be counted, regardless of whether it
+    is attached to the root or to an internal node.
+    """
+    graph = nx.Graph()
+    graph.add_weighted_edges_from(weighted_edges)
+
+    pool = SteinerProblem(
+        graph, [["A", "C"]], preprocess=False
+    ).get_optimal_solutions(limit=10)
+
+    assert pool.exhausted is True
+    assert len(pool) == 1
+    solution = list(pool)[0]
+    assert solution.objective == sum(
+        graph.edges[edge]["weight"] for edge in solution.selected_edges
+    )
+    assert "B" not in {node for edge in solution.selected_edges for node in edge}
+
+
+def test_zero_cost_alternative_minimal_paths_are_both_enumerated():
+    """Minimal zero-cost alternatives remain distinct under issue #45 semantics."""
+    graph = nx.Graph()
+    graph.add_weighted_edges_from([
+        ("A", "B", 0), ("B", "C", 1),
+        ("A", "D", 0), ("D", "C", 1),
+    ])
+
+    pool = SteinerProblem(
+        graph, [["A", "C"]], preprocess=False
+    ).get_optimal_solutions(limit=10)
+
+    assert pool.exhausted is True
+    assert edge_sets(pool) == {
+        frozenset(frozenset(edge) for edge in [("A", "B"), ("B", "C")]),
+        frozenset(frozenset(edge) for edge in [("A", "D"), ("D", "C")]),
+    }
 
 
 def test_gurobi_zero_cost_unused_edge_not_counted_as_distinct_solution():

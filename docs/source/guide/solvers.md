@@ -37,6 +37,12 @@ print(len(pool), pool.exhausted)  # exhausted: every optimal solution was found,
                                    # not just the first `limit` of them
 ```
 
+Here, a Steiner tree is **inclusion-minimal**: removing any selected edge
+would break a required terminal-group connection. Consequently, adding a
+redundant zero-cost branch or cycle does not create another solution. Distinct
+minimum-cost trees that use zero-cost edges are still enumerated when each of
+their edges is necessary for that tree's terminal connectivity.
+
 `get_optimal_solutions()` **requires `preprocess=False`**: graph reduction
 can arbitrarily collapse tied-cost alternatives (e.g. terminal contraction)
 before any ILP runs, silently erasing them from enumeration — calling it on
