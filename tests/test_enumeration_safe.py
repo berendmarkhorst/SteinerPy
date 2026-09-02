@@ -170,8 +170,7 @@ def test_get_optimal_solutions_still_rejects_plain_preprocess_true():
 @pytest.mark.parametrize("bad_weight", [0, -1])
 def test_enumeration_safe_requires_strictly_positive_weights(bad_weight):
     """A non-positive edge weight breaks the tied-optimum-preservation
-    argument (and the separate, out-of-scope zero-cost-edge enumeration
-    ambiguity), so construction must reject it up front rather than silently
+    argument, so construction must reject it up front rather than silently
     mis-preserving ties."""
     g = nx.Graph()
     g.add_edge("A", "B", weight=bad_weight)

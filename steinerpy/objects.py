@@ -112,11 +112,8 @@ class BaseSteinerProblem:
                 # enumeration_safe test assumes strictly positive edge costs
                 # (as do the sound deletion tests generally -- e.g. the
                 # long-edge test's "a path shorter than c(e) cannot itself
-                # contain e"); a zero-cost edge also introduces a separate,
-                # pre-existing ambiguity in what get_optimal_solutions()
-                # counts as a *distinct* optimal solution (redundant
-                # zero-cost edges), which is out of scope here. Validate
-                # explicitly rather than silently mis-preserving ties.
+                # contain e"). Validate explicitly rather than silently
+                # mis-preserving ties.
                 non_positive = [(u, v) for u, v, d in graph.edges(data=True)
                                 if d.get(weight, 1) <= 0]
                 if non_positive:
