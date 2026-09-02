@@ -435,7 +435,8 @@ def bound_based_deletions(G: nx.Graph, terminals: OrderedSet, weight: str,
 def _structural_fixpoint(G: nx.Graph, terminals: OrderedSet, weight: str,
                          tracker: ReductionTracker = None, seeds=None,
                          do_deg1: bool = True, do_deg2: bool = True,
-                         contract_terminals: bool = False) -> bool:
+                         contract_terminals: bool = False,
+                         enumeration_safe: bool = False, eps: float = 1e-9) -> bool:
     """In-place degree-1 / degree-2 fixpoint driven by a worklist.
 
     Instead of rescanning every node per pass, a queue holds the nodes whose
@@ -449,6 +450,14 @@ def _structural_fixpoint(G: nx.Graph, terminals: OrderedSet, weight: str,
     solution (the terminal must be connected and has no other edge), so the
     edge is fixed and the terminal merged into its neighbour — see
     :func:`_contract_terminal_edge`.
+
+    With ``enumeration_safe``, a degree-2 contraction whose new path cost
+    *ties* an existing parallel edge {u, w} (within ``eps``) is skipped
+    instead of applied: contracting would silently discard one of two equally
+    optimal ways to connect u and w through v, which is exactly the tied-
+    optimum loss #43 is about. ``v`` is left in the graph unsimplified. A
+    strictly-better or strictly-worse new path is unaffected (no tie, so no
+    alternative is lost by keeping only the cheaper one).
 
     Returns True iff the graph was modified.
     """
@@ -490,6 +499,10 @@ def _structural_fixpoint(G: nx.Graph, terminals: OrderedSet, weight: str,
             weight_uv = G[u][v].get(weight, 1)
             weight_vw = G[v][w].get(weight, 1)
             new_weight = weight_uv + weight_vw
+            if enumeration_safe and G.has_edge(u, w):
+                existing_weight = G[u][w].get(weight, float('inf'))
+                if abs(new_weight - existing_weight) <= eps:
+                    continue  # tied parallel alternative: keep v, don't erase it
             G.remove_node(v)
             changed = True
             if G.has_edge(u, w):
@@ -528,10 +541,15 @@ def degree_one_reduction(G: nx.Graph, terminals: Union[Set, List],
 
 
 def degree_two_reduction(G: nx.Graph, terminals: Union[Set, List], weight: str = "weight",
-                        tracker: ReductionTracker = None) -> nx.Graph:
+                        tracker: ReductionTracker = None,
+                        enumeration_safe: bool = False) -> nx.Graph:
     """
     Replace degree-2 non-terminal nodes with direct edges between their neighbors.
     Only record contractions that actually create or modify edges.
+
+    With ``enumeration_safe``, a contraction that would tie an existing
+    parallel edge is skipped instead of applied (see
+    :func:`_structural_fixpoint`'s own docstring).
     """
     reduced_graph = G.copy()
 
@@ -540,7 +558,8 @@ def degree_two_reduction(G: nx.Graph, terminals: Union[Set, List], weight: str =
         if 'edge_type' not in reduced_graph[u][v]:
             reduced_graph[u][v]['edge_type'] = 'original'
 
-    _structural_fixpoint(reduced_graph, OrderedSet(terminals), weight, tracker, do_deg1=False)
+    _structural_fixpoint(reduced_graph, OrderedSet(terminals), weight, tracker, do_deg1=False,
+                         enumeration_safe=enumeration_safe)
     return reduced_graph
 
 
@@ -558,7 +577,8 @@ _REBUILD_PER_SUBPASS = False
 def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str = "weight",
                      special_distance: bool = False, long_edge: bool = False,
                      max_settle: int = 2000, replace_nodes: bool = False,
-                     contract: bool = False, bound_based: bool = False
+                     contract: bool = False, bound_based: bool = False,
+                     enumeration_safe: bool = False
                      ) -> Tuple[nx.Graph, ReductionTracker]:
     """Apply the structural (and, optionally, heavy) reductions to a fixpoint.
 
@@ -578,7 +598,8 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
     :param max_settle: work cap for the long-edge bounded Dijkstra.
     :param replace_nodes: enable degree-k pseudo-elimination of non-terminals
         (Rehfeldt & Koch 2023, Prop. 4; Steiner *tree* only, skipped for
-        multiple terminal groups).
+        multiple terminal groups).  Forced off when ``enumeration_safe`` (see
+        below).
     :param contract: enable the *terminal contraction* tests (Steiner **tree**
         only, skipped for multiple terminal groups): degree-1 terminals (the
         sole incident edge is in every solution), adjacent-terminal edges
@@ -590,9 +611,37 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
         recorded in ``tracker.terminal_merges`` (the caller must remap its
         terminal groups via ``tracker.resolve_terminal``) and SL-promoted new
         terminals in ``tracker.added_terminals`` (the caller must append
-        them to its single group).
+        them to its single group).  With ``enumeration_safe``, only the
+        degree-1 case still fires (see below).
     :param bound_based: enable the BND node/edge deletions
         (:func:`bound_based_deletions`; Steiner **tree** only).
+    :param enumeration_safe: restrict reduction to tests that preserve the
+        *complete set* of optimal solutions, not merely the optimal value —
+        for use ahead of solution enumeration (steinerpy#43), where a
+        reduction that keeps only one of several tied-optimal alternatives
+        would silently make some optima unreachable. ``special_distance``,
+        ``long_edge`` and ``bound_based`` are already exact (strict
+        inequalities: they only ever delete an edge/node proven to lie in
+        *no* optimal solution) and are unaffected. Non-terminal degree-1
+        removal is likewise unaffected (an optimal tree always excludes a
+        removable degree-1 non-terminal). Three tests are *not*
+        optimum-set-preserving because their certificate only proves *at
+        least one* optimum survives, not every one, so this flag adjusts
+        them:
+
+        * degree-2 contraction skips (leaves the node in place) exactly when
+          the contracted path *ties* an existing parallel edge, instead of
+          discarding the tied alternative (see
+          :func:`_structural_fixpoint`'s own docstring);
+        * node replacement (``replace_nodes``) is disabled outright, since a
+          removed node's neighbour-pair reconnection is not guaranteed to
+          reproduce every tied optimum through it;
+        * of the terminal-contraction tests, only the degree-1 case (forced —
+          the terminal's sole edge has no alternative to lose) still fires;
+          the adjacent-terminal, Nearest-Vertex and Short-Links tests
+          (:func:`_adjacent_terminal_pass`, :func:`_nv_pass`,
+          :func:`_sl_pass`) are skipped, since each picks one edge among
+          possibly several that equally satisfy its inclusion test.
     :returns: ``(reduced_graph, tracker)``.  Deleted edges need no tracking;
         the degree-2 contractions *and* node replacements are recorded for
         solution back-mapping (a replacement edge ``{u, w}`` through eliminated
@@ -625,10 +674,13 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
 
     # Structural fixpoint first; the heavy tests then run on the smaller graph.
     _structural_fixpoint(reduced_graph, all_terminals, weight, tracker,
-                         contract_terminals=ct_on)
+                         contract_terminals=ct_on, enumeration_safe=enumeration_safe)
 
     sd_on = special_distance and single_group
-    rn_on = replace_nodes and single_group
+    # Node replacement's certificate only preserves *a* optimum, not every
+    # tied one -- unsound for enumeration, so enumeration_safe forces it off
+    # regardless of the caller's request (see this function's own docstring).
+    rn_on = replace_nodes and single_group and not enumeration_safe
     bnd_on = bound_based and single_group
     rounds = 0
     while sd_on or long_edge or rn_on or ct_on or bnd_on:
@@ -639,7 +691,11 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
 
         # Terminal contractions first: they change the terminal set, so they
         # must run before this round's Voronoi diagram / terminal MST is built.
-        if ct_on:
+        # Skipped under enumeration_safe: this pass picks one cheapest-edge
+        # witness among possibly several tied ones (see this function's own
+        # docstring); only the forced degree-1 case (inside
+        # _structural_fixpoint, contract_terminals=ct_on) still fires.
+        if ct_on and not enumeration_safe:
             ct_seeds = _adjacent_terminal_pass(reduced_graph, all_terminals,
                                                weight, tracker)
             if ct_seeds:
@@ -659,7 +715,7 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
 
         # Shared per-round data for the terminal-based tests.
         vor = tmst = bott = mst_weights = None
-        if sd_on or rn_on or ct_on or bnd_on:
+        if sd_on or rn_on or (ct_on and not enumeration_safe) or bnd_on:
             vor, tmst, bott, mst_weights = _build_terminal_data()
 
         # Voronoi-based contraction tests (SL needs a fresh diagram and fires
@@ -667,7 +723,7 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
         # contractions introduce — see the docstrings). They shrink distances
         # and can add/merge terminals, so the terminal data is rebuilt before
         # the deletion tests, whose bounds must be *lower* bounds.
-        if ct_on and len(all_terminals) >= 2:
+        if ct_on and not enumeration_safe and len(all_terminals) >= 2:
             ct_seeds = _sl_pass(reduced_graph, all_terminals, weight, tracker, vor)
             ct_seeds |= _nv_pass(reduced_graph, all_terminals, weight, tracker, vor)
             if ct_seeds:
@@ -739,7 +795,8 @@ def preprocess_graph(G: nx.Graph, terminal_groups: List[List[str]], weight: str 
 
         if seeds:
             _structural_fixpoint(reduced_graph, all_terminals, weight, tracker,
-                                 seeds=seeds, contract_terminals=ct_on)
+                                 seeds=seeds, contract_terminals=ct_on,
+                                 enumeration_safe=enumeration_safe)
 
         if len(all_terminals) <= 1:
             break  # trivial problem: the optimum is the fixed edges alone

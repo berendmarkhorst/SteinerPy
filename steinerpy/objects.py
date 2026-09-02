@@ -95,9 +95,33 @@ class BaseSteinerProblem:
         # upper bound (Polzin & Vahdati 1998). Grouped with the heavy tests.
         bb_opt = kwargs.get('bound_based', self.heavy_reduce)
 
+        # Enumeration-safe mode (steinerpy#43): restricts reduction to tests
+        # that preserve the *complete set* of optimal solutions, not merely
+        # the optimal value, so preprocessing can be combined with
+        # get_optimal_solutions(). Off by default (it forgoes real reduction
+        # power -- node replacement and the non-degree-1 terminal-contraction
+        # tests -- so it is opt-in, not folded into ``heavy``). See
+        # preprocess_graph's own docstring for exactly which tests it adjusts.
+        self.enumeration_safe = bool(kwargs.get('enumeration_safe', False))
+
         if preprocess:
             if isinstance(graph, nx.DiGraph):
                 raise ValueError("Graph preprocessing is not supported for directed graphs. Use preprocess=False.")
+            if self.enumeration_safe:
+                # The tied-optimum-preservation argument for every
+                # enumeration_safe test assumes strictly positive edge costs
+                # (as do the sound deletion tests generally -- e.g. the
+                # long-edge test's "a path shorter than c(e) cannot itself
+                # contain e"). Validate explicitly rather than silently
+                # mis-preserving ties.
+                non_positive = [(u, v) for u, v, d in graph.edges(data=True)
+                                if d.get(weight, 1) <= 0]
+                if non_positive:
+                    raise ValueError(
+                        "enumeration_safe=True requires strictly positive edge "
+                        f"weights; found non-positive weight on {non_positive[:5]}"
+                        f"{' ...' if len(non_positive) > 5 else ''}."
+                    )
             _heavy_ok = (kwargs.get('budget') is None and kwargs.get('max_degree') is None
                          and kwargs.get('hop_limit') is None)
             self.graph, self.reduction_tracker = preprocess_graph(
@@ -107,6 +131,7 @@ class BaseSteinerProblem:
                 replace_nodes=bool(rn_opt) and _heavy_ok,
                 contract=bool(ct_opt) and _heavy_ok,
                 bound_based=bool(bb_opt) and _heavy_ok,
+                enumeration_safe=self.enumeration_safe,
             )
             if self.reduction_tracker.terminal_merges or self.reduction_tracker.added_terminals:
                 # Contractions merged terminals away (and the SL test may have
@@ -125,7 +150,8 @@ class BaseSteinerProblem:
             if self.da_reduce and kwargs.get('budget') is None and kwargs.get('max_degree') is None:
                 from .dual_ascent import reduce_graph_with_dual_ascent
                 self.graph = reduce_graph_with_dual_ascent(
-                    self.graph, terminal_groups, weight, self.reduction_tracker)
+                    self.graph, terminal_groups, weight, self.reduction_tracker,
+                    enumeration_safe=self.enumeration_safe)
             stats = reduction_stats(self.original_graph, self.graph)
             logger.info(f"Graph reduced: {stats['nodes_removed']} nodes ({stats['node_reduction_percent']:.1f}%), "
                   f"{stats['edges_removed']} edges ({stats['edge_reduction_percent']:.1f}%) removed")
@@ -756,10 +782,17 @@ class BaseSteinerProblem:
         cycles are not separate trees: zero-cost edges are removed whenever
         the remaining edge set still connects every terminal group, and the
         no-good cut excludes every redundant superset of that minimal tree.
-        Requires ``preprocess=False``: graph
-        reduction can arbitrarily collapse tied-cost alternatives (e.g.
-        terminal contraction) before any ILP runs, silently erasing them from
-        enumeration.
+        Requires ``preprocess=False`` (the default reduction pipeline can
+        arbitrarily collapse tied-cost alternatives -- e.g. terminal
+        contraction -- before any ILP runs, silently erasing them from
+        enumeration) *unless* the problem was constructed with
+        ``enumeration_safe=True`` (steinerpy#43): that mode restricts
+        preprocessing to reductions proven to preserve the complete set of
+        optima, not merely the optimal value, so it is safe to combine with
+        enumeration -- see :func:`steinerpy.graph_reducer.preprocess_graph`'s
+        own docstring for exactly which tests it keeps/skips. Solutions are
+        back-mapped to the original graph the same way :meth:`get_solution`
+        is.
 
         Every speedup dispatch used by :meth:`get_solution` is bypassed
         (trivial-instance early exit, ``exact=False`` heuristic mode,
@@ -792,25 +825,48 @@ class BaseSteinerProblem:
             proving anything stops enumeration early with ``exhausted=False``,
             the same "there might be more, we didn't look" signal already
             used when ``limit`` is reached.
-        :raises ValueError: if ``preprocess=True``, ``limit`` is negative, or
-            the solver name is unknown.
-        :raises NotImplementedError: for budget-constrained instances, or for
+        :raises ValueError: if ``preprocess=True`` without
+            ``enumeration_safe=True``, ``limit`` is negative, or the solver
+            name is unknown.
+        :raises NotImplementedError: for budget-, max-degree- or hop-limit-
+            constrained instances combined with ``preprocess=True``, or for
             problem classes whose :meth:`get_solution` transforms the model in
             a way this method's plain edge-indicator enumeration can't
             replicate (see each class's override).
         """
-        if self.preprocess:
+        if self.preprocess and not self.enumeration_safe:
             raise ValueError(
-                "get_optimal_solutions requires preprocess=False: graph reduction "
-                "can arbitrarily collapse tied-cost alternatives (e.g. terminal "
-                "contraction) before any ILP runs, silently erasing them from "
-                "enumeration. Reconstruct the problem with preprocess=False."
+                "get_optimal_solutions requires preprocess=False (or "
+                "enumeration_safe=True): graph reduction can arbitrarily "
+                "collapse tied-cost alternatives (e.g. terminal contraction) "
+                "before any ILP runs, silently erasing them from enumeration. "
+                "Reconstruct the problem with preprocess=False, or with "
+                "enumeration_safe=True to keep only reductions that preserve "
+                "every tied optimum."
             )
         if self.budget is not None:
             raise NotImplementedError(
                 "get_optimal_solutions does not support budget-constrained "
                 "instances (a different model, connection/penalty variables "
                 "instead of a plain edge indicator, is used)."
+            )
+        if self.preprocess and (self.max_degree is not None or self.hop_limit is not None):
+            # The degree-1/degree-2 structural fixpoint (unlike the heavy
+            # reductions) is not degree- or hop-aware: it always runs, even
+            # when max_degree/hop_limit disables everything else, and a
+            # contraction can silently produce a reduced-graph solution that
+            # violates the constraint once mapped back to the original graph
+            # (e.g. a forced degree-2 waypoint disappearing into a single
+            # contracted edge). This is a pre-existing gap in preprocess=True
+            # generally, not specific to enumeration_safe, but it was
+            # previously unreachable here since preprocess=True was always
+            # rejected above.
+            raise NotImplementedError(
+                "get_optimal_solutions with preprocess=True does not support "
+                "max_degree- or hop_limit-constrained instances: the "
+                "structural degree reductions are not degree/hop-aware and "
+                "can map back to a solution that violates the constraint. "
+                "Reconstruct the problem with preprocess=False."
             )
         if limit < 0:
             raise ValueError(f"limit must be >= 0, got {limit}.")
@@ -925,10 +981,14 @@ class BaseSteinerProblem:
             selected_edges = _remove_redundant_zero_cost_edges(selected_edges)
             sol_key = frozenset(_edge_key(e) for e in selected_edges)
             assert sol_key not in found
+            original_selected_edges = (
+                map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
+                if self.preprocess else selected_edges
+            )
             solutions.append(Solution(
-                gap=gap, runtime=runtime, objective=objective,
-                selected_edges=selected_edges, original_selected_edges=selected_edges,
-                was_preprocessed=False,
+                gap=gap, runtime=runtime, objective=objective + self._fixed_cost(),
+                selected_edges=selected_edges, original_selected_edges=original_selected_edges,
+                was_preprocessed=self.preprocess,
             ))
             found.append(sol_key)
 
