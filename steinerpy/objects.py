@@ -746,12 +746,17 @@ class BaseSteinerProblem:
         solver: str = "highs", threads: int = None,
     ) -> 'OptimalSolutionPool':
         """
-        Enumerate up to ``limit`` distinct optimal (equal-cost) Steiner trees.
+        Enumerate up to ``limit`` distinct optimal, inclusion-minimal Steiner
+        trees.
 
         Unlike :meth:`get_solution`, which returns one arbitrary optimum, this
-        method solves repeatedly with a no-good cut excluding every edge set
+        method solves repeatedly with a no-good cut excluding every tree
         already found, so that ties for the optimal objective are surfaced
-        instead of silently discarded. Requires ``preprocess=False``: graph
+        instead of silently discarded. Redundant zero-cost branches and
+        cycles are not separate trees: zero-cost edges are removed whenever
+        the remaining edge set still connects every terminal group, and the
+        no-good cut excludes every redundant superset of that minimal tree.
+        Requires ``preprocess=False``: graph
         reduction can arbitrarily collapse tied-cost alternatives (e.g.
         terminal contraction) before any ILP runs, silently erasing them from
         enumeration.
@@ -833,6 +838,40 @@ class BaseSteinerProblem:
         def _edge_key(e):
             return tuple(e) if directed else frozenset(e)
 
+        def _connects_terminal_groups(edges):
+            """Whether *edges* satisfy this problem's connectivity demands."""
+            subgraph = nx.DiGraph() if directed else nx.Graph()
+            subgraph.add_nodes_from(self.nodes)
+            subgraph.add_edges_from(edges)
+            for group in self.terminal_groups:
+                terminals = list(dict.fromkeys(group))
+                if len(terminals) <= 1:
+                    continue
+                root = terminals[0]
+                if any(not nx.has_path(subgraph, root, terminal)
+                       for terminal in terminals[1:]):
+                    return False
+            return True
+
+        def _remove_redundant_zero_cost_edges(edges):
+            """Return an inclusion-minimal tied-optimal edge set.
+
+            A removable edge in a minimum-cost solution can only have zero
+            cost (edge costs are non-negative). Trying the selected zero-cost
+            edges in stable model order removes branches and cycle edges while
+            preserving every terminal-group connection.
+            """
+            kept = list(edges)
+            for edge in reversed(self.edges):
+                if edge not in kept:
+                    continue
+                if self.graph.edges[edge][self.weight] != 0:
+                    continue
+                candidate = [selected for selected in kept if selected != edge]
+                if _connects_terminal_groups(candidate):
+                    kept = candidate
+            return kept
+
         # found: membership-only set of previously-seen solutions -- never
         # iterated to produce output order, so a plain set of frozensets (not
         # an OrderedSet) doesn't reintroduce the PYTHONHASHSEED nondeterminism
@@ -848,8 +887,10 @@ class BaseSteinerProblem:
             )
             for sol_key in found:
                 s1 = [x[e] for e in self.edges if _edge_key(e) in sol_key]
-                s0 = [x[e] for e in self.edges if _edge_key(e) not in sol_key]
-                model.addConstr(sum((1 - v) for v in s1) + sum(v for v in s0) >= 1)
+                # Exclude the minimal tree and all of its redundant supersets.
+                # No other inclusion-minimal feasible tree can strictly
+                # contain an already-feasible tree.
+                model.addConstr(sum((1 - v) for v in s1) >= 1)
             gap, runtime, objective, selected_edges, status = run_fn(model, self, x, y2, z, return_status=True)
 
             if status == "infeasible":
@@ -881,6 +922,7 @@ class BaseSteinerProblem:
                 exhausted = False
                 break
 
+            selected_edges = _remove_redundant_zero_cost_edges(selected_edges)
             sol_key = frozenset(_edge_key(e) for e in selected_edges)
             assert sol_key not in found
             solutions.append(Solution(
@@ -890,12 +932,12 @@ class BaseSteinerProblem:
             ))
             found.append(sol_key)
 
-            if not self.edges:
+            if not sol_key:
                 # No edge variables exist to build a no-good cut from (e.g. a
-                # single-node instance where every terminal group already
-                # coincides): the empty edge set is the only feasible
-                # solution, so a second probe would return the exact same
-                # trivial result and trip the duplicate-solution assert above.
+                # zero-edge forest whose groups are all singletons), or every
+                # selected zero-cost edge was redundant. The feasible empty
+                # set is the unique inclusion-minimal solution: every nonempty
+                # edge set is its strict superset.
                 exhausted = True
                 break
 

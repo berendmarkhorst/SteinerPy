@@ -76,6 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- **Faster Dreyfus-Wagner grow steps**: the few-terminal dynamic program now
+  builds the fixed graph-plus-virtual-source CSR structure once and updates
+  only the virtual-source weights for each subset, avoiding repeated sparse
+  matrix construction and its temporary coordinate arrays.
+- **Optimal-solution enumeration now has explicit inclusion-minimal
+  semantics** (issue #45): redundant zero-cost branches and cycles are removed
+  without treating them as distinct Steiner trees, consistently for branches
+  attached to roots and internal nodes. Distinct tied-optimal trees whose
+  zero-cost edges are necessary for connectivity remain enumerable.
 - **Flow variables are now continuous**: the flow-based models (prize-collecting
   penalty ILP, budget-constrained, MWCSPB) declared every per-terminal arc-flow
   variable as a binary integer — O(|T|·|A|) integer columns. Flow integrality
@@ -89,6 +98,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- **Zero-edge Steiner forests with singleton terminal groups**: the HiGHS and
+  Gurobi fast paths determined feasibility from the graph's total node count,
+  incorrectly rejecting an empty forest such as groups `[['A'], ['B']]` on two
+  isolated nodes. They now test each terminal group independently for at most
+  one distinct terminal, while a group such as `[['A', 'B']]` remains
+  infeasible.
 - **`get_optimal_solutions()` correctness fixes** (PR #42 review): the no-good
   cuts identified edges with `frozenset(e)`, discarding arc orientation, so an
   antiparallel arc pair `(u, v)`/`(v, u)` in a directed graph collapsed to one

@@ -196,6 +196,20 @@ def test_zero_edge_graph_with_unconnected_terminals_raises():
         SteinerProblem(G, [['A', 'B']], preprocess=False).get_solution()
 
 
+def test_zero_edge_forest_with_singleton_groups_is_feasible():
+    """Separate singleton groups require no connection to one another."""
+    graph = nx.Graph()
+    graph.add_nodes_from(["A", "B"])
+
+    solution = SteinerProblem(
+        graph, [["A"], ["B"]], preprocess=False
+    ).get_solution()
+
+    assert solution.selected_edges == []
+    assert solution.objective == 0.0
+    assert solution.gap == pytest.approx(0.0)
+
+
 def test_zero_edge_graph_with_budget_does_not_crash():
     """Same zero-edge scenario as above, but budget-constrained: unlike the
     plain path this is not infeasible (the budget model tolerates

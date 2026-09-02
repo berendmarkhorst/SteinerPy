@@ -1,5 +1,6 @@
 """Tests for the Dreyfus–Wagner few-terminal dynamic program."""
 import math
+import importlib
 import random
 
 import networkx as nx
@@ -85,6 +86,36 @@ def test_disconnected_terminals():
     G.add_edge(2, 3, weight=1)
     cost, edges = dreyfus_wagner(G, [0, 3])
     assert math.isinf(cost) and edges == []
+
+
+def test_grow_csr_is_built_once(monkeypatch):
+    """Changing subsets update one virtual row instead of rebuilding CSR."""
+    module = importlib.import_module("steinerpy.dreyfus_wagner")
+    real_csr_matrix = module.csr_matrix
+    calls = []
+
+    def counting_csr_matrix(*args, **kwargs):
+        calls.append(None)
+        return real_csr_matrix(*args, **kwargs)
+
+    monkeypatch.setattr(module, "csr_matrix", counting_csr_matrix)
+    graph, terminals = _random_instance(30, 90, 6, seed=404)
+    cost, edges = module.dreyfus_wagner(graph, terminals)
+
+    assert math.isfinite(cost)
+    assert _spans(edges, terminals)
+    assert len(calls) == 2  # base graph plus reusable virtual-source graph
+
+
+def test_disconnected_grow_step_with_infinite_virtual_weights():
+    """The reusable virtual row may contain inf for unreachable vertices."""
+    graph = nx.Graph()
+    graph.add_weighted_edges_from([(0, 1, 1), (1, 2, 1), (3, 4, 1)])
+
+    cost, edges = dreyfus_wagner(graph, [0, 2, 4])
+
+    assert math.isinf(cost)
+    assert edges == []
 
 
 @pytest.mark.parametrize("seed", range(8))

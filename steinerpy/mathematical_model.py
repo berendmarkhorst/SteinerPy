@@ -854,11 +854,13 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     # to solve (sum() over an empty edge set is a plain 0, and HiGHS's
     # model.minimize() requires an actual linear-expression object, not a
     # bare int -- passing one crashes deep inside the Python bindings rather
-    # than reporting infeasibility). A single surviving node means every
-    # terminal group already coincides there (feasible at zero cost); two or
-    # more with no edges between them can never be connected.
+    # than reporting infeasibility). With no edges, feasibility is determined
+    # independently for each terminal group: a group needs no connection iff
+    # it contains at most one distinct terminal. Isolated nodes belonging to
+    # different groups therefore do not make a Steiner forest infeasible.
     if not steiner_problem.edges:
-        if steiner_problem.graph.number_of_nodes() <= 1:
+        if all(len(set(group)) <= 1
+               for group in steiner_problem.terminal_groups):
             return _ret(0.0, 0.0, 0.0, [], "optimal")
         return _ret(float("inf"), 0.0, float("inf"), [], "infeasible")
 
@@ -1441,11 +1443,12 @@ def run_model_gurobi(
             return gap, runtime, objective, selected_edges, status
         return gap, runtime, objective, selected_edges
 
-    # See run_model's own guard for the HiGHS backend: no edges survive in
-    # the (possibly preprocessed) graph, so there is nothing to connect the
-    # terminal groups with.
+    # See run_model's own guard for the HiGHS backend: with no edges, each
+    # terminal group is feasible exactly when it contains at most one
+    # distinct terminal. Other isolated graph nodes are irrelevant.
     if not steiner_problem.edges:
-        if steiner_problem.graph.number_of_nodes() <= 1:
+        if all(len(set(group)) <= 1
+               for group in steiner_problem.terminal_groups):
             return _ret(0.0, 0.0, 0.0, [], "optimal")
         return _ret(float("inf"), 0.0, float("inf"), [], "infeasible")
 
