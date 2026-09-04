@@ -9,16 +9,19 @@ Reference: Rehfeldt & Koch, "On the exact solution of prize-collecting Steiner
 tree problems", ZIB 20-11 (2020), Theorem 6 / Corollary 7 / Algorithm 1.
 """
 
+import random
+
 import networkx as nx
 import pytest
 
-from steinerpy import PrizeCollectingProblem
+from steinerpy import MaxWeightConnectedSubgraph, PrizeCollectingProblem
 from steinerpy.pc_reductions import (
     prize_constrained_distance_deletions,
     reduce_pcstp_graph,
+    terminal_region_bound_deletions,
     terminal_regions_decomposition,
 )
-from tests.test_pc_transform import brute_pcstp, random_pcstp
+from tests.test_pc_transform import brute_mwcsp, brute_pcstp, random_pcstp
 
 
 def test_cheaper_prize_detour_deletes_edge():
@@ -112,6 +115,44 @@ def test_terminal_regions_form_valid_partition():
     assert decomposition.nonproper_terminals <= decomposition.unassigned
 
 
+def test_terminal_region_bound_deletes_expensive_zero_prize_leaf():
+    graph = nx.Graph()
+    graph.add_weighted_edges_from([("a", "x", 1), ("x", "b", 1), ("x", "leaf", 100)])
+    prizes = {"a": 10, "b": 10, "x": 0, "leaf": 0}
+
+    edge_deletions, node_deletions, protected, upper_bound = (
+        terminal_region_bound_deletions(
+            graph,
+            prizes,
+            delete_edges=True,
+            delete_nodes=True,
+        )
+    )
+
+    assert frozenset(("x", "leaf")) in {frozenset(edge) for edge in edge_deletions}
+    assert "leaf" in node_deletions
+    assert not protected
+    assert upper_bound == pytest.approx(2.0)
+
+
+def test_terminal_region_bound_reports_but_keeps_prize_node():
+    graph = nx.Graph()
+    graph.add_weighted_edges_from(
+        [("a", "x", 1), ("x", "b", 1), ("x", "prize_leaf", 100)]
+    )
+    prizes = {"a": 10, "b": 10, "x": 0, "prize_leaf": 1}
+    reduced, stats = reduce_pcstp_graph(
+        graph,
+        prizes,
+        bound_edges=True,
+        bound_nodes=True,
+        return_stats=True,
+    )
+
+    assert "prize_leaf" in reduced
+    assert stats["protected_prize_nodes"] == 1
+
+
 @pytest.mark.parametrize("seed", range(100))
 def test_terminal_region_stacks_preserve_optimum(seed):
     g, prizes = random_pcstp(seed)
@@ -165,3 +206,23 @@ def test_public_reduction_stats_and_prize_preservation():
     assert prize_nodes <= set(problem.graph)
     assert 0 in problem.graph  # caller-supplied terminal is protected
     assert problem.pc_reduction_stats["upper_bound"] is not None
+
+
+@pytest.mark.parametrize("level", [True, "pcd", "pcd+trd", "pcd+trd+nodes"])
+@pytest.mark.parametrize("seed", range(15))
+def test_public_mwcsp_reduction_levels_match_oracle(level, seed):
+    rng = random.Random(seed)
+    graph = nx.gnm_random_graph(7, 10, seed=seed)
+    if not nx.is_connected(graph):
+        graph = nx.complete_graph(7)
+    for u, v in graph.edges():
+        graph[u][v]["weight"] = 0
+    weights = {v: rng.randint(-7, 9) for v in graph}
+    if not any(value > 0 for value in weights.values()):
+        weights[0] = 1
+
+    solution = MaxWeightConnectedSubgraph(graph, weights, pc_reduce=level).get_solution(
+        pc_transform=True
+    )
+    assert solution.gap == pytest.approx(0.0, abs=1e-7)
+    assert solution.objective == pytest.approx(brute_mwcsp(graph, weights))
