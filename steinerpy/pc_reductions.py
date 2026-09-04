@@ -27,7 +27,7 @@ import heapq
 import itertools
 import math
 import time
-from typing import Dict, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import networkx as nx
 
@@ -104,7 +104,7 @@ def terminal_regions_decomposition(
     owner = {}
     distance = {}
     counter = itertools.count()
-    queue = []
+    queue: List[Tuple[float, str, int, Any]] = []
     for terminal in sorted(proper, key=lambda v: str(v)):
         owner[terminal] = terminal
         distance[terminal] = 0.0
@@ -131,7 +131,7 @@ def terminal_regions_decomposition(
                 owner[w] = root
                 heapq.heappush(queue, (candidate, str(root), next(counter), w))
 
-    regions = {terminal: set() for terminal in proper}
+    regions: Dict[Any, Set] = {terminal: set() for terminal in proper}
     for v, terminal in owner.items():
         regions[terminal].add(v)
     unassigned = set(graph) - set(owner)
@@ -257,7 +257,7 @@ def terminal_region_bound_deletions(
         for edge_index, (u, v, data) in enumerate(graph.edges(data=True)):
             subdivided = graph.copy()
             subdivided.remove_edge(u, v)
-            dummy = ("__pc_trd_subdivision__", edge_index)
+            dummy: Any = ("__pc_trd_subdivision__", edge_index)
             while dummy in subdivided:
                 dummy = dummy + (edge_index,)
             half_cost = float(data.get(weight, 1)) / 2.0
@@ -283,7 +283,8 @@ def _pcd_edge_deletable_adj(adj, vstart, vend, node_prizes, eps, max_settle) -> 
 
     Runs the modified, prize-discounted Dijkstra from ``vstart`` over
     ``E \\ {vstart, vend}`` and returns ``True`` as soon as ``vend`` is reached by
-    a prize-constrained walk of undiscounted cost ``<= c({vstart, vend})``.
+    a prize-constrained walk of undiscounted cost strictly below
+    ``c({vstart, vend})``.
     """
     c0 = adj[vstart][vend]
     dist: Dict = {vstart: 0.0}
@@ -350,7 +351,7 @@ def prize_constrained_distance_deletions(
     weight: str = "weight",
     eps: float = 1e-9,
     max_settle: int = 2000,
-    jobs: int = None,
+    jobs: Optional[int] = None,
 ) -> Set[Tuple]:
     """Edges deletable by the prize-constrained distance (PCD) test.
 

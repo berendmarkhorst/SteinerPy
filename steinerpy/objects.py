@@ -216,10 +216,10 @@ class BaseSteinerProblem:
         # until instance-suite benchmarks justify an activation threshold.
         self.primal_local_search = kwargs.get('primal_local_search', False)
         self.implied_profit = kwargs.get('implied_profit', False)
-        self.heuristic_stats = {}
+        self.heuristic_stats: Dict[str, object] = {}
         # Populated by the HiGHS directed-cut loop. This includes cut-pool
         # counters even when the experimental purger is disabled.
-        self.cut_stats = {}
+        self.cut_stats: Dict[str, object] = {}
 
 
     def _da_eligible(self) -> bool:
@@ -410,8 +410,8 @@ class BaseSteinerProblem:
         }
         return da
 
-    def _heuristic_solution(self, primal_local_search: bool = None,
-                            implied_profit: bool = None) -> 'Solution':
+    def _heuristic_solution(self, primal_local_search: Optional[bool] = None,
+                            implied_profit: Optional[bool] = None) -> 'Solution':
         """Return the dual-ascent primal directly, with no ILP.
 
         Genuinely heuristic (the primal may be sub-optimal), but the returned
@@ -462,14 +462,14 @@ class BaseSteinerProblem:
             da_primal = (map_solution_to_original(
                             da.primal_edges, self.reduction_tracker, self.graph)
                          if self.preprocess else list(da.primal_edges))
-            candidates = [da_primal]
+            candidates: List[List[Tuple]] = [da_primal]
             if len(self.terminal_groups) == 1:
                 candidates.extend(self._sph_candidates(graph, self.terminal_groups[0]))
                 if use_implied:
                     from .primal_heuristics import implied_profit_candidates
                     candidates.extend(implied_profit_candidates(
                         graph, self.terminal_groups[0], self.weight))
-            best_edges = da_primal
+            best_edges: List[Tuple] = da_primal
             best_cost = _edges_cost(graph, da_primal, self.weight)
             for cand in candidates:
                 refined = refine_primal_mst(graph, cand, all_terminals, self.weight)
@@ -593,7 +593,8 @@ class BaseSteinerProblem:
         return demands
 
     def _decompose_single_group(self, time_limit, log_file, solver, dual_ascent,
-                                threads, primal_local_search, implied_profit):
+                                threads, primal_local_search=None,
+                                implied_profit=None):
         """Solve a single-group Steiner tree by biconnected-component blocks.
 
         Returns a :class:`Solution` (union of per-block optimal trees) or ``None``
@@ -646,9 +647,11 @@ class BaseSteinerProblem:
         )
 
     def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs",
-                     dual_ascent: bool = None, exact: bool = True, threads: int = None,
-                     decompose: bool = None, primal_local_search: bool = None,
-                     implied_profit: bool = None) -> 'Solution':
+                     dual_ascent: Optional[bool] = None, exact: bool = True,
+                     threads: Optional[int] = None,
+                     decompose: Optional[bool] = None,
+                     primal_local_search: Optional[bool] = None,
+                     implied_profit: Optional[bool] = None) -> 'Solution':
         """
         Get the solution of the Steiner Problem.
 

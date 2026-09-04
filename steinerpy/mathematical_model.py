@@ -5,7 +5,8 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import List, Set, Tuple, Dict, Union
+from time import perf_counter
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from ._fastgraph import HAS_SCIPY, get_arc_csr, min_cut_scipy, cpu_count
 
@@ -176,15 +177,15 @@ class _HighsCutPool:
     violated again.
     """
 
-    def __init__(self, model: hp.HighsModel, purge_age: int = None,
+    def __init__(self, model: hp.HighsModel, purge_age: Optional[int] = None,
                  tolerance: float = 1e-7):
         self.model = model
         self.purge_age = _cut_purge_age() if purge_age is None else max(
             0, int(purge_age)
         )
         self.tolerance = tolerance
-        self._records = {}
-        self._purged_signatures = set()
+        self._records: Dict[object, _CutRecord] = {}
+        self._purged_signatures: Set[object] = set()
         self.cuts_added = 0
         self.cuts_purged = 0
         self.cuts_reintroduced = 0
@@ -1132,9 +1133,9 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
                 if remaining <= 0:
                     break
                 model.setOptionValue("time_limit", remaining)
-                solve_start = time.time()
+                solve_start = perf_counter()
                 model.minimize(objective_expr)
-                cut_pool.record_solve("lp", time.time() - solve_start)
+                cut_pool.record_solve("lp", perf_counter() - solve_start)
                 if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
                         or not model.getSolution().value_valid):
                     break
@@ -1176,9 +1177,9 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
         if remaining <= 0:
             break
         model.setOptionValue("time_limit", remaining)
-        solve_start = time.time()
+        solve_start = perf_counter()
         model.minimize(objective_expr)
-        cut_pool.record_solve("mip", time.time() - solve_start)
+        cut_pool.record_solve("mip", perf_counter() - solve_start)
         ever_solved = True
 
         # If the model has no feasible/valid primal (e.g. an objective cutoff or
@@ -1999,9 +2000,9 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
                 if remaining <= 0:
                     break
                 model.setOptionValue("time_limit", remaining)
-                solve_start = time.time()
+                solve_start = perf_counter()
                 model.minimize(obj)
-                cut_pool.record_solve("lp", time.time() - solve_start)
+                cut_pool.record_solve("lp", perf_counter() - solve_start)
                 if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
                         or not model.getSolution().value_valid):
                     break
@@ -2051,9 +2052,9 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         if remaining <= 0:
             break
         model.setOptionValue("time_limit", remaining)
-        solve_start = time.time()
+        solve_start = perf_counter()
         model.minimize(obj)
-        cut_pool.record_solve("mip", time.time() - solve_start)
+        cut_pool.record_solve("mip", perf_counter() - solve_start)
         status = model.getModelStatus()
         outcome, has_incumbent = _highs_outcome(model)
         if not has_incumbent:
