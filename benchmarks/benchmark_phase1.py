@@ -42,6 +42,13 @@ FIELDS = [
     "gap",
     "preprocess_time",
     "heuristic_time",
+    "primal_before",
+    "primal_after",
+    "primal_improvement",
+    "candidate_count",
+    "local_moves",
+    "fixed_variables",
+    "lb_eq_ub",
     "lp_resolve_time",
     "mip_resolve_time",
     "solve_time",
@@ -181,7 +188,20 @@ def _worker(args):
             time_limit=args.time_limit, threads=args.threads
         )
         stats = getattr(problem, "heuristic_stats", {})
-        row["heuristic_time"] = stats.get("runtime", 0.0)
+        before = stats.get("objective_before", "")
+        after = stats.get("objective_after", "")
+        row.update(
+            heuristic_time=stats.get("runtime", 0.0),
+            primal_before=before,
+            primal_after=after,
+            primal_improvement=(before - after if before != "" and after != "" else ""),
+            candidate_count=stats.get("candidates", ""),
+            local_moves=(
+                stats.get("vertex_eliminations", 0) + stats.get("key_path_exchanges", 0)
+            ),
+            fixed_variables=stats.get("fixed_variables", ""),
+            lb_eq_ub=stats.get("lb_eq_ub", ""),
+        )
     else:
         terminals = rng.sample(sorted(graph.nodes()), 8)
         groups = [terminals[:4], terminals[4:]]

@@ -347,8 +347,20 @@ class BaseSteinerProblem:
         untouched, so fixing and gap certificates remain valid.
         """
         import time as _time
-        if (da.is_directed or len(self.terminal_groups) != 1 or not da.feasible
-                or (not local_search and not implied_profit)):
+        if da.is_directed or len(self.terminal_groups) != 1 or not da.feasible:
+            return da
+
+        if not local_search and not implied_profit:
+            self.heuristic_stats = {
+                'runtime': 0.0,
+                'objective_before': da.upper_bound,
+                'objective_after': da.upper_bound,
+                'candidates': 1,
+                'vertex_eliminations': 0,
+                'key_path_exchanges': 0,
+                'implied_profit': False,
+                'local_search': False,
+            }
             return da
 
         from .dual_ascent import refine_primal_mst, _edges_cost
@@ -841,9 +853,13 @@ class BaseSteinerProblem:
             if da.feasible and not _math.isinf(da.lower_bound) and not _math.isinf(da.upper_bound):
                 da = self._augment_da_primal(da, use_local, use_implied)
                 if abs(da.upper_bound - da.lower_bound) <= 1e-6 * max(1.0, abs(da.upper_bound)):
+                    self.heuristic_stats['lb_eq_ub'] = True
+                    self.heuristic_stats['fixed_variables'] = 0
                     # Proven optimal by dual ascent — skip the ILP entirely.
                     return self._solution_from_da(da, _t0, 0.0)
                 fixing = reduced_cost_fixing(self, da)
+                self.heuristic_stats['lb_eq_ub'] = False
+                self.heuristic_stats['fixed_variables'] = fixing.total()
                 da_primal = da.primal_edges
                 # Warm-start the ILP cut loop with the Steiner cuts found during
                 # dual ascent, and supply the primal value as an objective cutoff.
