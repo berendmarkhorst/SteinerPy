@@ -3518,7 +3518,7 @@ wheels = [
 
 [[package]]
 name = "steinerpy"
-version = "1.0.16"
+version = "1.0.17"
 source = { editable = "." }
 dependencies = [
     { name = "highspy" },
