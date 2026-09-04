@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Experimental terminal-regions PCSTP reductions** (off by default):
+  `pc_reduce="pcd+trd"` adds Rehfeldt & Koch's (2020) terminal-regions
+  decomposition and Proposition 12 lower bound for bound-based edge deletion;
+  `"pcd+trd+nodes"` also deletes certified zero-prize nodes. Edge bounds use
+  the equivalent zero-prize subdivision-vertex construction. Prize-bearing
+  nodes and user terminals are retained, all deletions require strict
+  `LB > UB`, and `problem.pc_reduction_stats` exposes phase timings and removal
+  counts. `True`/`"pcd"` remain backward-compatible PCD-only aliases. Small
+  exact PCSTP oracle tests cover all four stacks.
+- **Experimental HiGHS cut aging/purging** (off by default): set
+  `STEINERPY_CUT_PURGE_AGE` to a positive number to delete generated directed
+  cuts after that many consecutively slack re-solves. Active signatures prevent
+  duplicates; purged inequalities may be rediscovered; batch deletion updates
+  every surviving HiGHS row index. Structural and dual-ascent seed rows remain
+  permanent. `problem.cut_stats` reports active/peak rows, purged/reintroduced
+  cuts, separation rounds, and separate LP/MIP re-solve times. The policy is
+  integrated into both forest and SAP HiGHS loops and composes with LP-first and
+  nested cuts.
+- **Fresh-process Phase-1 benchmark harness**:
+  `benchmarks/benchmark_phase1.py` compares arbitrary source checkouts with
+  fixed seeds, repeats, single-thread controls, dependency/commit metadata,
+  objective-and-gap validation, phase counters, and isolated peak RSS for the
+  PC reductions, primal portfolio, and cut-purge age sweep.
+- **Experimental primal-heuristic portfolio** (off by default):
+  `primal_local_search=True` applies the vertex-elimination and key-path-exchange
+  neighborhoods of Uchoa & Werneck (2012), while `implied_profit=True` adds the
+  implied-profit shortest-path heuristic of Rehfeldt & Koch (2023, Section
+  5.1.1, equations 28–29). The options are available at construction or per
+  `get_solution()` call for undirected single-group trees. Candidates from dual
+  ascent, Kou, Mehlhorn, and implied profit are feasibility-checked, MST-pruned,
+  and compared; local moves are accepted only on a strict objective decrease.
+  The best upper bound feeds exact-solver cutoff, reduced-cost fixing,
+  `LB == UB` early exit, and MIP warm start without changing the dual lower
+  bound or certified-gap semantics. Separate runtime and move counters are
+  exposed through `problem.heuristic_stats`.
 - **`enumeration_safe=True` preprocessing mode for `get_optimal_solutions()`**
   (steinerpy#43): `get_optimal_solutions()` previously required
   `preprocess=False`, since the default reduction pipeline can silently
@@ -122,6 +157,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- **Prize-constrained-distance deletion could change the PCSTP optimum** in two
+  cases: it discounted the destination endpoint's prize even though equation
+  (8) excludes both endpoints, and it batch-deleted tied alternatives under
+  Corollary 7 even though that corollary only guarantees an optimum avoiding
+  each edge individually. The implementation now excludes the destination
+  prize and uses Theorem 6's strict inequality for collect-then-apply batches.
+  A minimal tied-alternative regression and randomized brute-force PCSTP oracle
+  sweeps cover the failure.
 - **Zero-edge Steiner forests with singleton terminal groups**: the HiGHS and
   Gurobi fast paths determined feasibility from the graph's total node count,
   incorrectly rejecting an empty forest such as groups `[['A'], ['B']]` on two

@@ -60,6 +60,30 @@ python benchmarks/benchmark_dreyfus_memory.py \
   --output candidate.csv
 ```
 
+### Phase-1 research benchmarks
+
+`benchmark_phase1.py` measures the experimental PCSTP reductions, primal
+portfolio, and HiGHS cut purger. Every configuration and repetition runs in a
+fresh process, with fixed seeds and thread counts; the CSV includes dependency
+versions, commit, phase timings, cut/reduction counters, objective and gap, and
+isolated peak RSS. Compare the candidate with a detached checkout of current
+main, for example:
+
+```bash
+python benchmarks/benchmark_phase1.py --feature pc \
+  --source-root /tmp/steinerpy-main --label main --configs none,pcd \
+  --threads 1 --repeats 3 --output /tmp/phase1-pc.csv
+python benchmarks/benchmark_phase1.py --feature pc \
+  --source-root . --label candidate \
+  --configs none,pcd,pcd+trd,pcd+trd+nodes \
+  --threads 1 --repeats 3 --output /tmp/phase1-pc.csv --append
+```
+
+Use `--feature primal` or `--feature cut` for the other sweeps. The built-in
+suite is deterministic and intended as a smoke/microbenchmark; robust default
+decisions still require representative SteinLib/PCSPG suites. A configuration
+is marked `MISMATCH` unless every compared run has the same proven objective.
+
 ## Output columns
 
 `instance, nodes, edges, terminals, opt, base_obj, base_rt, base_gap,
