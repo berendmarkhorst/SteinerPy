@@ -4,6 +4,7 @@ import networkx as nx
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import List, Set, Tuple, Dict, Union
 
 from ._fastgraph import HAS_SCIPY, get_arc_csr, min_cut_scipy, cpu_count
@@ -135,6 +136,173 @@ def _lp_cut_rounds() -> int:
         except ValueError:
             pass
     return 50
+
+
+def _cut_purge_age() -> int:
+    """Consecutive inactive solves before a generated cut is deleted.
+
+    ``0`` (the default) disables purging. A positive value enables the
+    experimental cut-pool policy described by Schmidt, Zey & Margot (2021,
+    Sec. 5.1.1): generated rows whose slack stays positive for that many
+    consecutive re-solves are removed and may be generated again later.
+    """
+    env = os.environ.get("STEINERPY_CUT_PURGE_AGE")
+    if env is not None:
+        try:
+            return max(0, int(env))
+        except ValueError:
+            pass
+    return 0
+
+
+@dataclass
+class _CutRecord:
+    """Mutable bookkeeping for one active generated HiGHS row."""
+
+    row_id: int
+    lower_bound: float
+    age: int = 0
+    last_slack: float = 0.0
+    last_active_iteration: int = 0
+
+
+class _HighsCutPool:
+    """Age and optionally purge dynamically generated HiGHS cuts.
+
+    Only rows added through :meth:`add` are managed; structural constraints
+    and dual-ascent seed cuts are deliberately permanent. Signatures prevent
+    active duplicates. A purged signature remains eligible for later
+    separation, which preserves exactness when a formerly inactive cut becomes
+    violated again.
+    """
+
+    def __init__(self, model: hp.HighsModel, purge_age: int = None,
+                 tolerance: float = 1e-7):
+        self.model = model
+        self.purge_age = _cut_purge_age() if purge_age is None else max(
+            0, int(purge_age)
+        )
+        self.tolerance = tolerance
+        self._records = {}
+        self._purged_signatures = set()
+        self.cuts_added = 0
+        self.cuts_purged = 0
+        self.cuts_reintroduced = 0
+        self.solve_rounds = 0
+        self.separation_rounds = 0
+        self.lp_resolve_time = 0.0
+        self.mip_resolve_time = 0.0
+        self.peak_active_cuts = 0
+        self.peak_model_rows = model.getNumRow()
+        self._sync_stats()
+
+    def _sync_stats(self):
+        stats = {
+            "purge_age": self.purge_age,
+            "solve_rounds": self.solve_rounds,
+            "separation_rounds": self.separation_rounds,
+            "cuts_added": self.cuts_added,
+            "active_cuts": len(self._records),
+            "active_model_rows": self.model.getNumRow(),
+            "peak_active_cuts": self.peak_active_cuts,
+            "peak_model_rows": self.peak_model_rows,
+            "cuts_purged": self.cuts_purged,
+            "cuts_reintroduced": self.cuts_reintroduced,
+            "lp_resolve_time": self.lp_resolve_time,
+            "mip_resolve_time": self.mip_resolve_time,
+        }
+        self.model.steinerpy_cut_stats = stats
+        return stats
+
+    @property
+    def stats(self):
+        """Snapshot of counters suitable for benchmark output."""
+        return dict(self._sync_stats())
+
+    def add(self, signature, expression, lower_bound: float) -> bool:
+        """Add a cut unless its canonical signature is already active."""
+        if signature in self._records:
+            return False
+        constraint = self.model.addConstr(expression >= lower_bound)
+        self._records[signature] = _CutRecord(
+            row_id=constraint.index, lower_bound=float(lower_bound)
+        )
+        self.cuts_added += 1
+        if signature in self._purged_signatures:
+            self.cuts_reintroduced += 1
+        self.peak_active_cuts = max(self.peak_active_cuts, len(self._records))
+        self.peak_model_rows = max(
+            self.peak_model_rows, self.model.getNumRow()
+        )
+        self._sync_stats()
+        return True
+
+    def record_solve(self, phase: str, elapsed: float):
+        """Record one LP or MIP re-solve for benchmark diagnostics."""
+        self.solve_rounds += 1
+        if phase == "lp":
+            self.lp_resolve_time += elapsed
+        else:
+            self.mip_resolve_time += elapsed
+        self._sync_stats()
+
+    def record_separation(self):
+        """Record one minimum-cut separation pass."""
+        self.separation_rounds += 1
+        self._sync_stats()
+
+    def age_and_purge(self) -> int:
+        """Update inactivity ages from the last solve and delete stale rows.
+
+        Callers invoke this only when another re-solve is already required:
+        deleting rows invalidates HiGHS' cached primal solution.
+        """
+        if self.purge_age <= 0 or not self._records:
+            self._sync_stats()
+            return 0
+
+        solution = self.model.getSolution()
+        if not solution.value_valid:
+            self._sync_stats()
+            return 0
+
+        row_values = solution.row_value
+        stale = []
+        for signature, record in self._records.items():
+            slack = row_values[record.row_id] - record.lower_bound
+            record.last_slack = slack
+            if slack <= self.tolerance:
+                record.age = 0
+                record.last_active_iteration = self.solve_rounds
+            else:
+                record.age += 1
+                if record.age >= self.purge_age:
+                    stale.append((record.row_id, signature))
+
+        if not stale:
+            self._sync_stats()
+            return 0
+
+        import numpy as np
+
+        deleted_rows = sorted(row_id for row_id, _signature in stale)
+        self.model.deleteRows(
+            len(deleted_rows), np.asarray(deleted_rows, dtype=np.int32)
+        )
+        for _row_id, signature in stale:
+            del self._records[signature]
+            self._purged_signatures.add(signature)
+
+        # HiGHS compacts row indices after batch deletion. Keep every surviving
+        # record aligned with its physical row for the next slack inspection.
+        for record in self._records.values():
+            record.row_id -= sum(
+                deleted < record.row_id for deleted in deleted_rows
+            )
+
+        self.cuts_purged += len(stale)
+        self._sync_stats()
+        return len(stale)
 
 
 def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsModel:
@@ -913,8 +1081,11 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
              include the model compilation time reported by :func:`build_model`.
     """
     logging.info("Started running the model with iterative cut generation.")
+    cut_pool = _HighsCutPool(model)
+    steiner_problem.cut_stats = cut_pool.stats
 
     def _ret(gap, runtime, objective, selected_edges, status):
+        steiner_problem.cut_stats = cut_pool.stats
         if return_status:
             return gap, runtime, objective, selected_edges, status
         return gap, runtime, objective, selected_edges
@@ -961,17 +1132,30 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
                 if remaining <= 0:
                     break
                 model.setOptionValue("time_limit", remaining)
+                solve_start = time.time()
                 model.minimize(objective_expr)
+                cut_pool.record_solve("lp", time.time() - solve_start)
                 if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
                         or not model.getSolution().value_valid):
                     break
                 violated_cuts = find_violated_cuts(steiner_problem, y2, z, model)
+                cut_pool.record_separation()
                 if not violated_cuts:
                     break
+                cut_pool.age_and_purge()
+                added = 0
                 for group_id_k, group_id_l, cut_arcs in violated_cuts:
                     lhs = sum(y2[(group_id_k, a)] for a in cut_arcs) if cut_arcs else 0
-                    model.addConstr(lhs >= z[(group_id_k, group_id_l)])
-                logging.info(f"LP cut phase: added {len(violated_cuts)} cut(s).")
+                    signature = (
+                        "forest", group_id_k, group_id_l,
+                        frozenset(cut_arcs),
+                    )
+                    added += cut_pool.add(
+                        signature,
+                        lhs - z[(group_id_k, group_id_l)],
+                        0.0,
+                    )
+                logging.info(f"LP cut phase: added {added} cut(s).")
         finally:
             for col in range(num_col):
                 model.changeColIntegrality(col, hp.HighsVarType.kInteger)
@@ -992,7 +1176,9 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
         if remaining <= 0:
             break
         model.setOptionValue("time_limit", remaining)
+        solve_start = time.time()
         model.minimize(objective_expr)
+        cut_pool.record_solve("mip", time.time() - solve_start)
         ever_solved = True
 
         # If the model has no feasible/valid primal (e.g. an objective cutoff or
@@ -1014,6 +1200,7 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
             return _ret(float("inf"), runtime, float("inf"), [], "incomplete")
 
         violated_cuts = find_violated_cuts(steiner_problem, y2, z, model)
+        cut_pool.record_separation()
 
         if not violated_cuts:
             # Optimal only if this re-solve proved optimality. A time-limit-
@@ -1024,12 +1211,22 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
             feasible_incumbent = True
             break  # feasible w.r.t. all cut constraints
 
+        cut_pool.age_and_purge()
+
         # Add each violated cut as a new constraint: sum(y2[k,a] for a in cut) >= z[k,l]
+        added = 0
         for group_id_k, group_id_l, cut_arcs in violated_cuts:
             lhs = sum(y2[(group_id_k, a)] for a in cut_arcs) if cut_arcs else 0
-            model.addConstr(lhs >= z[(group_id_k, group_id_l)])
+            signature = (
+                "forest", group_id_k, group_id_l, frozenset(cut_arcs)
+            )
+            added += cut_pool.add(
+                signature,
+                lhs - z[(group_id_k, group_id_l)],
+                0.0,
+            )
 
-        logging.info(f"Added {len(violated_cuts)} violated cut(s), re-solving.")
+        logging.info(f"Added {added} violated cut(s), re-solving.")
 
     runtime = time.time() - start_time
     logging.info(f"Runtime: {runtime:.2f} seconds")
@@ -1053,6 +1250,7 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
         gap = float("inf")
         result_status = "incomplete"
 
+    steiner_problem.cut_stats = cut_pool.stats
     return _ret(gap, runtime, objective, selected_edges, result_status)
 
 
@@ -1750,6 +1948,8 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         return result + (status,) if return_status else result
 
     model = make_model(time_limit, logfile, threads=threads)
+    cut_pool = _HighsCutPool(model)
+    view.cut_stats = cut_pool.stats
     arcs = list(view.arcs)
     root = view.roots[0]
 
@@ -1799,18 +1999,26 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
                 if remaining <= 0:
                     break
                 model.setOptionValue("time_limit", remaining)
+                solve_start = time.time()
                 model.minimize(obj)
+                cut_pool.record_solve("lp", time.time() - solve_start)
                 if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
                         or not model.getSolution().value_valid):
                     break
                 col_value = model.getSolution().col_value
                 xa_vals = {(0, a): col_value[xa[a].index] for a in arcs}
                 violated = find_violated_cuts_from_values(view, xa_vals, {(0, 0): 1.0})
+                cut_pool.record_separation()
                 if not violated:
                     break
+                cut_pool.age_and_purge()
                 for (_k, _l, cut_arcs) in violated:
                     if cut_arcs:
-                        model.addConstr(sum(xa[a] for a in cut_arcs) >= 1)
+                        cut_pool.add(
+                            ("sap", frozenset(cut_arcs)),
+                            sum(xa[a] for a in cut_arcs),
+                            1.0,
+                        )
         finally:
             for col in range(num_col):
                 model.changeColIntegrality(col, hp.HighsVarType.kInteger)
@@ -1843,7 +2051,9 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         if remaining <= 0:
             break
         model.setOptionValue("time_limit", remaining)
+        solve_start = time.time()
         model.minimize(obj)
+        cut_pool.record_solve("mip", time.time() - solve_start)
         status = model.getModelStatus()
         outcome, has_incumbent = _highs_outcome(model)
         if not has_incumbent:
@@ -1851,6 +2061,7 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         col_value = model.getSolution().col_value
         xa_vals = {(0, a): col_value[xa[a].index] for a in arcs}
         violated = find_violated_cuts_from_values(view, xa_vals, {(0, 0): 1.0})
+        cut_pool.record_separation()
         if not violated:
             # Optimal only if this re-solve actually *proved* optimality. A solve
             # interrupted by the (shrinking) time limit can return a connected but
@@ -1863,9 +2074,14 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         # relaxation. Once a violated cut is found it is not a feasible SAP
         # incumbent, even if the deadline expires before the next re-solve.
         outcome = "incomplete"
+        cut_pool.age_and_purge()
         for (_k, _l, cut_arcs) in violated:
             if cut_arcs:
-                model.addConstr(sum(xa[a] for a in cut_arcs) >= 1)
+                cut_pool.add(
+                    ("sap", frozenset(cut_arcs)),
+                    sum(xa[a] for a in cut_arcs),
+                    1.0,
+                )
     runtime = time.time() - start
 
     if feasible_incumbent:
@@ -1893,6 +2109,7 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         # certificate for the still-incomplete cut model.
         gap = float("inf")
         result_status = "incomplete"
+    view.cut_stats = cut_pool.stats
     return _ret(gap, runtime, objective, selected, result_status)
 
 
