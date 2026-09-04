@@ -19,6 +19,7 @@ Examples::
 
 import argparse
 import csv
+import glob
 import json
 import os
 import statistics
@@ -31,6 +32,10 @@ FIELDS = [
     "commit",
     "feature",
     "instance",
+    "nodes",
+    "edges",
+    "terminals",
+    "known_optimum",
     "seed",
     "repeat",
     "config",
@@ -114,11 +119,42 @@ def _worker(args):
 
     from steinerpy import PrizeCollectingProblem, SteinerProblem
 
-    graph, rng = _synthetic_graph(args.feature, args.seed)
+    import random
+
+    rng = random.Random(args.seed)
+    prizes = None
+    terminals = None
+    if args.instance_path:
+        from benchmarks.stp_parser import read_pcspg, read_stp
+
+        if args.feature == "pc":
+            graph, prizes = read_pcspg(args.instance_path)
+        else:
+            graph, groups = read_stp(args.instance_path)
+            terminals = list(groups[0])
+        instance = os.path.splitext(os.path.basename(args.instance_path))[0]
+    else:
+        graph, rng = _synthetic_graph(args.feature, args.seed)
+        instance = "synthetic-{:02d}".format(args.seed)
+
+    known_optimum = ""
+    if args.instance_path and args.feature != "pc":
+        from benchmarks.optima import load_optima, optimum_for
+
+        known_optimum = optimum_for(instance, load_optima()) or ""
+
     row = {field: "" for field in FIELDS}
     row.update(
         feature=args.feature,
-        instance="synthetic-{:02d}".format(args.seed),
+        instance=instance,
+        nodes=graph.number_of_nodes(),
+        edges=graph.number_of_edges(),
+        terminals=(
+            len(prizes)
+            if prizes is not None
+            else len(terminals) if terminals is not None else ""
+        ),
+        known_optimum=known_optimum,
         seed=args.seed,
         repeat=args.repeat,
         config=args.config,
@@ -136,10 +172,11 @@ def _worker(args):
     started = time.perf_counter()
 
     if args.feature == "pc":
-        prizes = {
-            node: (rng.randint(3, 30) if rng.random() < 0.6 else 0)
-            for node in graph.nodes()
-        }
+        if prizes is None:
+            prizes = {
+                node: (rng.randint(3, 30) if rng.random() < 0.6 else 0)
+                for node in graph.nodes()
+            }
         if not any(prizes.values()):
             prizes[0] = 1
         anchor = next(node for node, prize in prizes.items() if prize > 0)
@@ -169,21 +206,23 @@ def _worker(args):
             solved_in_preprocessing=stats.get("solved_in_preprocessing", False),
         )
     elif args.feature == "primal":
-        terminals = rng.sample(sorted(graph.nodes()), 12)
+        # Measure the primal portfolio and its downstream model effects, not the
+        # independent few-terminal dynamic-programming fast path.
+        os.environ["STEINERPY_DW_MAX_TERMINALS"] = "0"
+        if terminals is None:
+            terminals = rng.sample(sorted(graph.nodes()), 12)
         flags = {
             "baseline": (False, False),
             "local": (True, False),
             "implied": (False, True),
             "portfolio": (True, True),
         }[args.config]
-        problem = SteinerProblem(
-            graph,
-            [terminals],
-            preprocess=False,
-            dual_ascent=True,
-            primal_local_search=flags[0],
-            implied_profit=flags[1],
-        )
+        problem_kwargs = {"preprocess": False, "dual_ascent": True}
+        if flags[0]:
+            problem_kwargs["primal_local_search"] = True
+        if flags[1]:
+            problem_kwargs["implied_profit"] = True
+        problem = SteinerProblem(graph, [terminals], **problem_kwargs)
         solution = problem.get_solution(
             time_limit=args.time_limit, threads=args.threads
         )
@@ -228,6 +267,12 @@ def _worker(args):
         separation_rounds=cut_stats.get("separation_rounds", 0),
         peak_rss_mb=_peak_rss_mb(),
     )
+    if (
+        known_optimum != ""
+        and abs(solution.gap) <= 1e-7
+        and abs(solution.objective - known_optimum) > 1e-6
+    ):
+        row["status"] = "WRONG_OPT"
     print(json.dumps(row, sort_keys=True))
 
 
@@ -241,7 +286,7 @@ def _commit(source_root):
         return "unknown"
 
 
-def _run_one(script, args, config, seed, repeat):
+def _run_one(script, args, config, seed, repeat, instance_path=None):
     command = [
         sys.executable,
         script,
@@ -261,6 +306,8 @@ def _run_one(script, args, config, seed, repeat):
         "--threads",
         str(args.threads),
     ]
+    if instance_path:
+        command.extend(["--instance-path", instance_path])
     env = os.environ.copy()
     env.update(
         PYTHONHASHSEED="0",
@@ -273,7 +320,11 @@ def _run_one(script, args, config, seed, repeat):
     if completed.returncode:
         return {
             "feature": args.feature,
-            "instance": "synthetic-{:02d}".format(seed),
+            "instance": (
+                os.path.splitext(os.path.basename(instance_path))[0]
+                if instance_path
+                else "synthetic-{:02d}".format(seed)
+            ),
             "seed": seed,
             "repeat": repeat,
             "config": config,
@@ -326,6 +377,10 @@ def main(argv=None):
     parser.add_argument("--source-root", required=True)
     parser.add_argument("--label", default="candidate")
     parser.add_argument("--configs")
+    parser.add_argument(
+        "--instances",
+        help="optional directory or glob of SteinLib/PCSPG .stp instances",
+    )
     parser.add_argument("--seeds", default="0,1,2,3,4")
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--time-limit", type=float, default=120.0)
@@ -334,6 +389,7 @@ def main(argv=None):
     parser.add_argument("--append", action="store_true")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--config", help=argparse.SUPPRESS)
+    parser.add_argument("--instance-path", help=argparse.SUPPRESS)
     parser.add_argument("--seed", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--repeat", type=int, default=0, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -342,26 +398,46 @@ def main(argv=None):
         return
     if not args.output:
         parser.error("--output is required")
+    if args.instances and args.feature == "cut":
+        parser.error("external instances are supported for pc and primal only")
 
     configs = (args.configs or DEFAULT_CONFIGS[args.feature]).split(",")
     valid_configs = set(DEFAULT_CONFIGS[args.feature].split(","))
     unknown = set(configs) - valid_configs
     if unknown:
         parser.error("unknown config(s): {}".format(sorted(unknown)))
-    seeds = [int(value) for value in args.seeds.split(",")]
+    if args.instances:
+        if os.path.isdir(args.instances):
+            instance_paths = sorted(glob.glob(os.path.join(args.instances, "*.stp")))
+        else:
+            instance_paths = sorted(glob.glob(args.instances))
+        if not instance_paths:
+            parser.error("--instances matched no .stp files")
+        work = [(0, path) for path in instance_paths]
+    else:
+        work = [(int(value), None) for value in args.seeds.split(",")]
     script = os.path.abspath(__file__)
     commit = _commit(args.source_root)
     rows = []
     for repeat in range(args.repeats):
-        for seed in seeds:
+        for seed, instance_path in work:
             for config in configs:
                 row = {field: "" for field in FIELDS}
-                row.update(_run_one(script, args, config, seed, repeat))
+                row.update(
+                    _run_one(
+                        script,
+                        args,
+                        config,
+                        seed,
+                        repeat,
+                        instance_path=instance_path,
+                    )
+                )
                 row.update(label=args.label, commit=commit)
                 rows.append(row)
                 print(
-                    "{} {} seed={} repeat={} [{}]".format(
-                        args.feature, config, seed, repeat, row["status"]
+                    "{} {} instance={} repeat={} [{}]".format(
+                        args.feature, config, row["instance"], repeat, row["status"]
                     )
                 )
 

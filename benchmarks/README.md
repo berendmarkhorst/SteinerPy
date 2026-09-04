@@ -84,6 +84,27 @@ suite is deterministic and intended as a smoke/microbenchmark; robust default
 decisions still require representative SteinLib/PCSPG suites. A configuration
 is marked `MISMATCH` unless every compared run has the same proven objective.
 
+For the primal and PC reduction sweeps, `--instances` accepts either a
+directory or a quoted glob. Standard SteinLib instances are used with
+`--feature primal`; PCSPG instances (with `TP` prize records) are used with
+`--feature pc`. For example:
+
+```bash
+python benchmarks/benchmark_phase1.py --feature primal \
+  --source-root . --label candidate --instances benchmarks/data/B \
+  --configs baseline,local,implied,portfolio --repeats 1 \
+  --output /tmp/phase1-B.csv
+python benchmarks/benchmark_phase1.py --feature pc \
+  --source-root . --label candidate \
+  --instances 'benchmarks/data/PCSPG-JMP/K100.*.stp' \
+  --configs none,pcd,pcd+trd,pcd+trd+nodes --repeats 1 \
+  --output /tmp/phase1-PCSPG.csv
+```
+
+Known B-series optima are recorded in every row and a zero-gap disagreement is
+reported as `WRONG_OPT`. All instance/configuration objective or certificate
+disagreements are still rejected as `MISMATCH`.
+
 ## Output columns
 
 `instance, nodes, edges, terminals, opt, base_obj, base_rt, base_gap,

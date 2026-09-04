@@ -30,7 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `benchmarks/benchmark_phase1.py` compares arbitrary source checkouts with
   fixed seeds, repeats, single-thread controls, dependency/commit metadata,
   objective-and-gap validation, phase counters, and isolated peak RSS for the
-  PC reductions, primal portfolio, and cut-purge age sweep.
+  PC reductions, primal portfolio, and cut-purge age sweep. It also accepts
+  standard SteinLib and prize-bearing PCSPG `.stp` instances, recording known
+  B-series optima and rejecting certified disagreements.
 - **Experimental primal-heuristic portfolio** (off by default):
   `primal_local_search=True` applies the vertex-elimination and key-path-exchange
   neighborhoods of Uchoa & Werneck (2012), while `implied_profit=True` adds the

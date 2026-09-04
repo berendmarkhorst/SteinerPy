@@ -52,7 +52,15 @@ five fixed synthetic seeds, and three fresh-process repetitions per seed.
 Objectives and zero-gap certificates were compared before a row was accepted.
 Times are medians across 15 runs; brackets are the interquartile range. Peak RSS
 is process-isolated but remains an OS-level measurement. These are smoke
-microbenchmarks, not a representative SteinLib/PCSPG study.
+microbenchmarks.
+
+A follow-up external-instance run used all 18 SteinLib B instances and the ten
+`K100.1`--`K100.10` PCSPG-JMP instances, with three fresh-process repetitions
+per configuration and the same software/thread settings. The few-terminal
+dynamic-programming route was disabled for the primal comparison so that every
+row exercised the portfolio under test. B-series results were checked against
+the published optima; PCSPG results were cross-checked across current main and
+every candidate reduction stack. Brackets below again show interquartile ranges.
 
 ### PCSTP reductions
 
@@ -73,6 +81,25 @@ two additional median edges, but their overhead made them slower than PCD alone
 on this small suite. Node deletion had no median effect. Recommendation: retain
 the new levels as experimental and off by default.
 
+On the ten PCSPG-JMP K100 instances (30 runs per configuration), current main
+and all candidate stacks returned identical objectives with zero gap:
+
+| Revision / stack | Total time, s | Preprocess, s | MIP/cut solve, s | Edges removed | Nodes removed | Peak rows |
+|---|---:|---:|---:|---:|---:|---:|
+| main / none | 0.1659 [0.1272, 0.2192] | -- | 0.1622 | -- | -- | -- |
+| main / PCD | 0.1459 [0.1384, 0.2156] | -- | 0.1265 | -- | -- | -- |
+| candidate / none | 0.1521 [0.1210, 0.2238] | 0 | 0.1495 | 0 | 0 | 331 |
+| candidate / PCD | 0.1371 [0.1290, 0.1846] | 0.0138 | 0.1211 | 41.5 | 0 | 330 |
+| candidate / PCD + terminal regions | 0.9202 [0.5782, 0.9981] | 0.7740 | 0.0806 | 140.5 | 0 | 245.5 |
+| candidate / PCD + terminal regions + nodes | 0.9396 [0.5692, 1.0173] | 0.7759 | 0.0922 | 147.5 | 28.5 | 239.5 |
+
+The stronger bounds substantially reduced the graph and downstream solve time,
+but the exact subdivision-based edge test cost far more than it saved at this
+size. Median peak RSS stayed between 83.2 and 84.1 MiB. No instance was solved
+entirely in preprocessing. This representative suite strengthens the decision
+to leave terminal-region reductions off by default and identifies the edge-bound
+implementation, rather than bound strength, as the next optimization target.
+
 ### Primal portfolio
 
 Candidate `50961193b015`:
@@ -90,6 +117,23 @@ reduced-cost fixing, but neither reduced end-to-end time here; the combined
 portfolio duplicated local-search quality at substantially higher overhead.
 Recommendation: retain both switches as opt-in, do not add elite-pool
 recombination yet, and seek a size/quality activation threshold on SteinLib.
+
+The 18-instance SteinLib B sweep (54 runs per configuration) confirmed every
+objective against the published optimum with zero gap:
+
+| Revision / configuration | Total time, s | Heuristic time, s | Solver time, s | Median primal gain | Improved instances | LB = UB exits |
+|---|---:|---:|---:|---:|---:|---:|
+| main / baseline | 0.1412 [0.0892, 0.2493] | 0 | 0.1110 | -- | -- | -- |
+| candidate / baseline | 0.1374 [0.0838, 0.2289] | 0 | 0.1087 | 0 | 0/18 | 6/54 |
+| vertex/key-path local search | 0.1858 [0.0410, 0.3194] | 0.0506 | 0.1008 | 11.5 | 16/18 | 15/54 |
+| implied profit | 0.1487 [0.0283, 0.2621] | 0.0166 | 0.1000 | 9 | 16/18 | 15/54 |
+| combined portfolio | 0.3166 [0.1023, 0.4972] | 0.1600 | 0.1049 | 11.5 | 16/18 | 15/54 |
+
+The stronger primals reduced median downstream solver time and more than doubled
+the number of dual-bound equality exits, but total runtime still regressed once
+heuristic cost was included. Implied profit was the least expensive variant and
+the closest to break-even. This again supports an opt-in policy and argues for a
+future activation threshold rather than unconditional portfolio expansion.
 
 ### Cut purging
 
@@ -131,8 +175,9 @@ default and expose the policy only for continued experiments.
   approximate/dynamic modes.
 
 The raw CSVs are intentionally generated artifacts and are not committed;
-rerun the documented commands to reproduce them. No change in this phase is a
-candidate for default activation on the present evidence.
+rerun the documented commands (including the external `--instances` examples)
+to reproduce them. No change in this phase is a candidate for default activation
+on the present evidence.
 
 ## Validation record
 
@@ -141,6 +186,10 @@ candidate for default activation on the present evidence.
 - Python 3.12.12 in an isolated environment: 1,069 passed, 37 skipped, 20
   expected-failure tests passed unexpectedly; 86% line coverage. The skip
   difference comes from optional solver paths.
+- Python 3.8.20 isolated compatibility run: 1,069 passed, 37 skipped, 20
+  expected-failure tests passed unexpectedly.
+- GitHub Actions: the complete test and Codecov matrix passed on Python 3.8,
+  3.9, 3.10, 3.11, and 3.12 for the draft pull request.
 - Gurobi 13.0.2 smoke comparison: the combined primal portfolio and the full
   PC reduction stack matched HiGHS objectives and both reported zero gap.
 - Sphinx 9.0.4 strict (`-W`) build: passed under the project's documented
