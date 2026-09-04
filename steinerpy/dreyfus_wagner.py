@@ -14,6 +14,11 @@ all vertices, and the grow step is one ``scipy`` Dijkstra per subset from a
 *virtual source* connected to every vertex with its merged label as arc cost —
 a standard trick to run Dijkstra with initial potentials.  scipy is required
 (callers gate on :data:`steinerpy._fastgraph.HAS_SCIPY`).
+
+Only the subset label arrays are retained during the forward pass.
+Reconstruction recomputes split choices and shortest-path predecessors for the
+states actually visited by the final tree, trading a small amount of final
+work for lower peak memory.
 """
 
 from __future__ import annotations
@@ -60,6 +65,17 @@ def dreyfus_wagner(graph, terminals: List[Hashable], weight: str = "weight"
     if not HAS_SCIPY:
         raise RuntimeError("dreyfus_wagner requires scipy")
 
+    negative = [
+        (u, v, data.get(weight, 1))
+        for u, v, data in graph.edges(data=True)
+        if data.get(weight, 1) < 0
+    ]
+    if negative:
+        raise ValueError(
+            "dreyfus_wagner requires non-negative edge weights; "
+            f"found {negative[:5]}{' ...' if len(negative) > 5 else ''}."
+        )
+
     terminals = list(dict.fromkeys(terminals))
     if len(terminals) <= 1:
         return 0.0, []
@@ -88,25 +104,19 @@ def dreyfus_wagner(graph, terminals: List[Hashable], weight: str = "weight"
     kb = len(base)
     full = (1 << kb) - 1
 
-    # Per subset S (index = bitmask over `base`):
-    #   labels[S][v]  = l(S, v), length n+1 (the virtual entry is unused);
-    #   grow_pred[S]  = predecessor array of the grow Dijkstra — `virtual`
-    #                   marks the base vertex where the merged subtree sits
-    #                   (for singletons: predecessors of the plain Dijkstra);
-    #   split[S][v]   = the canonical submask chosen by the merge at v.
+    # Forward DP stores only l(S, v). Predecessors and split choices are needed
+    # solely along the final tree, so reconstruction recomputes those few states
+    # instead of retaining two additional subset-indexed array families.
     labels = [None] * (full + 1)
-    grow_pred = [None] * (full + 1)
-    split = [None] * (full + 1)
 
     graph_csr = csr_matrix((base_costs, (base_tails, base_heads)),
                            shape=(n + 1, n + 1))
 
     # Base case: l({t}, v) = d(t, v) — one plain Dijkstra per base terminal.
     for i, ti in enumerate(base):
-        dist, pred = _sp_dijkstra(graph_csr, directed=True, indices=ti,
-                                  return_predecessors=True)
-        labels[1 << i] = dist
-        grow_pred[1 << i] = pred
+        labels[1 << i] = _sp_dijkstra(
+            graph_csr, directed=True, indices=ti
+        )
 
     # Every grow step uses the same sparsity pattern: the fixed graph arcs plus
     # one virtual-source arc to each real vertex.  Build that pattern once and
@@ -132,50 +142,74 @@ def dreyfus_wagner(graph, terminals: List[Hashable], weight: str = "weight"
         # Merge: m(S, v) = min over canonical splits S' (containing the lowest
         # set bit, so each unordered pair is tried once) of l(S') + l(S \ S').
         best = np.full(n + 1, np.inf)
-        choice = np.zeros(n + 1, dtype=np.int64)
         sub = (mask - 1) & mask
         while sub:
             if sub & low:
                 cand = labels[sub] + labels[mask ^ sub]
                 upd = cand < best
                 best[upd] = cand[upd]
-                choice[upd] = sub
             sub = (sub - 1) & mask
 
         # Grow: l(S, v) = min_u m(S, u) + d(u, v) — a Dijkstra from a virtual
         # source whose arc to u costs m(S, u).
         grow_csr.data[virtual_slice] = best[virtual_heads]
-        dist, pred = _sp_dijkstra(grow_csr, directed=True, indices=virtual,
-                                  return_predecessors=True)
-        labels[mask] = dist
-        grow_pred[mask] = pred
-        split[mask] = choice
+        labels[mask] = _sp_dijkstra(
+            grow_csr, directed=True, indices=virtual
+        )
 
     total = labels[full][root]
     if not np.isfinite(total):
         return float("inf"), []
 
-    # Reconstruction: walk grow predecessors back to the subtree base, then
-    # expand the merge recorded there into its two sub-subsets.
+    # Reconstruction: recompute a predecessor array only for states on the
+    # chosen tree. Walk grow predecessors back to the subtree base, then
+    # recompute the canonical split at that one vertex.
     edge_keys = set()
     stack = [(full, root)]
     while stack:
         mask, v = stack.pop()
         if mask & (mask - 1) == 0:
             source = base[mask.bit_length() - 1]
+            _dist, pred = _sp_dijkstra(
+                graph_csr, directed=True, indices=source,
+                return_predecessors=True,
+            )
             w = v
             while w != source:
-                u = int(grow_pred[mask][w])
+                u = int(pred[w])
                 edge_keys.add((u, w) if u < w else (w, u))
                 w = u
             continue
+
+        low = mask & -mask
+        best = np.full(n + 1, np.inf)
+        sub = (mask - 1) & mask
+        while sub:
+            if sub & low:
+                best = np.minimum(best, labels[sub] + labels[mask ^ sub])
+            sub = (sub - 1) & mask
+
+        grow_csr.data[virtual_slice] = best[virtual_heads]
+        _dist, pred = _sp_dijkstra(
+            grow_csr, directed=True, indices=virtual,
+            return_predecessors=True,
+        )
         w = v
         while True:
-            u = int(grow_pred[mask][w])
+            u = int(pred[w])
             if u == virtual:
-                sub = int(split[mask][w])
-                stack.append((sub, w))
-                stack.append((mask ^ sub, w))
+                chosen = 0
+                chosen_cost = np.inf
+                sub = (mask - 1) & mask
+                while sub:
+                    if sub & low:
+                        candidate = labels[sub][w] + labels[mask ^ sub][w]
+                        if candidate < chosen_cost:
+                            chosen_cost = candidate
+                            chosen = sub
+                    sub = (sub - 1) & mask
+                stack.append((chosen, w))
+                stack.append((mask ^ chosen, w))
                 break
             edge_keys.add((u, w) if u < w else (w, u))
             w = u

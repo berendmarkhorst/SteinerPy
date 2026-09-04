@@ -1,6 +1,5 @@
 import highspy as hp
 import logging
-import math
 import networkx as nx
 import os
 import time
@@ -31,6 +30,50 @@ def _resolve_threads(threads) -> int:
         return max(0, int(threads))
     except (TypeError, ValueError):
         return 0
+
+
+def _highs_outcome(model: hp.HighsModel) -> Tuple[str, bool]:
+    """Classify a HiGHS termination without reading an invalid solution.
+
+    The boolean reports whether a primal incumbent is available. In particular,
+    a time-limit status is *incomplete* even when HiGHS happened to close the
+    numerical MIP gap; only ``kOptimal`` is treated as an optimality proof.
+    """
+    status = model.getModelStatus()
+    if status == hp.HighsModelStatus.kInfeasible:
+        return "infeasible", False
+    if status in (
+        hp.HighsModelStatus.kUnbounded,
+        hp.HighsModelStatus.kUnboundedOrInfeasible,
+        hp.HighsModelStatus.kNotset,
+        hp.HighsModelStatus.kLoadError,
+        hp.HighsModelStatus.kModelError,
+        hp.HighsModelStatus.kPresolveError,
+        hp.HighsModelStatus.kSolveError,
+        hp.HighsModelStatus.kPostsolveError,
+        hp.HighsModelStatus.kUnknown,
+    ):
+        return "incomplete", False
+    try:
+        has_incumbent = bool(model.getSolution().value_valid)
+    except Exception:  # pragma: no cover - defensive for old highspy releases
+        has_incumbent = False
+    if not has_incumbent:
+        return "incomplete", False
+    if status == hp.HighsModelStatus.kOptimal:
+        return "optimal", True
+    return "incomplete", True
+
+
+def _gurobi_outcome(model, GRB) -> Tuple[str, bool]:
+    """Gurobi counterpart of :func:`_highs_outcome`."""
+    if model.SolCount <= 0:
+        if model.Status == GRB.INFEASIBLE:
+            return "infeasible", False
+        return "incomplete", False
+    if model.Status == GRB.OPTIMAL:
+        return "optimal", True
+    return "incomplete", True
 
 
 # Separation parallelism: number of worker threads for the per-terminal min-cut
@@ -153,6 +196,32 @@ def _incident_edges(edges) -> Dict:
         incident.setdefault(e[0], []).append(e)
         incident.setdefault(e[1], []).append(e)
     return incident
+
+
+def _selection_graph(steiner_problem, selected_edges):
+    graph_type = (
+        nx.DiGraph
+        if isinstance(steiner_problem.graph, nx.DiGraph)
+        else nx.Graph
+    )
+    selected = graph_type()
+    selected.add_nodes_from(steiner_problem.nodes)
+    selected.add_edges_from(selected_edges)
+    return selected
+
+
+def _groups_reachable(steiner_problem, selected_edges, skipped=None) -> bool:
+    """Validate required terminal reachability in an extracted incumbent."""
+    skipped = skipped or set()
+    selected = _selection_graph(steiner_problem, selected_edges)
+    for group_id, group in enumerate(steiner_problem.terminal_groups):
+        root = steiner_problem.roots[group_id]
+        for terminal in dict.fromkeys(group):
+            if terminal == root or (group_id, terminal) in skipped:
+                continue
+            if not nx.has_path(selected, root, terminal):
+                return False
+    return True
 
 
 def get_terminals(terminal_group: List[List]) -> List:
@@ -911,6 +980,7 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
 
     # Phase 2 — the integer cut loop.
     converged = False
+    feasible_incumbent = False
     # ever_solved distinguishes "the time budget ran out before a single MIP
     # solve completed" (e.g. time_limit=0) from a real incumbent: without it,
     # falling through to read model.variableValue()/getObjectiveValue() below
@@ -930,15 +1000,12 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
         # separate cuts from — reading the empty solution would yield spurious
         # "violations" and loop forever.  Stop the cut loop instead of hanging.
         status = model.getModelStatus()
-        if status == hp.HighsModelStatus.kInfeasible:
+        outcome, has_incumbent = _highs_outcome(model)
+        if outcome == "infeasible":
             runtime = time.time() - start_time
             logging.info("Cut loop: model proved infeasible.")
             return _ret(float("inf"), runtime, float("inf"), [], "infeasible")
-        if status in (
-            hp.HighsModelStatus.kObjectiveBound,
-            hp.HighsModelStatus.kUnbounded,
-            hp.HighsModelStatus.kUnboundedOrInfeasible,
-        ) or not model.getSolution().value_valid:
+        if not has_incumbent:
             runtime = time.time() - start_time
             logging.warning(
                 "Cut loop stopped early: model status %s with no valid primal "
@@ -954,6 +1021,7 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
             # with no violated cuts; treating it as converged would falsely report
             # gap 0 (the false-optimal bug fixed in solve_sap_highs).
             converged = status == hp.HighsModelStatus.kOptimal
+            feasible_incumbent = True
             break  # feasible w.r.t. all cut constraints
 
         # Add each violated cut as a new constraint: sum(y2[k,a] for a in cut) >= z[k,l]
@@ -966,8 +1034,11 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
     runtime = time.time() - start_time
     logging.info(f"Runtime: {runtime:.2f} seconds")
 
-    if not ever_solved:
-        logging.warning("Cut loop: time limit exhausted before any solve completed.")
+    if not ever_solved or not feasible_incumbent:
+        logging.warning(
+            "Cut loop: no connectivity-valid incumbent was available when the "
+            "solve stopped."
+        )
         return _ret(float("inf"), runtime, float("inf"), [], "incomplete")
 
     selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
@@ -976,9 +1047,9 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
         gap = model.getInfo().mip_gap
         result_status = "optimal"
     else:
-        # Global time limit hit before all connectivity cuts were separated:
-        # selected_edges may be disconnected and the relaxation objective is only a
-        # lower bound, so do not report a (spurious) ~0 MIP gap.
+        # The incumbent passed independent cut separation but optimality was not
+        # proved. Do not surface a solver-reported zero gap for a non-optimal
+        # termination.
         gap = float("inf")
         result_status = "incomplete"
 
@@ -1088,8 +1159,14 @@ def add_prize_collecting_constraints(model: hp.HighsModel, steiner_problem: 'Pri
         model.addConstr(total_penalties <= steiner_problem.penalty_budget)
 
 
-def run_prize_collecting_model(model: hp.HighsModel, steiner_problem: 'PrizeCollectingProblem', 
-                              x: hp.HighsVarType, node_vars: Dict, penalty_vars: Dict) -> Tuple[float, float, float, List[Tuple], List[str], Dict]:
+def run_prize_collecting_model(
+    model: hp.HighsModel,
+    steiner_problem: 'PrizeCollectingProblem',
+    x: hp.HighsVarType,
+    node_vars: Dict,
+    penalty_vars: Dict,
+    return_status: bool = False,
+) -> Tuple:
     """
     Solve prize collecting model and extract solution.
     """
@@ -1110,26 +1187,58 @@ def run_prize_collecting_model(model: hp.HighsModel, steiner_problem: 'PrizeColl
     for penalty_var in penalty_vars.values():
         objective_expr += penalty_var * penalty_cost
     
+    def _ret(gap, runtime, objective, selected_edges, selected_nodes, penalties,
+             status):
+        result = (gap, runtime, objective, selected_edges, selected_nodes, penalties)
+        return result + (status,) if return_status else result
+
     # Minimize the objective
     model.minimize(objective_expr)
-    
-    logging.info(f"Runtime: {model.getRunTime():.2f} seconds")
+
+    runtime = model.getRunTime()
+    logging.info(f"Runtime: {runtime:.2f} seconds")
+
+    status, has_incumbent = _highs_outcome(model)
+    if not has_incumbent:
+        return _ret(float("inf"), runtime, float("inf"), [], [], {}, status)
     
     # Extract solution
     selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
     selected_nodes = [node for node in steiner_problem.nodes if model.variableValue(node_vars[node]) > 0.5]
     
     penalties = {}
+    penalized_terminals = set()
     for (group_id, terminal), var in penalty_vars.items():
         var_value = model.variableValue(var)
         if var_value > 0.5:
+            penalized_terminals.add((group_id, terminal))
             penalties[f"group_{group_id}_{terminal}"] = penalty_cost * var_value
+
+    selected_graph = _selection_graph(steiner_problem, selected_edges)
+    roots = set(steiner_problem.roots)
+    nodes_connected = all(
+        node in roots or any(
+            nx.has_path(selected_graph, root, node) for root in roots
+        )
+        for node in selected_nodes
+    )
+    candidate_valid = _groups_reachable(
+        steiner_problem, selected_edges, penalized_terminals
+    )
+    candidate_valid = candidate_valid and nodes_connected
+    if not candidate_valid:
+        logging.warning(
+            "Prize-collecting solve returned an invalid incumbent; discarding it."
+        )
+        return _ret(
+            float("inf"), runtime, float("inf"), [], [], {}, "incomplete"
+        )
     
-    gap = model.getInfo().mip_gap
-    runtime = model.getRunTime()
+    gap = model.getInfo().mip_gap if status == "optimal" else float("inf")
     objective = model.getObjectiveValue()
-    
-    return gap, runtime, objective, selected_edges, selected_nodes, penalties
+
+    return _ret(gap, runtime, objective, selected_edges, selected_nodes,
+                penalties, status)
 
 
 def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float = 300, logfile: str = "", threads=None) -> Tuple:
@@ -1194,7 +1303,8 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
 
 
 def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem',
-                     x: Dict, penalty_vars: Dict) -> Tuple[float, float, int, List[Tuple], Dict]:
+                     x: Dict, penalty_vars: Dict,
+                     return_status: bool = False) -> Tuple:
     """
     Solve budget-constrained model: minimize number of unconnected terminals.
 
@@ -1206,24 +1316,64 @@ def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem'
     """
     logging.info("Started running the budget-constrained model...")
 
+    def _ret(gap, runtime, connected_count, selected_edges, penalties, status):
+        result = (gap, runtime, connected_count, selected_edges, penalties)
+        return result + (status,) if return_status else result
+
+    # A budget instance with only group roots has a constant-zero objective and
+    # needs no solve (passing a Python 0 to highspy.minimize crashes).
+    if not penalty_vars:
+        total_terminals = sum(len(g) for g in steiner_problem.terminal_groups)
+        return _ret(0.0, 0.0, total_terminals, [], {}, "optimal")
+
     model.minimize(sum(penalty_vars.values()))
 
-    logging.info(f"Runtime: {model.getRunTime():.2f} seconds")
+    runtime = model.getRunTime()
+    logging.info(f"Runtime: {runtime:.2f} seconds")
+
+    status, has_incumbent = _highs_outcome(model)
+    if not has_incumbent:
+        return _ret(float("inf"), runtime, 0, [], {}, status)
 
     selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
 
     penalties = {}
+    penalized_terminals = set()
     for (group_id, terminal), var in penalty_vars.items():
         if model.variableValue(var) > 0.5:
+            penalized_terminals.add((group_id, terminal))
             penalties[f"group_{group_id}_{terminal}"] = 1
+
+    edge_cost = sum(
+        steiner_problem.graph.edges[e][steiner_problem.weight]
+        for e in selected_edges
+    )
+    degree_ok = True
+    if getattr(steiner_problem, "max_degree", None) is not None:
+        degree_ok = all(
+            degree <= steiner_problem.max_degree
+            for _node, degree in _selection_graph(
+                steiner_problem, selected_edges
+            ).degree()
+        )
+    candidate_valid = edge_cost <= steiner_problem.budget + 1e-7
+    candidate_valid = candidate_valid and degree_ok
+    candidate_valid = candidate_valid and _groups_reachable(
+        steiner_problem, selected_edges, penalized_terminals
+    )
+    if not candidate_valid:
+        logging.warning(
+            "Budget-constrained solve returned an invalid incumbent; "
+            "discarding it."
+        )
+        return _ret(float("inf"), runtime, 0, [], {}, "incomplete")
 
     total_terminals = sum(len(g) for g in steiner_problem.terminal_groups)
     connected_count = total_terminals - len(penalties)
 
-    gap = model.getInfo().mip_gap
-    runtime = model.getRunTime()
+    gap = model.getInfo().mip_gap if status == "optimal" else float("inf")
 
-    return gap, runtime, connected_count, selected_edges, penalties
+    return _ret(gap, runtime, connected_count, selected_edges, penalties, status)
 
 
 # ---------------------------------------------------------------------------
@@ -1512,19 +1662,35 @@ def run_model_gurobi(
 
     logging.info(f"Gurobi runtime: {runtime:.2f} seconds")
 
-    if model.SolCount == 0:
+    outcome, has_incumbent = _gurobi_outcome(model, GRB)
+    if not has_incumbent:
         # No feasible solution found. Distinguish a proven-infeasible model
         # from one that simply ran out of time before finding any incumbent
         # (e.g. time_limit=0) -- both previously looked identical (an
         # infinite objective), so a probe that merely timed out with no
         # incumbent was silently treated as proof there is no solution.
-        if model.Status in (GRB.INFEASIBLE, GRB.INF_OR_UNBD):
+        if outcome == "infeasible":
             return _ret(float("inf"), runtime, float("inf"), [], "infeasible")
         return _ret(float("inf"), runtime, float("inf"), [], "incomplete")
 
     selected_edges = [e for e in steiner_problem.edges if x[e].X > 0.5]
     objective = model.ObjVal
-    if model.Status == GRB.OPTIMAL:
+    # A callback can be interrupted at the deadline. Independently separate
+    # the final incumbent before exposing it; SolCount alone does not certify
+    # that every lazy connectivity constraint was processed.
+    y2_vals = {
+        (group_id, a): y2[(group_id, a)].X
+        for group_id in group_indices for a in steiner_problem.arcs
+    }
+    z_vals = {key: var.X for key, var in z.items()}
+    if find_violated_cuts_from_values(steiner_problem, y2_vals, z_vals):
+        logging.warning(
+            "Gurobi stopped with an incumbent that violates connectivity; "
+            "discarding it."
+        )
+        return _ret(float("inf"), runtime, float("inf"), [], "incomplete")
+
+    if outcome == "optimal":
         gap = model.MIPGap
         status = "optimal"
     else:
@@ -1564,8 +1730,7 @@ def _sap_indegree_into(view) -> Dict:
 
 def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
                     fixing=None, da_cuts=None, da_ub=None, primal=None,
-                    threads=None
-                    ) -> Tuple[float, float, float, List[Tuple]]:
+                    threads=None, return_status: bool = False) -> Tuple:
     """Solve a single-group SAP by HiGHS + iterative directed-cut generation.
 
     ``view`` is any object exposing ``graph`` (DiGraph), ``arcs``, ``nodes``,
@@ -1580,6 +1745,10 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
 
     :returns: ``(gap, runtime, objective, selected_arcs)``.
     """
+    def _ret(gap, runtime, objective, selected, status):
+        result = (gap, runtime, objective, selected)
+        return result + (status,) if return_status else result
+
     model = make_model(time_limit, logfile, threads=threads)
     arcs = list(view.arcs)
     root = view.roots[0]
@@ -1612,7 +1781,7 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
     # as a termination target inside the cut loop: a loose dual-ascent UB makes a
     # re-solve stop kOptimal at a feasible-but-suboptimal incumbent, which the loop
     # then reports as "proven optimal" (false-optimal bug observed on PCSPG P400).
-    # da_ub is still used below only to report an honest gap on a non-proven solve.
+    # da_ub remains in the signature for backend symmetry and compatibility.
 
     obj = sum(xa[a] * view.graph.edges[a][view.weight] for a in arcs)
 
@@ -1661,12 +1830,8 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
 
     # Phase 2 — the integer cut loop.
     converged = False
-    _STOP = (
-        hp.HighsModelStatus.kInfeasible,
-        hp.HighsModelStatus.kObjectiveBound,
-        hp.HighsModelStatus.kUnbounded,
-        hp.HighsModelStatus.kUnboundedOrInfeasible,
-    )
+    feasible_incumbent = False
+    outcome = "incomplete"
     while True:
         # Bound the *total* cut-generation time, not just each individual re-solve.
         # The loop can add many rounds of Steiner cuts, and each model.minimize()
@@ -1680,7 +1845,8 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
         model.setOptionValue("time_limit", remaining)
         model.minimize(obj)
         status = model.getModelStatus()
-        if status in _STOP or not model.getSolution().value_valid:
+        outcome, has_incumbent = _highs_outcome(model)
+        if not has_incumbent:
             break
         col_value = model.getSolution().col_value
         xa_vals = {(0, a): col_value[xa[a].index] for a in arcs}
@@ -1691,37 +1857,72 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
             # suboptimal incumbent with no violated cuts; treating that as converged
             # would stamp a non-optimal tree "proven optimal" (observed on P400).
             converged = status == hp.HighsModelStatus.kOptimal
+            feasible_incumbent = True
             break
+        # The current solution is optimal only for the still-incomplete
+        # relaxation. Once a violated cut is found it is not a feasible SAP
+        # incumbent, even if the deadline expires before the next re-solve.
+        outcome = "incomplete"
         for (_k, _l, cut_arcs) in violated:
             if cut_arcs:
                 model.addConstr(sum(xa[a] for a in cut_arcs) >= 1)
     runtime = time.time() - start
 
-    selected = [a for a in arcs if model.variableValue(xa[a]) > 0.5]
-    objective = model.getObjectiveValue()
+    if feasible_incumbent:
+        selected = [a for a in arcs if model.variableValue(xa[a]) > 0.5]
+        objective = model.getObjectiveValue()
+    else:
+        # The last solver values may pre-date connectivity cuts that were just
+        # added. Never expose them. A supplied dual-ascent primal is an
+        # independently feasible fallback, so validate and use it when possible.
+        selected = list(primal or [])
+        if selected and not _sap_candidate_feasible(view, selected):
+            selected = []
+        if selected:
+            objective = sum(view.graph.edges[a][view.weight] for a in selected)
+            outcome = "incomplete"
+        else:
+            return _ret(float("inf"), runtime, float("inf"), [], outcome)
+
     if converged:
         gap = model.getInfo().mip_gap
+        result_status = "optimal"
     else:
-        # Time limit hit before all connectivity cuts were separated: the model is
-        # a relaxation whose optimum is only a lower bound, so its MIP gap would be
-        # a spurious ~0. Report an honest gap against the dual-ascent feasible upper
-        # bound instead (the caller maps the best valid component of `selected`).
-        if da_ub is not None and math.isfinite(da_ub) and da_ub > 0:
-            gap = max(0.0, (da_ub - objective) / max(1.0, abs(da_ub)))
-        else:
-            gap = float("inf")
-    return gap, runtime, objective, selected
+        # The incumbent is connectivity-valid, but the solver did not prove
+        # optimality. Its MIP gap (including a numerical zero) is not an exact
+        # certificate for the still-incomplete cut model.
+        gap = float("inf")
+        result_status = "incomplete"
+    return _ret(gap, runtime, objective, selected, result_status)
+
+
+def _sap_candidate_feasible(view, selected) -> bool:
+    """Validate SAP connectivity and the arborescence indegree constraints."""
+    chosen = set(selected)
+    root = view.roots[0]
+    indegree: Dict = {}
+    for u, v in chosen:
+        if (u, v) not in view.arcs or v == root:
+            return False
+        indegree[v] = indegree.get(v, 0) + 1
+        if indegree[v] > 1:
+            return False
+    vals = {(0, a): 1.0 if a in chosen else 0.0 for a in view.arcs}
+    return not find_violated_cuts_from_values(view, vals, {(0, 0): 1.0})
 
 
 def solve_sap_gurobi(view, time_limit: float = 300, logfile: str = "",
                      fixing=None, da_cuts=None, da_ub=None, primal=None,
-                     threads=None
-                     ) -> Tuple[float, float, float, List[Tuple]]:
+                     threads=None, return_status: bool = False) -> Tuple:
     """Gurobi branch-and-cut counterpart of :func:`solve_sap_highs`.
 
     Connectivity is separated lazily inside a callback, mirroring
     :func:`run_model_gurobi`.
     """
+    def _ret(gap, runtime, objective, selected, status):
+        result = (gap, runtime, objective, selected)
+        return result + (status,) if return_status else result
+
     _check_gurobipy()
     import gurobipy as gp
     from gurobipy import GRB
@@ -1794,10 +1995,21 @@ def solve_sap_gurobi(view, time_limit: float = 300, logfile: str = "",
     model.optimize(_cb)
     runtime = time.time() - start
 
-    if model.SolCount == 0:
-        return float("inf"), runtime, float("inf"), []
-    selected = [a for a in arcs if xa[a].X > 0.5]
-    return model.MIPGap, runtime, model.ObjVal, selected
+    outcome, has_incumbent = _gurobi_outcome(model, GRB)
+    selected = [a for a in arcs if xa[a].X > 0.5] if has_incumbent else []
+    candidate_valid = has_incumbent and _sap_candidate_feasible(view, selected)
+    if has_incumbent and not candidate_valid:
+        selected = []
+        outcome = "incomplete"
+    if not candidate_valid and primal and _sap_candidate_feasible(view, primal):
+        selected = list(primal)
+        outcome = "incomplete"
+        candidate_valid = True
+    if not candidate_valid:
+        return _ret(float("inf"), runtime, float("inf"), [], outcome)
+    objective = sum(view.graph.edges[a][view.weight] for a in selected)
+    gap = model.MIPGap if outcome == "optimal" else float("inf")
+    return _ret(gap, runtime, objective, selected, outcome)
 
 
 # ---------------------------------------------------------------------------
@@ -1822,6 +2034,24 @@ def _undirected_from_arcs(used_arcs: List[Tuple]) -> List[Tuple]:
             seen.add(key)
             edges.append((u, v))
     return edges
+
+
+def _mwcsb_candidate_feasible(
+    steiner_problem, selected_edges, selected_nodes
+) -> bool:
+    chosen = set(selected_nodes)
+    root = steiner_problem.roots[0]
+    if root not in chosen:
+        return False
+    if any(u not in chosen or v not in chosen for u, v in selected_edges):
+        return False
+    selected = nx.Graph()
+    selected.add_nodes_from(chosen)
+    selected.add_edges_from(selected_edges)
+    if any(not nx.has_path(selected, root, node) for node in chosen):
+        return False
+    spent = sum(steiner_problem.node_costs.get(v, 0) for v in chosen)
+    return spent <= steiner_problem.node_budget + 1e-7
 
 
 def build_mwcsb_model(steiner_problem, time_limit: float = 300, logfile: str = "",
@@ -1866,7 +2096,8 @@ def build_mwcsb_model(steiner_problem, time_limit: float = 300, logfile: str = "
     return model, x, y1, y2, z, node_vars
 
 
-def run_mwcsb_model(model, steiner_problem, y1: Dict, node_vars: Dict) -> Tuple:
+def run_mwcsb_model(model, steiner_problem, y1: Dict, node_vars: Dict,
+                    return_status: bool = False) -> Tuple:
     """Solve the HiGHS MWCSPB model and extract the connected subgraph.
 
     :return: ``(gap, runtime, mwcs_weight, selected_edges, selected_nodes)`` where
@@ -1877,20 +2108,40 @@ def run_mwcsb_model(model, steiner_problem, y1: Dict, node_vars: Dict) -> Tuple:
     objective_expr = sum(-nw.get(v, 0.0) * node_vars[v] for v in steiner_problem.nodes)
     model.minimize(objective_expr)
 
-    status = model.getModelStatus()
-    if status in (
-        hp.HighsModelStatus.kInfeasible,
-        hp.HighsModelStatus.kUnbounded,
-        hp.HighsModelStatus.kUnboundedOrInfeasible,
-    ) or not model.getSolution().value_valid:
-        return float("inf"), model.getRunTime(), float("-inf"), [], []
+    def _ret(gap, runtime, objective, selected_edges, selected_nodes, status):
+        result = (gap, runtime, objective, selected_edges, selected_nodes)
+        return result + (status,) if return_status else result
+
+    status, has_incumbent = _highs_outcome(model)
+    if not has_incumbent:
+        return _ret(
+            float("inf"), model.getRunTime(), float("-inf"), [], [], status
+        )
 
     selected_nodes = [v for v in steiner_problem.nodes if model.variableValue(node_vars[v]) > 0.5]
-    used_arcs = [a for a in steiner_problem.arcs if model.variableValue(y1[a]) > 0.5]
+    chosen = set(selected_nodes)
+    # The root has no indegree constraint.  An otherwise unused arc entering it may
+    # therefore be one in a degenerate optimum, even though its tail is not selected.
+    # Such an arc is not part of the node-induced MWCSPB solution.
+    used_arcs = [
+        a
+        for a in steiner_problem.arcs
+        if a[0] in chosen and a[1] in chosen
+        and model.variableValue(y1[a]) > 0.5  # noqa: W503
+    ]
     selected_edges = _undirected_from_arcs(used_arcs)
     mwcs_weight = sum(nw.get(v, 0.0) for v in selected_nodes)
+    if not _mwcsb_candidate_feasible(
+        steiner_problem, selected_edges, selected_nodes
+    ):
+        return _ret(
+            float("inf"), model.getRunTime(), float("-inf"), [], [],
+            "incomplete",
+        )
 
-    return model.getInfo().mip_gap, model.getRunTime(), mwcs_weight, selected_edges, selected_nodes
+    gap = model.getInfo().mip_gap if status == "optimal" else float("inf")
+    return _ret(gap, model.getRunTime(), mwcs_weight, selected_edges,
+                selected_nodes, status)
 
 
 def build_mwcsb_model_gurobi(steiner_problem, time_limit: float = 300, logfile: str = "",
@@ -1956,7 +2207,8 @@ def build_mwcsb_model_gurobi(steiner_problem, time_limit: float = 300, logfile: 
     return model, x, y1, y2, z, node_vars
 
 
-def run_mwcsb_model_gurobi(model, steiner_problem, y1: Dict, node_vars: Dict) -> Tuple:
+def run_mwcsb_model_gurobi(model, steiner_problem, y1: Dict, node_vars: Dict,
+                           return_status: bool = False) -> Tuple:
     """Gurobi counterpart of :func:`run_mwcsb_model`."""
     _check_gurobipy()
     import gurobipy as gp
@@ -1971,12 +2223,29 @@ def run_mwcsb_model_gurobi(model, steiner_problem, y1: Dict, node_vars: Dict) ->
     model.optimize()
     runtime = time.time() - start
 
-    if model.SolCount == 0:
-        return float("inf"), runtime, float("-inf"), [], []
+    def _ret(gap, runtime, objective, selected_edges, selected_nodes, status):
+        result = (gap, runtime, objective, selected_edges, selected_nodes)
+        return result + (status,) if return_status else result
+
+    status, has_incumbent = _gurobi_outcome(model, GRB)
+    if not has_incumbent:
+        return _ret(float("inf"), runtime, float("-inf"), [], [], status)
 
     selected_nodes = [v for v in steiner_problem.nodes if node_vars[v].X > 0.5]
-    used_arcs = [a for a in steiner_problem.arcs if y1[a].X > 0.5]
+    chosen = set(selected_nodes)
+    used_arcs = [
+        a
+        for a in steiner_problem.arcs
+        if a[0] in chosen and a[1] in chosen and y1[a].X > 0.5
+    ]
     selected_edges = _undirected_from_arcs(used_arcs)
     mwcs_weight = sum(nw.get(v, 0.0) for v in selected_nodes)
+    if not _mwcsb_candidate_feasible(
+        steiner_problem, selected_edges, selected_nodes
+    ):
+        return _ret(
+            float("inf"), runtime, float("-inf"), [], [], "incomplete"
+        )
 
-    return model.MIPGap, runtime, mwcs_weight, selected_edges, selected_nodes
+    gap = model.MIPGap if status == "optimal" else float("inf")
+    return _ret(gap, runtime, mwcs_weight, selected_edges, selected_nodes, status)

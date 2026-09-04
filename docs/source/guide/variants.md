@@ -20,6 +20,14 @@ Simply pass a list of terminal lists as `terminal_groups` — one list for a tre
 
 Several of these variants implement the "further related problems" of Chapter 5 of D. Rehfeldt's PhD thesis (*Faster algorithms for Steiner tree and related problems*, TU Berlin 2021), reusing the same directed-cut kernel by transformation.
 
+All edge and arc costs used by these exact Steiner formulations must be
+non-negative. This restriction does not apply to node *weights* in
+`MaxWeightConnectedSubgraph` or
+`BudgetedMaxWeightConnectedSubgraph`, where negative values mean that a node
+is an undesirable connector and are part of the problem semantics. MWCSPB also
+treats edge attributes as topology-only; its objective and budget use node
+weights and node costs.
+
 ```python
 from steinerpy import (
     PartialTerminalSteinerProblem, FullTerminalSteinerProblem, GroupSteinerProblem,

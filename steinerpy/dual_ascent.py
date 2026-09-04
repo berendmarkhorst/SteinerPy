@@ -534,6 +534,16 @@ def dual_ascent(steiner_problem, weight: Optional[str] = None) -> DualAscentResu
     """Run dual ascent + primal heuristic on ``steiner_problem.graph``."""
     weight = weight or steiner_problem.weight
     graph = steiner_problem.graph
+    negative = [
+        (u, v, data.get(weight, 1))
+        for u, v, data in graph.edges(data=True)
+        if data.get(weight, 1) < 0
+    ]
+    if negative:
+        raise ValueError(
+            "dual_ascent requires non-negative edge/arc costs; "
+            f"found {negative[:5]}{' ...' if len(negative) > 5 else ''}."
+        )
     arcs = list(steiner_problem.arcs)
     edges = list(steiner_problem.edges)
     groups = steiner_problem.terminal_groups

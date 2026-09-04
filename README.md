@@ -36,6 +36,7 @@ G.add_edge("B", "C", weight=2)
 G.add_edge("C", "D", weight=1)
 
 # One terminal group = Steiner tree; multiple groups = Steiner forest
+# Edge/arc costs must be non-negative.
 solution = SteinerProblem(G, [["A", "D"]]).get_solution()
 
 print(f"Optimal cost: {solution.objective}")
