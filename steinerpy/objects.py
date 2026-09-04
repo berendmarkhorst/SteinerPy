@@ -14,6 +14,23 @@ from .graph_reducer import preprocess_graph, reduction_stats, map_solution_to_or
 logger = logging.getLogger(__name__)
 
 
+def _validate_nonnegative_edge_costs(graph: nx.Graph, weight: str, problem: str) -> None:
+    """Reject costs that invalidate shortest-path and exact-model assumptions."""
+    negative = [
+        (u, v, data.get(weight, 1))
+        for u, v, data in graph.edges(data=True)
+        if data.get(weight, 1) < 0
+    ]
+    if negative:
+        preview = negative[:5]
+        suffix = " ..." if len(negative) > len(preview) else ""
+        raise ValueError(
+            f"{problem} requires non-negative edge/arc costs in attribute "
+            f"{weight!r}; found {preview}{suffix}. Negative node weights remain "
+            "supported by maximum-weight connected-subgraph variants."
+        )
+
+
 def node_split_graph(
     graph: nx.Graph,
     terminal_groups: List[List],
@@ -53,6 +70,8 @@ def node_split_graph(
 
 
 class BaseSteinerProblem:
+    _requires_nonnegative_edge_costs = True
+
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight", preprocess=True, **kwargs):
         """
         Initialize the SteinerProblem (can be tree or forest).
@@ -61,6 +80,14 @@ class BaseSteinerProblem:
         :param terminal_groups: nested list of terminals.
         :param weight: edge attribute specified by this string as the edge weight.
         """
+        # ``enumeration_safe`` has an older, stricter positive-cost contract and
+        # its own public error message. Let that check below retain precedence.
+        if self._requires_nonnegative_edge_costs and not (
+            preprocess and kwargs.get("enumeration_safe", False)
+        ):
+            _validate_nonnegative_edge_costs(
+                graph, weight, type(self).__name__
+            )
         self.original_graph = graph
         self.preprocess = preprocess
         # Opt-in dual-ascent bound reduction (removes provably non-optimal edges
@@ -203,6 +230,22 @@ class BaseSteinerProblem:
             return False
         return True
 
+    def _connects_terminal_groups(self, edges: List[Tuple]) -> bool:
+        """Independently validate the public connectivity contract."""
+        graph_type = nx.DiGraph if isinstance(self.graph, nx.DiGraph) else nx.Graph
+        selected = graph_type()
+        selected.add_nodes_from(self.nodes)
+        selected.add_edges_from(edges)
+        for group in self.terminal_groups:
+            terminals = list(dict.fromkeys(group))
+            if len(terminals) <= 1:
+                continue
+            root = terminals[0]
+            if any(not nx.has_path(selected, root, terminal)
+                   for terminal in terminals[1:]):
+                return False
+        return True
+
     def _dw_eligible(self) -> bool:
         """Whether the Dreyfus–Wagner dynamic program can solve this instance.
 
@@ -230,7 +273,8 @@ class BaseSteinerProblem:
         k = len(set(self.terminal_groups[0]))
         if k < 2 or k > dw_max_terminals():
             return False
-        # ~3 arrays of 2^(k-1) x (n+1) doubles/ints; keep the footprint modest.
+        # One label array per subset, plus bounded reconstruction temporaries;
+        # keep the exponential footprint modest.
         if (1 << (k - 1)) * (self.graph.number_of_nodes() + 1) > 50_000_000:
             return False
         return True
@@ -606,9 +650,15 @@ class BaseSteinerProblem:
             model, x, y1, y2, z, f, penalty_vars = build_budget_model(
                 self, time_limit=time_limit, logfile=log_file, threads=threads
             )
-            gap, runtime, connected_count, selected_edges, penalties = run_budget_model(
-                model, self, x, penalty_vars
+            gap, runtime, connected_count, selected_edges, penalties, _status = run_budget_model(
+                model, self, x, penalty_vars, return_status=True
             )
+            if _status != "optimal" and connected_count == 0:
+                reason = (
+                    "was proved infeasible" if _status == "infeasible"
+                    else "stopped before finding a valid feasible incumbent"
+                )
+                raise RuntimeError(f"Budget-constrained solve {reason}.")
 
             if self.preprocess:
                 original_selected_edges = map_solution_to_original(
@@ -677,14 +727,15 @@ class BaseSteinerProblem:
 
         # Optional dual-ascent accelerator: lower bound + primal heuristic +
         # reduced-cost variable fixing. Early-exits when proven optimal.
+        import math as _math
         use_da = self.dual_ascent if dual_ascent is None else dual_ascent
         fixing = None
+        da = None
         da_primal = None
         da_cuts = None
         da_ub = None
         if use_da and self._da_eligible():
             import time as _time
-            import math as _math
             from .dual_ascent import (
                 dual_ascent as _run_da, reduced_cost_fixing, steiner_cuts,
             )
@@ -711,7 +762,7 @@ class BaseSteinerProblem:
                 apply_fixes_gurobi(model, x, y1, y2, fixing)
                 set_gurobi_cutoff(model, da_ub)
             gap, runtime, objective, selected_edges, _status = run_model_gurobi(model, self, x, y2, z, return_status=True)
-            if da_cuts is not None and _math.isinf(objective):
+            if da_cuts is not None and _status == "infeasible":
                 # The dual-ascent acceleration (cutoff / fixing / seeded cuts)
                 # over-constrained the model into infeasibility although the
                 # instance is feasible; re-solve from a clean model.
@@ -734,11 +785,38 @@ class BaseSteinerProblem:
                 _m, _x, _p = model, x, da_primal
                 reapply_start = lambda: set_highs_warm_start(_m, _x, _p)  # noqa: E731
             gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z, reapply_start=reapply_start, return_status=True)
-            if da_cuts is not None and _math.isinf(objective):
+            if da_cuts is not None and _status == "infeasible":
                 # The acceleration over-constrained a feasible instance into
                 # infeasibility; re-solve from a clean, un-accelerated model.
                 model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
                 gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z, return_status=True)
+
+        if _status == "incomplete" and not _math.isfinite(objective):
+            if da is None or not da.feasible or not _math.isfinite(da.upper_bound):
+                raise RuntimeError(
+                    "Exact solve stopped before finding a connectivity-valid "
+                    "feasible incumbent."
+                )
+            # Dual ascent supplies an independently feasible incumbent and lower
+            # bound. Use it rather than returning stale values from a cut round.
+            selected_edges = list(da.primal_edges)
+            objective = da.upper_bound
+            if not _math.isfinite(da.lower_bound):
+                gap = float("inf")
+            else:
+                gap = max(
+                    0.0,
+                    (da.upper_bound - da.lower_bound)
+                    / max(1.0, abs(da.upper_bound)),
+                )
+
+        if _math.isfinite(objective) and not self._connects_terminal_groups(
+            selected_edges
+        ):
+            raise RuntimeError(
+                "Exact solver returned an incumbent that does not connect every "
+                "terminal group; the result was discarded."
+            )
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
@@ -1106,6 +1184,7 @@ class PartialTerminalSteinerProblem(SteinerProblem):
                  weight: str = "weight", **kwargs):
         if isinstance(graph, nx.DiGraph):
             raise ValueError("PartialTerminalSteinerProblem requires an undirected graph.")
+        _validate_nonnegative_edge_costs(graph, weight, type(self).__name__)
         self.partial_terminals = set(partial_terminals)
         all_terminals = {t for group in terminal_groups for t in group}
         missing = self.partial_terminals - all_terminals
@@ -1576,10 +1655,10 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             da_ub = da.upper_bound
 
         solve = solve_sap_gurobi if solver == "gurobi" else solve_sap_highs
-        gap, _rt, _sap_obj, sap_arcs = solve(
+        gap, _rt, _sap_obj, sap_arcs, _status = solve(
             view, time_limit=time_limit, logfile=log_file,
             fixing=fixing, da_cuts=da_cuts, da_ub=da_ub, primal=da_primal,
-            threads=threads,
+            threads=threads, return_status=True,
         )
 
         edges, nodes, pcstp_obj = map_sap_solution_to_pcstp(ctx, sap_arcs)
@@ -1689,9 +1768,16 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             self, time_limit=time_limit, logfile=log_file, threads=threads
         )
         
-        gap, runtime, objective, selected_edges, selected_nodes, penalties = run_prize_collecting_model(
-            model, self, x, node_vars, penalty_vars
+        (gap, runtime, objective, selected_edges, selected_nodes, penalties,
+         _status) = run_prize_collecting_model(
+            model, self, x, node_vars, penalty_vars, return_status=True
         )
+        if _status != "optimal" and objective == float("inf"):
+            reason = (
+                "was proved infeasible" if _status == "infeasible"
+                else "stopped before finding a valid feasible incumbent"
+            )
+            raise RuntimeError(f"Prize-collecting solve {reason}.")
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
@@ -1955,6 +2041,14 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         Note: graph preprocessing is not supported for node-weighted problems because
         the node-splitting transformation produces a directed graph internally.
         """
+        negative_nodes = [(v, cost) for v, cost in node_weights.items() if cost < 0]
+        if negative_nodes:
+            raise ValueError(
+                "NodeWeightedSteinerProblem requires non-negative node costs; "
+                f"found {negative_nodes[:5]}"
+                f"{' ...' if len(negative_nodes) > 5 else ''}. Use "
+                "MaxWeightConnectedSubgraph for semantically negative node weights."
+            )
         self.node_weights = node_weights
         self.original_terminal_groups_nw = terminal_groups
 
@@ -1988,6 +2082,17 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
             gap, runtime, objective, _, _status = run_model(model, self, x, y2, z, return_status=True)
+
+        if _status == "incomplete" and objective == float("inf"):
+            raise RuntimeError(
+                "Node-weighted exact solve stopped before finding a "
+                "connectivity-valid feasible incumbent."
+            )
+        if objective == float("inf"):
+            return NodeWeightedSolution(
+                gap=gap, runtime=runtime, objective=objective,
+                selected_edges=[], original_selected_edges=[], selected_nodes=[],
+            )
 
         # Use arc (y1) variables for the actual directed tree structure instead of edge
         # (x) variables, to avoid degenerate zero-weight cross-edges being included.
@@ -2184,6 +2289,10 @@ class BudgetedMaxWeightConnectedSubgraph(MaxWeightConnectedSubgraph):
       problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.6.
     """
 
+    # Original edge attributes are topology-only in MWCSPB: neither the
+    # node-weight objective nor the node-cost budget reads them.
+    _requires_nonnegative_edge_costs = False
+
     def __init__(self, graph: nx.Graph, node_weights: Dict, node_costs: Dict,
                  node_budget: float, root=None, weight: str = "weight", **kwargs):
         """
@@ -2213,16 +2322,25 @@ class BudgetedMaxWeightConnectedSubgraph(MaxWeightConnectedSubgraph):
             model, x, y1, y2, z, node_vars = build_mwcsb_model_gurobi(
                 self, time_limit=time_limit, logfile=log_file, threads=threads
             )
-            gap, runtime, mwcs_weight, selected_edges, selected_nodes = run_mwcsb_model_gurobi(
-                model, self, y1, node_vars
+            (gap, runtime, mwcs_weight, selected_edges, selected_nodes,
+             _status) = run_mwcsb_model_gurobi(
+                model, self, y1, node_vars, return_status=True
             )
         else:
             model, x, y1, y2, z, node_vars = build_mwcsb_model(
                 self, time_limit=time_limit, logfile=log_file, threads=threads
             )
-            gap, runtime, mwcs_weight, selected_edges, selected_nodes = run_mwcsb_model(
-                model, self, y1, node_vars
+            (gap, runtime, mwcs_weight, selected_edges, selected_nodes,
+             _status) = run_mwcsb_model(
+                model, self, y1, node_vars, return_status=True
             )
+
+        if _status != "optimal" and mwcs_weight == float("-inf"):
+            reason = (
+                "was proved infeasible" if _status == "infeasible"
+                else "stopped before finding a valid feasible incumbent"
+            )
+            raise RuntimeError(f"Budgeted MWCS solve {reason}.")
 
         total_prize = sum(max(0.0, self._mwcs_node_weights.get(v, 0.0)) for v in selected_nodes)
         return PrizeCollectingSolution(
@@ -2405,6 +2523,7 @@ class HopConstrainedSteinerProblem(DirectedSteinerProblem):
         """
         if not isinstance(graph, nx.DiGraph):
             raise ValueError("HopConstrainedSteinerProblem requires a directed graph (nx.DiGraph).")
+        _validate_nonnegative_edge_costs(graph, weight, type(self).__name__)
 
         # Drop outgoing arcs of every non-root terminal (thesis: delta^+_S(t) = 0).
         non_root_terminals = {t for t in terminals if t != root}

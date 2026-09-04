@@ -19,6 +19,24 @@ solution = SteinerProblem(graph, terminal_groups).get_solution(solver="gurobi")
 Both solvers implement the same cut-based (DO-D) formulation from Markhorst et al. (2025) and produce identical optimal solutions.
 Gurobi may be faster on larger instances because callbacks avoid repeated re-solves from scratch.
 
+## Input and certificate guarantees
+
+All edge-cost Steiner variants require non-negative values in the selected
+edge/arc weight attribute. This is required by the shortest-path reductions
+and exact formulations.
+Negative node weights remain valid for maximum-weight connected-subgraph
+problems. Inputs with a negative edge or arc cost raise `ValueError` at
+construction time instead of risking a disconnected negative-cost cycle in the
+reported solution.
+
+A time limit is not an optimality certificate. If a solve stops early with an
+independently validated feasible incumbent, `get_solution()` may return it
+with a nonzero or unknown gap (`math.inf`). If no valid incumbent exists—or
+the last incumbent predates newly added connectivity cuts—the values are
+discarded and the public solve raises `RuntimeError`. In particular,
+`solution.gap == 0` is reported only after the solver or an independent exact
+bound proves optimality.
+
 ## Enumerating multiple optimal solutions
 
 `get_solution()` returns exactly one optimal Steiner tree. When multiple

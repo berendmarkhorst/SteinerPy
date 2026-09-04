@@ -46,6 +46,20 @@ skipped and rows are appended, so a preempted sweep is restarted with the same
 command. Per-instance solve time is bounded by `--time-limit`; for hard
 wall-clock isolation on a cluster, the Slurm array runs one instance per task.
 
+### Dreyfus-Wagner memory benchmark
+
+`benchmark_dreyfus_memory.py` compares the few-terminal dynamic program across
+source checkouts with fixed generated graphs. Every repetition runs in a fresh
+process so peak RSS is isolated, and the CSV records the Python, NetworkX, and
+SciPy versions used:
+
+```bash
+python benchmarks/benchmark_dreyfus_memory.py \
+  --source-root /path/to/checkout --label candidate \
+  --k 6,7,8,9,10 --sizes 300,1200 --densities 3,8 --repeats 3 \
+  --output candidate.csv
+```
+
 ## Output columns
 
 `instance, nodes, edges, terminals, opt, base_obj, base_rt, base_gap,

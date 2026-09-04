@@ -80,6 +80,20 @@ def test_zero_weight_edges():
     assert _spans(edges, [0, 2])
 
 
+def test_tied_shortest_paths_reconstruct_a_valid_optimum():
+    # Two equal routes between each side of the terminal set exercise both
+    # Dijkstra predecessor ties and tied merge choices during reconstruction.
+    G = nx.cycle_graph(6)
+    for u, v in G.edges():
+        G[u][v]["weight"] = 1
+
+    cost, edges = dreyfus_wagner(G, [0, 2, 4])
+
+    assert cost == pytest.approx(4.0)
+    assert _edge_cost(G, edges) == pytest.approx(cost)
+    assert _spans(edges, [0, 2, 4])
+
+
 def test_disconnected_terminals():
     G = nx.Graph()
     G.add_edge(0, 1, weight=1)
@@ -105,6 +119,31 @@ def test_grow_csr_is_built_once(monkeypatch):
     assert math.isfinite(cost)
     assert _spans(edges, terminals)
     assert len(calls) == 2  # base graph plus reusable virtual-source graph
+
+
+def test_forward_dp_does_not_retain_predecessor_families(monkeypatch):
+    """Predecessors are requested only for states visited in reconstruction."""
+    module = importlib.import_module("steinerpy.dreyfus_wagner")
+    real_dijkstra = module._sp_dijkstra
+    predecessor_calls = 0
+
+    def counting_dijkstra(*args, **kwargs):
+        nonlocal predecessor_calls
+        if kwargs.get("return_predecessors", False):
+            predecessor_calls += 1
+        return real_dijkstra(*args, **kwargs)
+
+    monkeypatch.setattr(module, "_sp_dijkstra", counting_dijkstra)
+    graph, terminals = _random_instance(40, 120, 6, seed=405)
+
+    cost, edges = module.dreyfus_wagner(graph, terminals)
+
+    assert math.isfinite(cost)
+    assert _spans(edges, terminals)
+    # The old implementation requested predecessors for all 2^(k-1)-1 states
+    # (31 here). Label-only reconstruction visits at most a binary tree of
+    # 2*(k-1)-1 states.
+    assert predecessor_calls <= 2 * (len(terminals) - 1) - 1
 
 
 def test_disconnected_grow_step_with_infinite_virtual_weights():

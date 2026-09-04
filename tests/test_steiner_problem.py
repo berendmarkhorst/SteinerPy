@@ -1546,10 +1546,11 @@ def test_solve_sap_highs_exhausted_time_limit_gap():
     ctx = PrizeCollectingProblem(g, [[0]], prizes, penalty_cost=0)._build_pc_transform()
     view = DirectedSteinerProblem(ctx.sap_graph, ctx.root, ctx.terminals, weight=ctx.weight)
 
-    # With a dual-ascent upper bound, report an honest gap against it...
+    # An upper bound alone is not enough to certify a gap when no solve ran:
+    # there is no valid lower-bound result to pair it with.
     gap_ub, *_ = solve_sap_highs(view, time_limit=0.0, da_ub=10.0)
-    assert gap_ub == pytest.approx(1.0)   # (10 - 0) / max(1, 10)
-    # ...without one, the relaxation gap would be spurious, so report inf.
+    assert gap_ub == float("inf")
+    # Without one the result is likewise explicitly unknown.
     gap_none, *_ = solve_sap_highs(view, time_limit=0.0)
     assert gap_none == float("inf")
 

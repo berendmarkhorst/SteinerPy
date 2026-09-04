@@ -55,6 +55,19 @@ def _term_label(t) -> Arc:
     return ("__pc_term__", t)
 
 
+def _validate_nonnegative_costs(graph, weight: str, transform: str) -> None:
+    negative = [
+        (u, v, data.get(weight, 1))
+        for u, v, data in graph.edges(data=True)
+        if data.get(weight, 1) < 0
+    ]
+    if negative:
+        raise ValueError(
+            f"{transform} requires non-negative edge/arc costs; found "
+            f"{negative[:5]}{' ...' if len(negative) > 5 else ''}."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Transform context
 # ---------------------------------------------------------------------------
@@ -137,6 +150,7 @@ def transform_pcstp_to_sap(
 
     :returns: a :class:`PCTransform`.
     """
+    _validate_nonnegative_costs(graph, weight, "transform_pcstp_to_sap")
     proper: Set = set()
     nonproper: Set = set()
     for v in graph.nodes():
@@ -241,6 +255,9 @@ def transform_directed_pcstp_to_sap(
         raise ValueError(
             "transform_directed_pcstp_to_sap requires a directed graph (nx.DiGraph)."
         )
+    _validate_nonnegative_costs(
+        graph, weight, "transform_directed_pcstp_to_sap"
+    )
     if root is not None and root not in graph:
         raise ValueError(f"root {root!r} is not in the graph.")
 
@@ -314,8 +331,9 @@ def transform_mwcsp_to_pcstp(
 ) -> Tuple[nx.Graph, Dict, float]:
     """MWCSP ``(graph, node_weights)`` -> equivalent classic PCSTP.
 
-    Rehfeldt & Koch (2020), Sec. 2.2: let ``w0 = min_v w(v)``.  Define edge costs
-    ``c(e) := -w0`` (``> 0`` when some weight is negative) and prizes
+    Rehfeldt & Koch (2020), Sec. 2.2: let
+    ``w0 = min(0, min_v w(v))``. Define edge costs ``c(e) := -w0``
+    (``> 0`` when some weight is negative) and prizes
     ``p(v) := w(v) - w0 >= 0``.  Maximising ``sum_{v in S} w(v)`` over connected
     ``S`` is then equivalent to minimising the PCSTP objective, and the original
     weight is recovered by ``mwcsp_weight = mwcsp_const - pcstp_obj`` with
@@ -326,12 +344,15 @@ def transform_mwcsp_to_pcstp(
     """
     if not node_weights:
         raise ValueError("node_weights must be non-empty for MWCSP.")
-    w0 = min(node_weights.get(v, 0) for v in graph.nodes())
+    # Clamping at zero matters when all node weights are positive. The algebraic
+    # tree transformation still works with a positive shift, but it would create
+    # negative edge costs and invalidate the SAP shortest-path/cut machinery.
+    w0 = min(0, min(node_weights.get(v, 0) for v in graph.nodes()))
     n = graph.number_of_nodes()
 
     pc_graph = nx.Graph()
     pc_graph.add_nodes_from(graph.nodes())
-    edge_cost = -w0  # >= 0; 0 only in the degenerate all-nonnegative case
+    edge_cost = -w0  # >= 0; zero when all node weights are non-negative
     for u, v in graph.edges():
         pc_graph.add_edge(u, v, **{weight: edge_cost})
 
