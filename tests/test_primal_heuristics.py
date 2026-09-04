@@ -15,6 +15,26 @@ from steinerpy.primal_heuristics import (
 )
 
 
+def _random_labeled_tree(order, rng):
+    """Build a labelled tree without depending on NetworkX's generator API."""
+    sequence = [rng.randrange(order) for _ in range(order - 2)]
+    degree = [1] * order
+    for node in sequence:
+        degree[node] += 1
+
+    graph = nx.Graph()
+    graph.add_nodes_from(range(order))
+    for node in sequence:
+        leaf = next(index for index, value in enumerate(degree) if value == 1)
+        graph.add_edge(leaf, node)
+        degree[leaf] -= 1
+        degree[node] -= 1
+
+    remaining = [node for node, value in enumerate(degree) if value == 1]
+    graph.add_edge(*remaining)
+    return graph
+
+
 def test_vertex_elimination_strictly_improves_and_stays_feasible():
     graph = nx.Graph()
     graph.add_edge("a", "x", weight=3)
@@ -113,7 +133,7 @@ def test_opt_in_portfolio_never_worsens_public_heuristic_solution(monkeypatch):
 @pytest.mark.parametrize("seed", range(30))
 def test_random_candidates_are_feasible_and_local_search_is_monotone(seed):
     rng = random.Random(seed)
-    graph = nx.random_labeled_tree(9, seed=seed)
+    graph = _random_labeled_tree(9, rng)
     for u, v in graph.edges():
         graph[u][v]["weight"] = rng.randint(1, 9)
     for _ in range(10):
