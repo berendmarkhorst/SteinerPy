@@ -49,6 +49,7 @@ setup/citing
 guide/variants
 guide/solvers
 guide/performance
+guide/phase1_research
 guide/benchmarks
 ```
 
