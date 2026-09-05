@@ -1,7 +1,8 @@
 """Array/CSR-backed graph primitives (scipy-accelerated, networkx fallback).
 
 This module centralises the C-backed hot-path routines used across SteinerPy and
-implements the data-structure / separation ideas from Rehfeldt's thesis Ch. 6:
+implements the data-structure / separation ideas from Rehfeldt's PhD thesis
+(2021, TU Berlin), Ch. 6:
 
 * an **arc-index / CSR substrate** (:class:`ArcCSR`) built once per (reduced)
   graph and reused for every inner-loop computation, so the hot loops avoid the

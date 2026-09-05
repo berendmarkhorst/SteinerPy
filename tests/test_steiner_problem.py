@@ -1,5 +1,7 @@
 """Basic tests for SteinerProblem class."""
 
+import math
+import random
 import warnings
 
 import networkx as nx
@@ -24,8 +26,22 @@ def test_steiner_problem_initialization():
     
     problem = SteinerProblem(G, terminal_groups, preprocess=True)
 
+    # Terminal contraction solves this chain outright: both terminals are
+    # degree-1, so every edge is fixed and the graph collapses to one node.
     assert problem.original_graph.number_of_nodes() == 4
     assert problem.original_graph.number_of_edges() == 3
+    assert problem.graph.number_of_nodes() == 1
+    assert problem.graph.number_of_edges() == 0
+    assert problem.terminal_groups == [[problem.roots[0]]]
+    assert problem.reduction_tracker.fixed_cost == 4
+    assert problem.weight == "weight"
+    assert problem.steiner_points == set()
+
+    # Without the contraction tests, the degree-2 reduction leaves the classic
+    # two-terminal single-edge shape.
+    problem = SteinerProblem(G, terminal_groups, preprocess=True,
+                             contract_terminals=False)
+
     assert problem.graph.number_of_nodes() == 2
     assert problem.graph.number_of_edges() == 1
     assert problem.terminal_groups == terminal_groups
@@ -57,8 +73,8 @@ def test_steiner_problem_repr():
     G.add_edge('A', 'B', weight=1)
     
     terminal_groups = [['A', 'B']]
-    problem = SteinerProblem(G, terminal_groups)
-    
+    problem = SteinerProblem(G, terminal_groups, contract_terminals=False)
+
     repr_str = repr(problem)
     assert "2 nodes" in repr_str
     assert "1 edges" in repr_str
@@ -126,42 +142,105 @@ def test_steiner_tree_example_from_notebook():
     
     # Create SteinerProblem to connect terminals A, B, D
     problem = SteinerProblem(graph, [["A", "B", "D"]])
-    
-    # Verify problem setup. The default-on heavy reductions delete the A-D edge
-    # (weight 10) because the detour A-C-D (cost 2) is provably always cheaper.
-    assert problem.graph.number_of_nodes() == 4
-    assert problem.graph.number_of_edges() == 3
-    assert not problem.graph.has_edge("A", "D")
-    assert problem.terminal_groups == [["A", "B", "D"]]
-    assert problem.steiner_points == {'C'}  # C is the only Steiner point
-    
+
+    # The default-on reductions now solve this instance outright: heavy tests
+    # delete the A-D edge (detour A-C-D is cheaper) and terminal contraction
+    # fixes the remaining star edges (B is degree-1; A-C / C-D are cheapest
+    # incident terminal-terminal edges after B merges into C).
+    assert problem.graph.number_of_edges() == 0
+    assert problem.reduction_tracker.fixed_cost == 3
+
     # Solve the problem
     solution = problem.get_solution(time_limit=30)
-    
+
     # Verify solution properties
     assert isinstance(solution, Solution)
     assert solution.objective is not None
     assert solution.runtime is not None
     assert solution.gap is not None
     assert isinstance(solution.selected_edges, list)
-    
+
     # The optimal solution should have cost 3 (AC=1, BC=1, CD=1)
     # allowing for small numerical tolerance
     assert abs(solution.objective - 3.0) < 1e-6, f"Expected objective ~3.0, got {solution.objective}"
+
+    # The optimal solution uses exactly 3 original-graph edges
+    assert len(solution.edges) == 3, f"Expected 3 edges, got {len(solution.edges)}"
+    assert set(map(frozenset, solution.edges)) == {
+        frozenset(("A", "C")), frozenset(("B", "C")), frozenset(("C", "D"))
+    }
     
-    # The optimal solution should use exactly 3 edges
-    assert len(solution.selected_edges) == 3, f"Expected 3 edges, got {len(solution.selected_edges)}"
-    
-    # Convert selected edges to a set of undirected edges for easier comparison
+    # Convert original-graph edges to a set of undirected edges for comparison
+    # (selected_edges refers to the reduced graph, which is empty here — the
+    # whole solution consists of contraction-fixed edges).
     selected_undirected = set()
-    for edge in solution.selected_edges:
+    for edge in solution.edges:
         # Normalize edge direction (smaller node first)
         normalized_edge = tuple(sorted(edge))
         selected_undirected.add(normalized_edge)
-    
+
     # The expected optimal edges are AC, BC, CD
     expected_edges = {('A', 'C'), ('B', 'C'), ('C', 'D')}
     assert selected_undirected == expected_edges, f"Expected edges {expected_edges}, got {selected_undirected}"
+
+
+def test_zero_edge_graph_with_unconnected_terminals_raises():
+    """A zero-edge graph with >= 1 terminal group still holding >= 2 distinct
+    members is infeasible: nothing can connect them. get_solution() must raise
+    a clean RuntimeError instead of falling through to the solver."""
+    G = nx.Graph()
+    G.add_node('A')
+    G.add_node('B')
+
+    with pytest.raises(RuntimeError):
+        SteinerProblem(G, [['A', 'B']], preprocess=False).get_solution()
+
+
+def test_zero_edge_forest_with_singleton_groups_is_feasible():
+    """Separate singleton groups require no connection to one another."""
+    graph = nx.Graph()
+    graph.add_nodes_from(["A", "B"])
+
+    solution = SteinerProblem(
+        graph, [["A"], ["B"]], preprocess=False
+    ).get_solution()
+
+    assert solution.selected_edges == []
+    assert solution.objective == 0.0
+    assert solution.gap == pytest.approx(0.0)
+
+
+def test_zero_edge_graph_with_budget_does_not_crash():
+    """Same zero-edge scenario as above, but budget-constrained: unlike the
+    plain path this is not infeasible (the budget model tolerates
+    disconnected terminals via penalty variables), so it must solve cleanly
+    instead of raising or hitting the highspy AttributeError that an empty
+    `sum()` over `self.edges` used to trigger in the budget constraint."""
+    G = nx.Graph()
+    G.add_node("A")
+    G.add_node("B")
+
+    solution = SteinerProblem(
+        G, [["A", "B"]], preprocess=False, budget=10
+    ).get_solution()
+    assert solution.selected_edges == []
+    assert solution.connected_terminals < solution.total_terminals
+    assert solution.gap == pytest.approx(0.0)
+
+
+def test_duplicate_terminal_in_group_is_trivially_solved():
+    """A group with a repeated terminal (e.g. ['A', 'A']) has only one
+    *distinct* member, so it is already trivially solved even with zero
+    edges. get_solution() must not confuse the raw group length with the
+    distinct terminal count and falsely raise the zero-edge RuntimeError."""
+    G = nx.Graph()
+    G.add_node("A")
+
+    solution = SteinerProblem(G, [["A", "A"]], preprocess=False).get_solution()
+    assert solution.selected_edges == []
+    assert solution.objective == 0.0
+    assert solution.gap == pytest.approx(0.0)
+
 
 def test_prize_collecting_problem_initialization():
     """Test PrizeCollectingProblem initialization."""
@@ -984,6 +1063,112 @@ def test_directed_steiner_inherits_base():
     assert isinstance(problem, BaseSteinerProblem)
 
 
+def test_directed_steiner_unused_back_arc_not_forced():
+    """Regression for GH issue #30: an unused reverse arc between two nodes
+    on the optimal path must not get its own edge variable forced on. The
+    directed-cut model used to conflate a genuine 2-cycle's two independent
+    arcs with the "shared edge, two directions" case synthesized for
+    undirected graphs, forcing x on the unused direction and inflating the
+    objective while still certifying gap == 0.0."""
+    DG = nx.DiGraph()
+    DG.add_edge(0, 3, weight=9)
+    DG.add_edge(3, 2, weight=8)
+    DG.add_edge(2, 1, weight=7)
+    DG.add_edge(1, 2, weight=3)  # unused reverse arc, not needed for any path
+
+    solution = DirectedSteinerProblem(DG, root=0, terminals=[3, 1]).get_solution()
+    assert solution.gap == pytest.approx(0.0)
+    assert solution.objective == pytest.approx(24.0)
+    assert (1, 2) not in solution.selected_edges
+
+
+# ---------------------------------------------------------------------------
+# Brute-force oracle for DirectedSteinerProblem, biased towards graphs with
+# "back arcs" (2-cycles) -- the class of instance that triggered issue #30.
+# ---------------------------------------------------------------------------
+
+def brute_directed_steiner(graph, root, terminals, weight="weight"):
+    """Optimal cost via enumerating edge subsets: min cost subgraph such that
+    every terminal is reachable from root. ``math.inf`` if none works."""
+    edges = list(graph.edges(data=True))
+    n = len(edges)
+    best = math.inf
+    for mask in range(1 << n):
+        adj = {}
+        cost = 0.0
+        for i in range(n):
+            if mask & (1 << i):
+                u, v, d = edges[i]
+                adj.setdefault(u, []).append(v)
+                cost += d.get(weight, 1)
+        if cost >= best:
+            continue
+        reachable = {root}
+        stack = [root]
+        while stack:
+            x = stack.pop()
+            for y in adj.get(x, []):
+                if y not in reachable:
+                    reachable.add(y)
+                    stack.append(y)
+        if all(t in reachable for t in terminals):
+            best = cost
+    return best
+
+
+def random_digraph_with_back_arcs(seed, n=6):
+    """Random rooted DiGraph with a directed backbone (guaranteeing every
+    instance is feasible) plus deliberate reverse ("back") arcs on backbone
+    pairs and a few extra random arcs, to stress-test the arc/edge-variable
+    bundling in Constraint 3."""
+    rng = random.Random(seed)
+    nodes = list(range(n))
+    root = 0
+    rest = nodes[1:]
+    rng.shuffle(rest)
+    order = [root] + rest
+    g = nx.DiGraph()
+    g.add_nodes_from(nodes)
+    for i in range(len(order) - 1):
+        g.add_edge(order[i], order[i + 1], weight=rng.randint(1, 9))
+    for i in range(len(order) - 1):
+        if rng.random() < 0.5:
+            u, v = order[i + 1], order[i]
+            if not g.has_edge(u, v):
+                g.add_edge(u, v, weight=rng.randint(1, 9))
+    for _ in range(rng.randint(0, 3)):
+        u, v = rng.sample(nodes, 2)
+        if not g.has_edge(u, v):
+            g.add_edge(u, v, weight=rng.randint(1, 9))
+    terminals = rng.sample(rest, k=min(3, len(rest)))
+    return g, root, terminals
+
+
+@pytest.mark.parametrize("seed", range(30))
+def test_directed_steiner_matches_oracle_with_back_arcs(seed):
+    g, root, terminals = random_digraph_with_back_arcs(seed)
+    opt = brute_directed_steiner(g, root, terminals)
+    prob = DirectedSteinerProblem(g.copy(), root=root, terminals=terminals)
+    sol = prob.get_solution()
+
+    assert sol.gap == pytest.approx(0.0, abs=1e-9)
+    assert sol.objective == pytest.approx(opt)
+
+    adj = {}
+    for u, v in sol.selected_edges:
+        adj.setdefault(u, []).append(v)
+    reachable = {root}
+    stack = [root]
+    while stack:
+        x = stack.pop()
+        for y in adj.get(x, []):
+            if y not in reachable:
+                reachable.add(y)
+                stack.append(y)
+    for t in terminals:
+        assert t in reachable
+
+
 # ---------------------------------------------------------------------------
 # Mix-and-match constraint modifier tests
 # ---------------------------------------------------------------------------
@@ -1299,8 +1484,54 @@ def test_run_model_exhausted_time_limit_reports_infinite_gap():
     prob = SteinerProblem(g, [[0, 3, 6]], preprocess=False)
 
     model, x, y1, y2, z = build_model(prob, time_limit=0.0, logfile="", threads=None)
-    gap, _runtime, _obj, edges = run_model(model, prob, x, y2, z)
+    gap, _runtime, _obj, edges, status = run_model(model, prob, x, y2, z, return_status=True)
     # Deadline hit before any cut round -> not proven optimal -> no spurious ~0 gap.
+    assert gap == float("inf")
+    assert edges == []
+    assert status == "incomplete"
+
+
+def test_run_model_default_return_omits_status_for_backward_compatibility():
+    """run_model gained a fifth return value (status) after its first public
+    release; return_status defaults to False so existing 4-value callers of
+    the public run_model/run_model_gurobi API keep working (steinerpy#42)."""
+    from steinerpy.mathematical_model import build_model, run_model
+
+    g = nx.cycle_graph(8)
+    for a, b in g.edges:
+        g.edges[a, b]["weight"] = 1
+    prob = SteinerProblem(g, [[0, 3, 6]], preprocess=False)
+
+    model, x, y1, y2, z = build_model(prob, time_limit=5.0, logfile="", threads=None)
+    result = run_model(model, prob, x, y2, z)
+    assert len(result) == 4
+    gap, _runtime, obj, edges = result
+    assert gap == 0.0
+    assert obj == 5.0
+    assert len(edges) == 5
+
+
+def test_run_model_reports_incomplete_on_non_infeasible_non_optimal_status(monkeypatch):
+    """A solve that neither proves optimality nor infeasibility (e.g. hits
+    the time limit mid-solve with no usable incumbent, surfaced by HiGHS as
+    kUnbounded/kObjectiveBound/kUnboundedOrInfeasible, or simply an invalid
+    solution) must be reported as status="incomplete", not lumped in with a
+    genuine kInfeasible proof. Forced deterministically via monkeypatch since
+    provoking this status combination from real solver timing is flaky."""
+    import highspy as hp
+    from steinerpy.mathematical_model import build_model, run_model
+
+    g = nx.cycle_graph(8)
+    for a, b in g.edges:
+        g.edges[a, b]["weight"] = 1
+    prob = SteinerProblem(g, [[0, 3, 6]], preprocess=False)
+
+    model, x, y1, y2, z = build_model(prob, time_limit=5.0, logfile="", threads=None)
+    monkeypatch.setattr(model, "getModelStatus", lambda: hp.HighsModelStatus.kUnbounded)
+
+    gap, _runtime, _obj, edges, status = run_model(model, prob, x, y2, z, return_status=True)
+
+    assert status == "incomplete"
     assert gap == float("inf")
     assert edges == []
 
@@ -1315,10 +1546,11 @@ def test_solve_sap_highs_exhausted_time_limit_gap():
     ctx = PrizeCollectingProblem(g, [[0]], prizes, penalty_cost=0)._build_pc_transform()
     view = DirectedSteinerProblem(ctx.sap_graph, ctx.root, ctx.terminals, weight=ctx.weight)
 
-    # With a dual-ascent upper bound, report an honest gap against it...
+    # An upper bound alone is not enough to certify a gap when no solve ran:
+    # there is no valid lower-bound result to pair it with.
     gap_ub, *_ = solve_sap_highs(view, time_limit=0.0, da_ub=10.0)
-    assert gap_ub == pytest.approx(1.0)   # (10 - 0) / max(1, 10)
-    # ...without one, the relaxation gap would be spurious, so report inf.
+    assert gap_ub == float("inf")
+    # Without one the result is likewise explicitly unknown.
     gap_none, *_ = solve_sap_highs(view, time_limit=0.0)
     assert gap_none == float("inf")
 

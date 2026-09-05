@@ -51,3 +51,12 @@ def test_label_collision_is_avoided():
     G.add_edge("B", "C", weight=1)
     sol = GroupSteinerProblem(G, [["__group_0__"], ["C"]]).get_solution()
     assert sol.objective == pytest.approx(2.0)
+
+
+def test_directed_graph_rejected():
+    # DirectedGroupSteinerProblem is the directed variant (see
+    # test_directed_group_steiner.py).
+    G = nx.DiGraph()
+    G.add_edge("A", "B", weight=1)
+    with pytest.raises(ValueError):
+        GroupSteinerProblem(G, [["A"], ["B"]])

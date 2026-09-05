@@ -29,6 +29,11 @@ Prize-collecting and node-weighted problems
    :show-inheritance:
    :special-members: __init__
 
+.. autoclass:: steinerpy.DirectedPrizeCollectingProblem
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
 .. autoclass:: steinerpy.NodeWeightedSteinerProblem
    :members:
    :special-members: __init__
@@ -57,6 +62,11 @@ Further variants
    :special-members: __init__
 
 .. autoclass:: steinerpy.GroupSteinerProblem
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
+.. autoclass:: steinerpy.DirectedGroupSteinerProblem
    :members:
    :show-inheritance:
    :special-members: __init__
@@ -92,6 +102,9 @@ Solutions
 .. autoclass:: steinerpy.RectilinearSolution
    :members:
    :show-inheritance:
+
+.. autoclass:: steinerpy.OptimalSolutionPool
+   :members:
 
 Deprecated
 ----------

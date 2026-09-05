@@ -557,6 +557,16 @@ def dual_ascent(steiner_problem, weight: Optional[str] = None) -> DualAscentResu
         if signature == _ascent_signature(steiner_problem, weight):
             return result
     graph = steiner_problem.graph
+    negative = [
+        (u, v, data.get(weight, 1))
+        for u, v, data in graph.edges(data=True)
+        if data.get(weight, 1) < 0
+    ]
+    if negative:
+        raise ValueError(
+            "dual_ascent requires non-negative edge/arc costs; "
+            f"found {negative[:5]}{' ...' if len(negative) > 5 else ''}."
+        )
     arcs = list(steiner_problem.arcs)
     edges = list(steiner_problem.edges)
     groups = steiner_problem.terminal_groups
@@ -1015,7 +1025,8 @@ def _terminals_connected(graph, terminal_groups) -> bool:
 
 
 def reduce_graph_with_dual_ascent(graph, terminal_groups, weight, tracker,
-                                  max_passes: int = 3, *, _reuse=None):
+                                  max_passes: int = 3,
+                                  enumeration_safe: bool = False, *, _reuse=None):
     """Bound-based reduction test: delete edges *and nodes* that reduced-cost
     fixing proves are in **no** optimal solution, then cascade the
     degree-1/degree-2 reductions, iterating to a fixpoint.
@@ -1026,6 +1037,13 @@ def reduce_graph_with_dual_ascent(graph, terminal_groups, weight, tracker,
     solution, so they need no tracking.  Every removal is provably non-optimal,
     so the optimum is preserved; a connectivity check guards against numerical
     edge cases by aborting the offending pass.
+
+    :param enumeration_safe: forwarded to the structural cascade (see
+        :func:`steinerpy.graph_reducer.preprocess_graph`'s own docstring) so a
+        degree-2 contraction that ties a parallel edge exposed by a deletion
+        is skipped instead of silently discarding the tied alternative
+        (steinerpy#43 -- the reduced-cost deletions themselves are strict and
+        therefore always safe, but this cascade forwarding was missing).
 
     Returns the reduced graph (a copy; the input is never mutated).
     Internal ``_reuse`` receives the last ascent only when no graph changes
@@ -1068,7 +1086,8 @@ def reduce_graph_with_dual_ascent(graph, terminal_groups, weight, tracker,
             return snapshot  # defensive: should never happen for sound fixing
 
         # Cascade the structural reductions enabled by the removals.
-        _structural_fixpoint(G, all_terms, weight, tracker, seeds=seeds)
+        _structural_fixpoint(G, all_terms, weight, tracker, seeds=seeds,
+                             enumeration_safe=enumeration_safe)
         if (G.number_of_nodes(), G.number_of_edges()) == before:
             break
 

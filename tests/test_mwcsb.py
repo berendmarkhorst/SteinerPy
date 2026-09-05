@@ -73,6 +73,7 @@ def test_zero_budget_keeps_only_root(solver):
     ).get_solution(solver=solver)
     assert sol.objective == pytest.approx(5.0)
     assert set(sol.selected_nodes) == {"r"}
+    assert sol.edges == []
 
 
 def test_highs_and_gurobi_match():

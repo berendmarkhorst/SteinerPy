@@ -30,6 +30,7 @@ def test_native_long_edges_match_python_and_shortest_paths(seed, monkeypatch):
             if distances[v] < attrs['cost'] - 1e-9:
                 expected.add((u, v))
     assert native == python == expected
+    assert list(native) == list(python)  # preserve deterministic deletion order
 
 
 @pytest.mark.parametrize('nodes,edges,cap', [(160, 800, 4), (50, 200, 2000), (160, 200, 2000)])

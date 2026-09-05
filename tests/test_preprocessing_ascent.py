@@ -24,10 +24,11 @@ def _problem():
     graph = nx.complete_graph(4)
     nx.set_edge_attributes(graph, 1.0, 'weight')
     return SteinerProblem(graph, [[0, 1, 2, 3]], heavy=False,
-                          da_reduce=True, dual_ascent=True)
+                          da_reduce=True, dual_ascent=True, contract_terminals=False)
 
 
 def test_preprocessing_ascent_is_consumed_once(monkeypatch):
+    monkeypatch.setenv("STEINERPY_DW_MAX_TERMINALS", "0")
     calls = _count_ascents(monkeypatch)
     problem = _problem()
     assert len(calls) == 1

@@ -14,6 +14,23 @@ from .graph_reducer import preprocess_graph, reduction_stats, map_solution_to_or
 logger = logging.getLogger(__name__)
 
 
+def _validate_nonnegative_edge_costs(graph: nx.Graph, weight: str, problem: str) -> None:
+    """Reject costs that invalidate shortest-path and exact-model assumptions."""
+    negative = [
+        (u, v, data.get(weight, 1))
+        for u, v, data in graph.edges(data=True)
+        if data.get(weight, 1) < 0
+    ]
+    if negative:
+        preview = negative[:5]
+        suffix = " ..." if len(negative) > len(preview) else ""
+        raise ValueError(
+            f"{problem} requires non-negative edge/arc costs in attribute "
+            f"{weight!r}; found {preview}{suffix}. Negative node weights remain "
+            "supported by maximum-weight connected-subgraph variants."
+        )
+
+
 def node_split_graph(
     graph: nx.Graph,
     terminal_groups: List[List],
@@ -53,6 +70,8 @@ def node_split_graph(
 
 
 class BaseSteinerProblem:
+    _requires_nonnegative_edge_costs = True
+
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], weight="weight", preprocess=True, **kwargs):
         """
         Initialize the SteinerProblem (can be tree or forest).
@@ -61,6 +80,14 @@ class BaseSteinerProblem:
         :param terminal_groups: nested list of terminals.
         :param weight: edge attribute specified by this string as the edge weight.
         """
+        # ``enumeration_safe`` has an older, stricter positive-cost contract and
+        # its own public error message. Let that check below retain precedence.
+        if self._requires_nonnegative_edge_costs and not (
+            preprocess and kwargs.get("enumeration_safe", False)
+        ):
+            _validate_nonnegative_edge_costs(
+                graph, weight, type(self).__name__
+            )
         self.original_graph = graph
         self.preprocess = preprocess
         # Opt-in dual-ascent bound reduction (removes provably non-optimal edges
@@ -84,9 +111,44 @@ class BaseSteinerProblem:
         le_opt = kwargs.get('long_edge', self.heavy_reduce)
         rn_opt = kwargs.get('replace_nodes', self.heavy_reduce)
 
+        # Terminal contraction (fixed-edge) tests: degree-1 terminals,
+        # adjacent-terminal cheapest edges, the Nearest-Vertex and the
+        # Short-Links tests fix edges provably in >= one optimal solution and
+        # contract them — the terminal set shrinks, which strengthens every
+        # other test. Steiner tree only; requires the plain edge-cost
+        # objective (like the heavy tests). On by default.
+        ct_opt = kwargs.get('contract_terminals', True)
+        # Bound-based (BND) node/edge deletions using Voronoi radii + an SPH
+        # upper bound (Polzin & Vahdati 1998). Grouped with the heavy tests.
+        bb_opt = kwargs.get('bound_based', self.heavy_reduce)
+
+        # Enumeration-safe mode (steinerpy#43): restricts reduction to tests
+        # that preserve the *complete set* of optimal solutions, not merely
+        # the optimal value, so preprocessing can be combined with
+        # get_optimal_solutions(). Off by default (it forgoes real reduction
+        # power -- node replacement and the non-degree-1 terminal-contraction
+        # tests -- so it is opt-in, not folded into ``heavy``). See
+        # preprocess_graph's own docstring for exactly which tests it adjusts.
+        self.enumeration_safe = bool(kwargs.get('enumeration_safe', False))
+
         if preprocess:
             if isinstance(graph, nx.DiGraph):
                 raise ValueError("Graph preprocessing is not supported for directed graphs. Use preprocess=False.")
+            if self.enumeration_safe:
+                # The tied-optimum-preservation argument for every
+                # enumeration_safe test assumes strictly positive edge costs
+                # (as do the sound deletion tests generally -- e.g. the
+                # long-edge test's "a path shorter than c(e) cannot itself
+                # contain e"). Validate explicitly rather than silently
+                # mis-preserving ties.
+                non_positive = [(u, v) for u, v, d in graph.edges(data=True)
+                                if d.get(weight, 1) <= 0]
+                if non_positive:
+                    raise ValueError(
+                        "enumeration_safe=True requires strictly positive edge "
+                        f"weights; found non-positive weight on {non_positive[:5]}"
+                        f"{' ...' if len(non_positive) > 5 else ''}."
+                    )
             _heavy_ok = (kwargs.get('budget') is None and kwargs.get('max_degree') is None
                          and kwargs.get('hop_limit') is None)
             self.graph, self.reduction_tracker = preprocess_graph(
@@ -94,12 +156,30 @@ class BaseSteinerProblem:
                 special_distance=bool(sd_opt) and _heavy_ok,
                 long_edge=bool(le_opt) and _heavy_ok,
                 replace_nodes=bool(rn_opt) and _heavy_ok,
+                contract=bool(ct_opt) and _heavy_ok,
+                bound_based=bool(bb_opt) and _heavy_ok,
+                enumeration_safe=self.enumeration_safe,
             )
+            if self.reduction_tracker.terminal_merges or self.reduction_tracker.added_terminals:
+                # Contractions merged terminals away (and the SL test may have
+                # promoted new ones): point the groups at the surviving
+                # representatives (order-preserving de-dup) and append the
+                # SL-promoted terminals to the single group.
+                terminal_groups = [
+                    list(dict.fromkeys(
+                        self.reduction_tracker.resolve_terminal(t) for t in group))
+                    for group in terminal_groups
+                ]
+                if self.reduction_tracker.added_terminals:
+                    extra = [self.reduction_tracker.resolve_terminal(v)
+                             for v in self.reduction_tracker.added_terminals]
+                    terminal_groups[0] = list(dict.fromkeys(terminal_groups[0] + extra))
             if self.da_reduce and kwargs.get('budget') is None and kwargs.get('max_degree') is None:
                 from .dual_ascent import reduce_graph_with_dual_ascent
                 self._preprocessing_ascent = {}
                 self.graph = reduce_graph_with_dual_ascent(
                     self.graph, terminal_groups, weight, self.reduction_tracker,
+                    enumeration_safe=self.enumeration_safe,
                     _reuse=self._preprocessing_ascent)
             stats = reduction_stats(self.original_graph, self.graph)
             logger.info(f"Graph reduced: {stats['nodes_removed']} nodes ({stats['node_reduction_percent']:.1f}%), "
@@ -117,6 +197,10 @@ class BaseSteinerProblem:
         else:
             self.arcs = self.edges + [(v, u) for (u, v) in self.edges]
         self.nodes = list(self.graph.nodes())
+        # Stays a real `set` (tests compare it with == {...}, and callers may
+        # rely on set semantics); build_model's Constraint 7 is the one that
+        # needs a deterministic *iteration* order over it, so that fix lives
+        # there (iterate self.nodes, filtered by membership) rather than here.
         self.steiner_points = set(self.nodes) - set([t for group in terminal_groups for t in group])
         self.roots = [group[0] for group in self.terminal_groups]
 
@@ -130,6 +214,14 @@ class BaseSteinerProblem:
         # Opt-in dual-ascent accelerator (lower bound + primal heuristic +
         # reduced-cost variable fixing). Off by default; see steinerpy.dual_ascent.
         self.dual_ascent = kwargs.get('dual_ascent', False)
+        # Experimental primal portfolio extensions. Both stay off by default
+        # until instance-suite benchmarks justify an activation threshold.
+        self.primal_local_search = kwargs.get('primal_local_search', False)
+        self.implied_profit = kwargs.get('implied_profit', False)
+        self.heuristic_stats: Dict[str, object] = {}
+        # Populated by the HiGHS directed-cut loop. This includes cut-pool
+        # counters even when the experimental purger is disabled.
+        self.cut_stats: Dict[str, object] = {}
 
 
     def _da_eligible(self) -> bool:
@@ -148,6 +240,63 @@ class BaseSteinerProblem:
             return False
         return True
 
+    def _connects_terminal_groups(self, edges: List[Tuple]) -> bool:
+        """Independently validate the public connectivity contract."""
+        graph_type = nx.DiGraph if isinstance(self.graph, nx.DiGraph) else nx.Graph
+        selected = graph_type()
+        selected.add_nodes_from(self.nodes)
+        selected.add_edges_from(edges)
+        for group in self.terminal_groups:
+            terminals = list(dict.fromkeys(group))
+            if len(terminals) <= 1:
+                continue
+            root = terminals[0]
+            if any(not nx.has_path(selected, root, terminal)
+                   for terminal in terminals[1:]):
+                return False
+        return True
+
+    def _dw_eligible(self) -> bool:
+        """Whether the Dreyfus–Wagner dynamic program can solve this instance.
+
+        The DP is exact for a plain, undirected, single-group Steiner tree with
+        no budget/degree/hop modifier.  It is exponential in the terminal count
+        so it is only auto-selected for at most
+        :func:`~steinerpy.dreyfus_wagner.dw_max_terminals` terminals (default
+        10, ``STEINERPY_DW_MAX_TERMINALS`` overrides, ``0`` disables), with a
+        memory guard on ``2^(k-1)`` label arrays of length ``n``.
+        """
+        if isinstance(self.graph, nx.DiGraph):
+            return False
+        if len(self.terminal_groups) != 1:
+            return False
+        if self.budget is not None:
+            return False
+        if getattr(self, 'max_degree', None) is not None:
+            return False
+        if getattr(self, 'hop_limit', None) is not None:
+            return False
+        from ._fastgraph import HAS_SCIPY
+        if not HAS_SCIPY:
+            return False
+        from .dreyfus_wagner import dw_max_terminals
+        k = len(set(self.terminal_groups[0]))
+        if k < 2 or k > dw_max_terminals():
+            return False
+        # One label array per subset, plus bounded reconstruction temporaries;
+        # keep the exponential footprint modest.
+        if (1 << (k - 1)) * (self.graph.number_of_nodes() + 1) > 50_000_000:
+            return False
+        return True
+
+    def _fixed_cost(self) -> float:
+        """Cost of edges fixed into every solution by terminal contraction.
+
+        The reduced problem's objective excludes these; every reporting site
+        adds this constant back so objectives refer to the original graph.
+        """
+        return self.reduction_tracker.fixed_cost if self.preprocess else 0.0
+
     def _solution_from_da(self, da, t0, gap) -> 'Solution':
         """Build a :class:`Solution` from a dual-ascent result (no ILP).
 
@@ -162,7 +311,8 @@ class BaseSteinerProblem:
         else:
             original = da.primal_edges
         return Solution(
-            gap=gap, runtime=_time.time() - t0, objective=da.upper_bound,
+            gap=gap, runtime=_time.time() - t0,
+            objective=da.upper_bound + self._fixed_cost(),
             selected_edges=da.primal_edges, original_selected_edges=original,
             was_preprocessed=self.preprocess,
         )
@@ -191,7 +341,79 @@ class BaseSteinerProblem:
             out.append(list(tree.edges()))
         return out
 
-    def _heuristic_solution(self) -> 'Solution':
+    def _augment_da_primal(self, da, local_search=False, implied_profit=False):
+        """Improve a dual-ascent primal with the opt-in undirected portfolio.
+
+        Candidates are independently checked for terminal connectivity and only
+        a cheaper one replaces ``da.primal_edges``. The dual lower bound is
+        untouched, so fixing and gap certificates remain valid.
+        """
+        import time as _time
+        if da.is_directed or len(self.terminal_groups) != 1 or not da.feasible:
+            return da
+
+        if not local_search and not implied_profit:
+            self.heuristic_stats = {
+                'runtime': 0.0,
+                'objective_before': da.upper_bound,
+                'objective_after': da.upper_bound,
+                'candidates': 1,
+                'vertex_eliminations': 0,
+                'key_path_exchanges': 0,
+                'implied_profit': False,
+                'local_search': False,
+            }
+            return da
+
+        from .dual_ascent import refine_primal_mst, _edges_cost
+        from .primal_heuristics import (
+            implied_profit_candidates, improve_steiner_tree,
+        )
+        started = _time.perf_counter()
+        terminals = self.terminal_groups[0]
+        candidates = [list(da.primal_edges)]
+        candidates.extend(self._sph_candidates(self.graph, terminals))
+        if implied_profit:
+            candidates.extend(
+                implied_profit_candidates(self.graph, terminals, self.weight))
+
+        best_edges = list(da.primal_edges)
+        best_cost = _edges_cost(self.graph, best_edges, self.weight)
+        vertex_moves = key_path_moves = feasible_candidates = 0
+        for candidate in candidates:
+            refined = refine_primal_mst(
+                self.graph, candidate, terminals, self.weight)
+            if not refined or not self._connects_terminal_groups(refined):
+                continue
+            feasible_candidates += 1
+            if local_search:
+                improved = improve_steiner_tree(
+                    self.graph, refined, terminals, self.weight)
+                refined = improved.edges
+                vertex_moves += improved.vertex_eliminations
+                key_path_moves += improved.key_path_exchanges
+            cost = _edges_cost(self.graph, refined, self.weight)
+            if cost < best_cost - 1e-9:
+                best_edges, best_cost = refined, cost
+
+        old_cost = da.upper_bound
+        if best_cost <= old_cost + 1e-9:
+            da.primal_edges = best_edges
+            da.upper_bound = best_cost
+        self.heuristic_stats = {
+            'runtime': _time.perf_counter() - started,
+            'objective_before': old_cost,
+            'objective_after': da.upper_bound,
+            'candidates': feasible_candidates,
+            'vertex_eliminations': vertex_moves,
+            'key_path_exchanges': key_path_moves,
+            'implied_profit': bool(implied_profit),
+            'local_search': bool(local_search),
+        }
+        return da
+
+    def _heuristic_solution(self, primal_local_search: Optional[bool] = None,
+                            implied_profit: Optional[bool] = None) -> 'Solution':
         """Return the dual-ascent primal directly, with no ILP.
 
         Genuinely heuristic (the primal may be sub-optimal), but the returned
@@ -215,6 +437,11 @@ class BaseSteinerProblem:
                 "dual-ascent heuristic found no feasible solution; the terminals "
                 "may be disconnected."
             )
+        use_local = (self.primal_local_search if primal_local_search is None
+                     else primal_local_search)
+        use_implied = (self.implied_profit if implied_profit is None
+                       else implied_profit)
+        da = self._augment_da_primal(da, use_local, use_implied)
         # Primal portfolio + Kou-style cleanup (undirected tree or forest), run in
         # ORIGINAL-graph space. The raw dual-ascent primal is just one feasible
         # tree; for a single group we also build the classic shortest-path-heuristic
@@ -237,19 +464,32 @@ class BaseSteinerProblem:
             da_primal = (map_solution_to_original(
                             da.primal_edges, self.reduction_tracker, self.graph)
                          if self.preprocess else list(da.primal_edges))
-            candidates = [da_primal]
+            candidates: List[List[Tuple]] = [da_primal]
             if len(self.terminal_groups) == 1:
                 candidates.extend(self._sph_candidates(graph, self.terminal_groups[0]))
-            best_edges = da_primal
+                if use_implied:
+                    from .primal_heuristics import implied_profit_candidates
+                    candidates.extend(implied_profit_candidates(
+                        graph, self.terminal_groups[0], self.weight))
+            best_edges: List[Tuple] = da_primal
             best_cost = _edges_cost(graph, da_primal, self.weight)
             for cand in candidates:
                 refined = refine_primal_mst(graph, cand, all_terminals, self.weight)
                 if refined:
+                    if use_local and len(self.terminal_groups) == 1:
+                        from .primal_heuristics import improve_steiner_tree
+                        refined = improve_steiner_tree(
+                            graph, refined, self.terminal_groups[0],
+                            self.weight).edges
                     rcost = _edges_cost(graph, refined, self.weight)
                     if rcost < best_cost:
                         best_edges, best_cost = refined, rcost
-            gap = (_math.inf if _math.isinf(da.lower_bound)
-                   else (best_cost - da.lower_bound) / max(1.0, abs(best_cost)))
+            # Lower bound for the ORIGINAL problem: the dual-ascent bound is for
+            # the reduced problem, whose optimum sits fixed_cost below the
+            # original one.
+            lb = da.lower_bound + self._fixed_cost()
+            gap = (_math.inf if _math.isinf(lb)
+                   else (best_cost - lb) / max(1.0, abs(best_cost)))
             return Solution(
                 gap=gap, runtime=_time.time() - t0, objective=best_cost,
                 selected_edges=best_edges, original_selected_edges=best_edges,
@@ -354,7 +594,9 @@ class BaseSteinerProblem:
             demands[i] = dem
         return demands
 
-    def _decompose_single_group(self, time_limit, log_file, solver, dual_ascent, threads):
+    def _decompose_single_group(self, time_limit, log_file, solver, dual_ascent,
+                                threads, primal_local_search=None,
+                                implied_profit=None):
         """Solve a single-group Steiner tree by biconnected-component blocks.
 
         Returns a :class:`Solution` (union of per-block optimal trees) or ``None``
@@ -386,7 +628,8 @@ class BaseSteinerProblem:
             sub_sol = sub.get_solution(
                 time_limit=time_limit, log_file=log_file, solver=solver,
                 dual_ascent=dual_ascent, exact=True, threads=threads,
-                decompose=False,
+                decompose=False, primal_local_search=primal_local_search,
+                implied_profit=implied_profit,
             )
             if sub_sol.gap is not None:
                 worst_gap = max(worst_gap, sub_sol.gap)
@@ -394,7 +637,7 @@ class BaseSteinerProblem:
                 union[frozenset((u, v))] = (u, v)
 
         selected_edges = list(union.values())
-        objective = sum(G.edges[e][self.weight] for e in selected_edges)
+        objective = sum(G.edges[e][self.weight] for e in selected_edges) + self._fixed_cost()
         if self.preprocess:
             original = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
         else:
@@ -406,8 +649,11 @@ class BaseSteinerProblem:
         )
 
     def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs",
-                     dual_ascent: bool = None, exact: bool = True, threads: int = None,
-                     decompose: bool = None) -> 'Solution':
+                     dual_ascent: Optional[bool] = None, exact: bool = True,
+                     threads: Optional[int] = None,
+                     decompose: Optional[bool] = None,
+                     primal_local_search: Optional[bool] = None,
+                     implied_profit: Optional[bool] = None) -> 'Solution':
         """
         Get the solution of the Steiner Problem.
 
@@ -431,21 +677,73 @@ class BaseSteinerProblem:
             valid optimality gap (``0.0`` ⇒ provably optimal).  Supported for
             plain Steiner tree/forest and directed problems only; raises
             ``NotImplementedError`` for budget/degree-constrained variants.
+        :param primal_local_search: opt into vertex elimination and key-path
+            exchange for undirected single-tree primal candidates.
+        :param implied_profit: opt into the implied-profit shortest-path
+            heuristic of Rehfeldt & Koch (2023).
         :return: :class:`Solution` (or :class:`BudgetSolution` when a budget is set).
         :raises ValueError: if an unknown solver name is provided.
         :raises ImportError: if ``solver="gurobi"`` but gurobipy is not installed.
+        :raises RuntimeError: if graph reduction left an empty graph while a
+            group still holds >= 2 distinct terminals — the reduced instance is
+            infeasible (no Steiner tree can connect them).
         """
         solver = solver.lower()
         if solver not in ("highs", "gurobi"):
             raise ValueError(
                 f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'."
             )
+        if solver == "gurobi":
+            # Fail loudly up front when the requested backend is unavailable,
+            # even on paths that end up not building an ILP (dual-ascent
+            # early-exit, Dreyfus-Wagner DP).
+            from .mathematical_model import _check_gurobipy
+            _check_gurobipy()
+
+        # Trivial after preprocessing: when every group is down to <= 1
+        # *distinct* terminal (e.g. terminal contraction solved the whole
+        # instance, or the caller passed duplicate terminals in a group), the
+        # optimum is exactly the fixed edges — nothing is left to optimise.
+        # len(set(g)) (not len(g)) so a group like ['A', 'A'] -- one distinct
+        # terminal repeated -- is correctly treated as trivial instead of
+        # falling through to the zero-edge infeasibility guard below.
+        if self.budget is None and all(len(set(g)) <= 1 for g in self.terminal_groups):
+            import time as _time_triv
+            _t0 = _time_triv.time()
+            original = (map_solution_to_original([], self.reduction_tracker, self.graph)
+                        if self.preprocess else [])
+            return Solution(
+                gap=0.0, runtime=_time_triv.time() - _t0,
+                objective=self._fixed_cost(),
+                selected_edges=[], original_selected_edges=original,
+                was_preprocessed=self.preprocess,
+            )
+
+        # Reduction emptied the graph but left >= 2 distinct terminals in some
+        # group: since every fixed edge (the only way an edge leaves self.graph
+        # without a plain non-optimal-edge deletion) also merges its endpoints
+        # in self.terminal_groups (see _contract_terminal_edge), reaching this
+        # point with a still-multi-terminal group and zero edges means no edge
+        # remains anywhere to connect them -- the reduced instance is
+        # infeasible, not solved. Mirrors PartialTerminalSteinerProblem.
+        # get_solution's own "graph has 0 edges" guard; without this, an empty
+        # edge set falls through to build_model/run_model, whose objective
+        # `sum(x[e] * ... for e in self.edges)` collapses to the plain int 0
+        # for an empty self.edges, and highspy's setObjective unconditionally
+        # reads `expr.bounds`, raising `AttributeError: 'int' object has no
+        # attribute 'bounds'` deep inside the solver instead of a clean,
+        # already-anticipated infeasibility error.
+        if self.budget is None and self.graph.number_of_edges() == 0:
+            raise RuntimeError(
+                "no Steiner tree connects the terminal groups (graph reduction "
+                "left an empty graph with unconnected terminals remaining)"
+            )
 
         # Heuristic-only mode: return the dual-ascent primal with no ILP. Much
         # faster (no MIP), and unlike a pure heuristic it carries a proven
         # optimality gap (gap == 0.0 ⇒ provably optimal).
         if not exact:
-            return self._heuristic_solution()
+            return self._heuristic_solution(primal_local_search, implied_profit)
 
         if self.budget is not None:
             # Budget-constrained path: only HiGHS is supported for this variant
@@ -458,9 +756,15 @@ class BaseSteinerProblem:
             model, x, y1, y2, z, f, penalty_vars = build_budget_model(
                 self, time_limit=time_limit, logfile=log_file, threads=threads
             )
-            gap, runtime, connected_count, selected_edges, penalties = run_budget_model(
-                model, self, x, penalty_vars
+            gap, runtime, connected_count, selected_edges, penalties, _status = run_budget_model(
+                model, self, x, penalty_vars, return_status=True
             )
+            if _status != "optimal" and connected_count == 0:
+                reason = (
+                    "was proved infeasible" if _status == "infeasible"
+                    else "stopped before finding a valid feasible incumbent"
+                )
+                raise RuntimeError(f"Budget-constrained solve {reason}.")
 
             if self.preprocess:
                 original_selected_edges = map_solution_to_original(
@@ -490,31 +794,77 @@ class BaseSteinerProblem:
         decompose_on = self._decompose_enabled() if decompose is None else decompose
         if decompose_on and self._decomposable():
             dec = self._decompose_single_group(
-                time_limit, log_file, solver, dual_ascent, threads
+                time_limit, log_file, solver, dual_ascent, threads,
+                primal_local_search, implied_profit,
             )
             if dec is not None:
                 return dec
 
+        # Few-terminal exact dynamic program (Dreyfus & Wagner 1971, in the
+        # Erickson-Monma-Veinott formulation): for a small terminal count the
+        # O(3^k) DP solves the (already reduced) instance outright, bypassing
+        # the ILP entirely — the PACE 2018 winning recipe of reductions + DP.
+        # Exactness-preserving; auto-selected, cap via STEINERPY_DW_MAX_TERMINALS.
+        if self._dw_eligible():
+            import math as _math_dw
+            import time as _time_dw
+            from .dreyfus_wagner import dreyfus_wagner
+            _t0 = _time_dw.time()
+            dw_cost, dw_edges = dreyfus_wagner(
+                self.graph, self.terminal_groups[0], self.weight
+            )
+            if _math_dw.isfinite(dw_cost):
+                runtime = _time_dw.time() - _t0
+                if self.preprocess:
+                    original_selected_edges = map_solution_to_original(
+                        dw_edges, self.reduction_tracker, self.graph
+                    )
+                else:
+                    original_selected_edges = dw_edges
+                return Solution(
+                    gap=0.0,
+                    runtime=runtime,
+                    objective=dw_cost + self._fixed_cost(),
+                    selected_edges=dw_edges,
+                    original_selected_edges=original_selected_edges,
+                    was_preprocessed=self.preprocess,
+                )
+            # Terminals not connected: fall through to the ILP so infeasible
+            # instances keep the exact same behaviour as the default path.
+
         # Optional dual-ascent accelerator: lower bound + primal heuristic +
         # reduced-cost variable fixing. Early-exits when proven optimal.
+        import math as _math
+        use_local = (self.primal_local_search if primal_local_search is None
+                     else primal_local_search)
+        use_implied = (self.implied_profit if implied_profit is None
+                       else implied_profit)
         use_da = self.dual_ascent if dual_ascent is None else dual_ascent
+        # Stronger candidates feed fixing, cutoff and warm start through the
+        # dual-ascent result, so either experimental flag activates that path.
+        use_da = bool(use_da or use_local or use_implied)
         fixing = None
+        da = None
         da_primal = None
         da_cuts = None
         da_ub = None
         if use_da and self._da_eligible():
             import time as _time
-            import math as _math
             from .dual_ascent import (
                 dual_ascent as _run_da, reduced_cost_fixing, steiner_cuts,
             )
             _t0 = _time.time()
             da = _run_da(self, self.weight)
             if da.feasible and not _math.isinf(da.lower_bound) and not _math.isinf(da.upper_bound):
+                da = self._augment_da_primal(da, use_local, use_implied)
                 if abs(da.upper_bound - da.lower_bound) <= 1e-6 * max(1.0, abs(da.upper_bound)):
+                    self.heuristic_stats['lb_eq_ub'] = True
+                    self.heuristic_stats['fixed_variables'] = 0
                     # Proven optimal by dual ascent — skip the ILP entirely.
                     return self._solution_from_da(da, _t0, 0.0)
                 fixing = reduced_cost_fixing(self, da)
+                self.heuristic_stats['lb_eq_ub'] = False
+                self.heuristic_stats['fixed_variables'] = fixing.total()
                 da_primal = da.primal_edges
                 # Warm-start the ILP cut loop with the Steiner cuts found during
                 # dual ascent, and supply the primal value as an objective cutoff.
@@ -530,15 +880,16 @@ class BaseSteinerProblem:
                 seed_cuts_gurobi(model, y2, z, da_cuts)
                 apply_fixes_gurobi(model, x, y1, y2, fixing)
                 set_gurobi_cutoff(model, da_ub)
-            gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
-            if da_cuts is not None and _math.isinf(objective):
+            gap, runtime, objective, selected_edges, _status = run_model_gurobi(model, self, x, y2, z, return_status=True)
+            if da_cuts is not None and _status == "infeasible":
                 # The dual-ascent acceleration (cutoff / fixing / seeded cuts)
                 # over-constrained the model into infeasibility although the
                 # instance is feasible; re-solve from a clean model.
                 model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
-                gap, runtime, objective, selected_edges = run_model_gurobi(model, self, x, y2, z)
+                gap, runtime, objective, selected_edges, _status = run_model_gurobi(model, self, x, y2, z, return_status=True)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
+            reapply_start = None
             if da_cuts is not None:
                 from .dual_ascent import (
                     apply_fixes_highs, set_highs_warm_start,
@@ -548,18 +899,59 @@ class BaseSteinerProblem:
                 apply_fixes_highs(model, x, y1, y2, fixing)
                 set_highs_warm_start(model, x, da_primal)
                 set_highs_cutoff(model, da_ub)
-            gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
-            if da_cuts is not None and _math.isinf(objective):
+                # run_model's LP cut phase clears a pending MIP start; hand it a
+                # callback to re-apply the dual-ascent primal afterwards.
+                _m, _x, _p = model, x, da_primal
+                reapply_start = lambda: set_highs_warm_start(_m, _x, _p)  # noqa: E731
+            gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z, reapply_start=reapply_start, return_status=True)
+            if da_cuts is not None and _status == "infeasible":
                 # The acceleration over-constrained a feasible instance into
                 # infeasibility; re-solve from a clean, un-accelerated model.
                 model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
-                gap, runtime, objective, selected_edges = run_model(model, self, x, y2, z)
+                gap, runtime, objective, selected_edges, _status = run_model(model, self, x, y2, z, return_status=True)
+
+        if _status == "incomplete" and not _math.isfinite(objective):
+            if da is None or not da.feasible or not _math.isfinite(da.upper_bound):
+                raise RuntimeError(
+                    "Exact solve stopped before finding a connectivity-valid "
+                    "feasible incumbent."
+                )
+            # Dual ascent supplies an independently feasible incumbent and lower
+            # bound. Use it rather than returning stale values from a cut round.
+            selected_edges = list(da.primal_edges)
+            objective = da.upper_bound
+            if not _math.isfinite(da.lower_bound):
+                gap = float("inf")
+            else:
+                gap = max(
+                    0.0,
+                    (da.upper_bound - da.lower_bound)
+                    / max(1.0, abs(da.upper_bound)),
+                )
+
+        if _math.isfinite(objective) and not self._connects_terminal_groups(
+            selected_edges
+        ):
+            raise RuntimeError(
+                "Exact solver returned an incumbent that does not connect every "
+                "terminal group; the result was discarded."
+            )
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
             original_selected_edges = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
         else:
             original_selected_edges = selected_edges
+
+        # Shift the objective by the terminal-contraction fixed cost; rescale a
+        # finite nonzero relative gap so it refers to the shifted objective.
+        fc = self._fixed_cost()
+        if fc:
+            import math as _m
+            if _m.isfinite(objective):
+                if gap and _m.isfinite(gap):
+                    gap = gap * abs(objective) / max(1.0, abs(objective + fc))
+                objective = objective + fc
 
         solution = Solution(
             gap=gap,
@@ -571,6 +963,243 @@ class BaseSteinerProblem:
         )
 
         return solution
+
+    def get_optimal_solutions(
+        self, limit: int = 10, time_limit: float = 300, log_file: str = "",
+        solver: str = "highs", threads: int = None,
+    ) -> 'OptimalSolutionPool':
+        """
+        Enumerate up to ``limit`` distinct optimal, inclusion-minimal Steiner
+        trees.
+
+        Unlike :meth:`get_solution`, which returns one arbitrary optimum, this
+        method solves repeatedly with a no-good cut excluding every tree
+        already found, so that ties for the optimal objective are surfaced
+        instead of silently discarded. Redundant zero-cost branches and
+        cycles are not separate trees: zero-cost edges are removed whenever
+        the remaining edge set still connects every terminal group, and the
+        no-good cut excludes every redundant superset of that minimal tree.
+        Requires ``preprocess=False`` (the default reduction pipeline can
+        arbitrarily collapse tied-cost alternatives -- e.g. terminal
+        contraction -- before any ILP runs, silently erasing them from
+        enumeration) *unless* the problem was constructed with
+        ``enumeration_safe=True`` (steinerpy#43): that mode restricts
+        preprocessing to reductions proven to preserve the complete set of
+        optima, not merely the optimal value, so it is safe to combine with
+        enumeration -- see :func:`steinerpy.graph_reducer.preprocess_graph`'s
+        own docstring for exactly which tests it keeps/skips. Solutions are
+        back-mapped to the original graph the same way :meth:`get_solution`
+        is.
+
+        Every speedup dispatch used by :meth:`get_solution` is bypassed
+        (trivial-instance early exit, ``exact=False`` heuristic mode,
+        biconnected-component decomposition, the Dreyfus-Wagner DP, and the
+        dual-ascent accelerator) — in particular, dual ascent's reduced-cost
+        variable fixing is derived from a single incumbent and could soundly
+        fix away an edge that appears only in a different tied-cost solution,
+        so ``self.dual_ascent`` is ignored here.
+
+        On ``solver="gurobi"`` this uses the same external no-good-cut loop as
+        HiGHS (rebuilding the model fresh each iteration), not Gurobi's native
+        solution pool (``PoolSearchMode``) — whether that pool respects this
+        model's lazy connectivity cuts is an open, version-dependent question
+        that cannot be verified in this project's test suite, so the provably
+        correct external loop is used for both backends. This gives up
+        Gurobi's single-solve pooling speed advantage; a future PR could
+        revisit this with a licensed Gurobi environment to verify it.
+
+        :param limit: maximum number of optimal solutions to return.
+        :param time_limit: time limit in seconds, per solve.
+        :param log_file: path to the log file.
+        :param solver: which MIP solver to use — ``"highs"`` (default) or
+            ``"gurobi"``.
+        :param threads: solver thread count.
+        :return: :class:`OptimalSolutionPool` holding every distinct optimal
+            solution found and whether enumeration was exhaustive. Exhaustion
+            is only ever ``True`` when a probe solve *proved* no more
+            tied-optimal solutions exist (infeasibility of the no-good-cut
+            model); a probe that merely ran out of ``time_limit`` before
+            proving anything stops enumeration early with ``exhausted=False``,
+            the same "there might be more, we didn't look" signal already
+            used when ``limit`` is reached.
+        :raises ValueError: if ``preprocess=True`` without
+            ``enumeration_safe=True``, ``limit`` is negative, or the solver
+            name is unknown.
+        :raises NotImplementedError: for budget-, max-degree- or hop-limit-
+            constrained instances combined with ``preprocess=True``, or for
+            problem classes whose :meth:`get_solution` transforms the model in
+            a way this method's plain edge-indicator enumeration can't
+            replicate (see each class's override).
+        """
+        if self.preprocess and not self.enumeration_safe:
+            raise ValueError(
+                "get_optimal_solutions requires preprocess=False (or "
+                "enumeration_safe=True): graph reduction can arbitrarily "
+                "collapse tied-cost alternatives (e.g. terminal contraction) "
+                "before any ILP runs, silently erasing them from enumeration. "
+                "Reconstruct the problem with preprocess=False, or with "
+                "enumeration_safe=True to keep only reductions that preserve "
+                "every tied optimum."
+            )
+        if self.budget is not None:
+            raise NotImplementedError(
+                "get_optimal_solutions does not support budget-constrained "
+                "instances (a different model, connection/penalty variables "
+                "instead of a plain edge indicator, is used)."
+            )
+        if self.preprocess and (self.max_degree is not None or self.hop_limit is not None):
+            # The degree-1/degree-2 structural fixpoint (unlike the heavy
+            # reductions) is not degree- or hop-aware: it always runs, even
+            # when max_degree/hop_limit disables everything else, and a
+            # contraction can silently produce a reduced-graph solution that
+            # violates the constraint once mapped back to the original graph
+            # (e.g. a forced degree-2 waypoint disappearing into a single
+            # contracted edge). This is a pre-existing gap in preprocess=True
+            # generally, not specific to enumeration_safe, but it was
+            # previously unreachable here since preprocess=True was always
+            # rejected above.
+            raise NotImplementedError(
+                "get_optimal_solutions with preprocess=True does not support "
+                "max_degree- or hop_limit-constrained instances: the "
+                "structural degree reductions are not degree/hop-aware and "
+                "can map back to a solution that violates the constraint. "
+                "Reconstruct the problem with preprocess=False."
+            )
+        if limit < 0:
+            raise ValueError(f"limit must be >= 0, got {limit}.")
+        solver = solver.lower()
+        if solver not in ("highs", "gurobi"):
+            raise ValueError(
+                f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'."
+            )
+        if solver == "gurobi":
+            from .mathematical_model import _check_gurobipy
+            _check_gurobipy()
+            build_fn, run_fn = build_model_gurobi, run_model_gurobi
+        else:
+            build_fn, run_fn = build_model, run_model
+
+        # Directed arcs are oriented: (u, v) and (v, u) are different arcs and
+        # must be tracked as such, or a no-good cut built from one direction
+        # would also (incorrectly) exclude re-selecting the other -- an
+        # antiparallel pair then makes the model re-return the very solution
+        # the cut was meant to rule out. Undirected edges have no inherent
+        # orientation (networkx may report either endpoint order), so those
+        # are still normalised with frozenset.
+        directed = isinstance(self.graph, nx.DiGraph)
+
+        def _edge_key(e):
+            return tuple(e) if directed else frozenset(e)
+
+        def _connects_terminal_groups(edges):
+            """Whether *edges* satisfy this problem's connectivity demands."""
+            subgraph = nx.DiGraph() if directed else nx.Graph()
+            subgraph.add_nodes_from(self.nodes)
+            subgraph.add_edges_from(edges)
+            for group in self.terminal_groups:
+                terminals = list(dict.fromkeys(group))
+                if len(terminals) <= 1:
+                    continue
+                root = terminals[0]
+                if any(not nx.has_path(subgraph, root, terminal)
+                       for terminal in terminals[1:]):
+                    return False
+            return True
+
+        def _remove_redundant_zero_cost_edges(edges):
+            """Return an inclusion-minimal tied-optimal edge set.
+
+            A removable edge in a minimum-cost solution can only have zero
+            cost (edge costs are non-negative). Trying the selected zero-cost
+            edges in stable model order removes branches and cycle edges while
+            preserving every terminal-group connection.
+            """
+            kept = list(edges)
+            for edge in reversed(self.edges):
+                if edge not in kept:
+                    continue
+                if self.graph.edges[edge][self.weight] != 0:
+                    continue
+                candidate = [selected for selected in kept if selected != edge]
+                if _connects_terminal_groups(candidate):
+                    kept = candidate
+            return kept
+
+        # found: membership-only set of previously-seen solutions -- never
+        # iterated to produce output order, so a plain set of frozensets (not
+        # an OrderedSet) doesn't reintroduce the PYTHONHASHSEED nondeterminism
+        # PR #38 fixed.
+        found: List[frozenset] = []
+        solutions: List[Solution] = []
+        best_obj = None
+        exhausted = False
+
+        for _ in range(limit + 1):  # probe ONE iteration past `limit`
+            model, x, y1, y2, z = build_fn(
+                self, time_limit=time_limit, logfile=log_file, threads=threads
+            )
+            for sol_key in found:
+                s1 = [x[e] for e in self.edges if _edge_key(e) in sol_key]
+                # Exclude the minimal tree and all of its redundant supersets.
+                # No other inclusion-minimal feasible tree can strictly
+                # contain an already-feasible tree.
+                model.addConstr(sum((1 - v) for v in s1) >= 1)
+            gap, runtime, objective, selected_edges, status = run_fn(model, self, x, y2, z, return_status=True)
+
+            if status == "infeasible":
+                # Proven: no distinct optimal solution remains beyond what's
+                # already in `solutions`.
+                exhausted = True
+                break
+            if status == "incomplete":
+                # The time limit (or another non-optimal termination) was hit
+                # before this probe could be proven optimal or infeasible.
+                # Any objective/selected_edges returned are an unproven
+                # incumbent, not a confirmed tied-optimal solution or a proof
+                # there are no more -- stop without asserting either.
+                logger.warning(
+                    "get_optimal_solutions: probe %d did not converge within "
+                    "time_limit=%s; stopping enumeration early with "
+                    "exhausted=False.", len(solutions), time_limit,
+                )
+                exhausted = False
+                break
+            if best_obj is None:
+                best_obj = objective
+            elif objective > best_obj + 1e-9:
+                exhausted = True
+                break
+            if len(solutions) >= limit:
+                # A further tied-optimal solution exists beyond `limit` --
+                # discard it, don't return it.
+                exhausted = False
+                break
+
+            selected_edges = _remove_redundant_zero_cost_edges(selected_edges)
+            sol_key = frozenset(_edge_key(e) for e in selected_edges)
+            assert sol_key not in found
+            original_selected_edges = (
+                map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
+                if self.preprocess else selected_edges
+            )
+            solutions.append(Solution(
+                gap=gap, runtime=runtime, objective=objective + self._fixed_cost(),
+                selected_edges=selected_edges, original_selected_edges=original_selected_edges,
+                was_preprocessed=self.preprocess,
+            ))
+            found.append(sol_key)
+
+            if not sol_key:
+                # No edge variables exist to build a no-good cut from (e.g. a
+                # zero-edge forest whose groups are all singletons), or every
+                # selected zero-cost edge was redundant. The feasible empty
+                # set is the unique inclusion-minimal solution: every nonempty
+                # edge set is its strict superset.
+                exhausted = True
+                break
+
+        return OptimalSolutionPool(solutions, exhausted)
+
 
 class Solution:
     def __init__(self, gap: float, runtime: float, objective: float, 
@@ -589,8 +1218,53 @@ class Solution:
         return self.original_selected_edges
 
 
+class OptimalSolutionPool:
+    """Result of :meth:`BaseSteinerProblem.get_optimal_solutions`.
+
+    :ivar solutions: distinct optimal Solution objects found, all sharing the
+        same (minimum) objective value.
+    :ivar exhausted: True iff every optimal solution was found — enumeration
+        stopped because no further tied-cost alternative exists, not because
+        ``limit`` was reached.
+    """
+
+    def __init__(self, solutions: List[Solution], exhausted: bool):
+        self.solutions = solutions
+        self.exhausted = exhausted
+
+    def __len__(self):
+        return len(self.solutions)
+
+    def __iter__(self):
+        return iter(self.solutions)
+
+    def __repr__(self):
+        return f"OptimalSolutionPool({len(self.solutions)} solution(s), exhausted={self.exhausted})"
+
+
 class SteinerProblem(BaseSteinerProblem):
-    pass
+    """
+    Classic (edge-weighted) Steiner Tree / Steiner Forest Problem.
+
+    Find a minimum-cost subgraph connecting all terminals within each terminal
+    group.  Solved with the DO-D directed-cut ILP formulation of Markhorst et
+    al. (2025), which builds on the Steiner forest formulations of Schmidt, Zey
+    & Margot (2021); see :mod:`steinerpy.mathematical_model`.
+
+    References:
+
+    - B. Markhorst, J. Berkhout, A. Zocca, J. Pruyn, R. van der Mei (2025),
+      *Future-proof ship pipe routing: Navigating the energy transition*,
+      Ocean Engineering 319, 120113, doi:10.1016/j.oceaneng.2024.120113 —
+      the DO-D formulation implemented here.
+    - D. Schmidt, B. Zey, F. Margot (2021), *Stronger MIP formulations for the
+      Steiner forest problem*, Mathematical Programming 186, 373-407,
+      doi:10.1007/s10107-019-01460-6 — the underlying directed-cut
+      formulations and the branch-and-cut accelerations.
+
+    A full bibliography (reductions, dual ascent, heuristics) is collected at
+    https://steinerpy.readthedocs.io/en/latest/extras/references.html.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -599,12 +1273,13 @@ class SteinerProblem(BaseSteinerProblem):
 
 class PartialTerminalSteinerProblem(SteinerProblem):
     """
-    Partial Terminal Steiner Tree Problem (PTSTP), thesis Ch. 5.1.
+    Partial Terminal Steiner Tree Problem (PTSTP), Rehfeldt (2021), Ch. 5.1.
 
     A Steiner tree problem with the extra requirement that a designated subset of the
     terminals — the *partial terminals* — must be **leaves** of the solution tree.
 
-    Solved by the transformation to a plain Steiner tree problem (thesis Sec. 5.1):
+    Solved by the transformation to a plain Steiner tree problem (Rehfeldt 2021,
+    Sec. 5.1):
 
     1. remove every edge whose *both* endpoints are partial terminals, and
     2. add a large constant ``M`` (the sum of all edge weights) to every edge incident
@@ -617,12 +1292,18 @@ class PartialTerminalSteinerProblem(SteinerProblem):
 
     Follows the thesis assumption of at least three terminals; with one or two
     terminals the problem is trivial and the leaf requirement is vacuous.
+
+    References:
+
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.1.
     """
 
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], partial_terminals,
                  weight: str = "weight", **kwargs):
         if isinstance(graph, nx.DiGraph):
             raise ValueError("PartialTerminalSteinerProblem requires an undirected graph.")
+        _validate_nonnegative_edge_costs(graph, weight, type(self).__name__)
         self.partial_terminals = set(partial_terminals)
         all_terminals = {t for group in terminal_groups for t in group}
         missing = self.partial_terminals - all_terminals
@@ -644,6 +1325,13 @@ class PartialTerminalSteinerProblem(SteinerProblem):
 
         self._ptstp_big_m = big_m
         super().__init__(transformed, terminal_groups, weight=weight, **kwargs)
+
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for "
+            "PartialTerminalSteinerProblem: the objective needs the Big-M "
+            "penalty subtracted per solution; see steinerpy#41 follow-up."
+        )
 
     def get_solution(self, *args, **kwargs) -> 'Solution':
         import math as _math
@@ -674,8 +1362,9 @@ class PartialTerminalSteinerProblem(SteinerProblem):
 
 class FullTerminalSteinerProblem(PartialTerminalSteinerProblem):
     """
-    Full Terminal Steiner Tree Problem (FTSTP), thesis Ch. 5.1 — the special case of
-    :class:`PartialTerminalSteinerProblem` in which *every* terminal must be a leaf.
+    Full Terminal Steiner Tree Problem (FTSTP), Rehfeldt (2021), Ch. 5.1 — the special
+    case of :class:`PartialTerminalSteinerProblem` in which *every* terminal must be a
+    leaf.  See :class:`PartialTerminalSteinerProblem` for the reference.
     """
 
     def __init__(self, graph: nx.Graph, terminal_groups: List[List],
@@ -691,7 +1380,7 @@ class FullTerminalSteinerProblem(PartialTerminalSteinerProblem):
 
 class GroupSteinerProblem(SteinerProblem):
     """
-    Group Steiner Tree Problem (GSTP), thesis Ch. 5.7.
+    Group Steiner Tree Problem (GSTP), Rehfeldt (2021), Ch. 5.7.
 
     Given vertex *groups*, find a minimum-cost tree that contains at least one vertex
     from each group.  Solved by the Voss (1999) transformation to a plain Steiner tree
@@ -699,27 +1388,27 @@ class GroupSteinerProblem(SteinerProblem):
     to every vertex of that group, then solve the Steiner tree problem whose terminals
     are the super-terminals.  The zero-cost connector edges are stripped from the
     reported solution (they contribute nothing to the objective).
+
+    For directed graphs, see :class:`DirectedGroupSteinerProblem`.
+
+    References:
+
+    - S. Voß (1999), *The Steiner tree problem with hop constraints*, Annals of
+      Operations Research 86, 321-345, doi:10.1023/A:1018967121276 — the
+      super-terminal transformation.
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.7.
     """
 
-    def __init__(self, graph: nx.Graph, groups: List[List], weight: str = "weight", **kwargs):
+    def __init__(self, graph: nx.Graph, groups: List[List], weight: str = "weight",
+                 **kwargs):
         if isinstance(graph, nx.DiGraph):
-            raise ValueError("GroupSteinerProblem requires an undirected graph.")
-        if not groups or any(len(g) == 0 for g in groups):
-            raise ValueError("Each group must contain at least one vertex.")
-
-        augmented = graph.copy()
-        existing = set(graph.nodes())
-        super_terminals = []
-        for i, grp in enumerate(groups):
-            g_node = self._fresh_label(f"__group_{i}__", existing)
-            existing.add(g_node)
-            super_terminals.append(g_node)
-            augmented.add_node(g_node)
-            for v in grp:
-                if v not in graph:
-                    raise ValueError(f"group vertex {v!r} is not in the graph.")
-                augmented.add_edge(g_node, v, **{weight: 0})
-
+            raise ValueError(
+                "GroupSteinerProblem requires an undirected graph; "
+                "use DirectedGroupSteinerProblem for directed graphs."
+            )
+        augmented, super_terminals = self._build_augmented(
+            graph, groups, weight, directed=False)
         self._gstp_super_terminals = set(super_terminals)
         super().__init__(augmented, [super_terminals], weight=weight, **kwargs)
 
@@ -731,6 +1420,49 @@ class GroupSteinerProblem(SteinerProblem):
         while f"{base}{i}" in existing:
             i += 1
         return f"{base}{i}"
+
+    @staticmethod
+    def _build_augmented(
+        graph: nx.Graph, groups: List[List], weight: str, directed: bool
+    ):
+        """Add one zero-cost super-terminal per group to a copy of *graph*.
+
+        Shared by :class:`GroupSteinerProblem` (undirected connector edges,
+        both directions) and :class:`DirectedGroupSteinerProblem` (connector
+        arcs run from each real group vertex into its super-terminal, so the
+        super-terminal is only reachable once the arborescence reaches a real
+        group member).
+
+        :return: (augmented_graph, super_terminals) — one super-terminal label
+            per group.
+        """
+        if not groups or any(len(g) == 0 for g in groups):
+            raise ValueError("Each group must contain at least one vertex.")
+        augmented = graph.copy()
+        existing = set(graph.nodes())
+        super_terminals = []
+        for i, grp in enumerate(groups):
+            g_node = GroupSteinerProblem._fresh_label(f"__group_{i}__", existing)
+            existing.add(g_node)
+            super_terminals.append(g_node)
+            augmented.add_node(g_node)
+            for v in grp:
+                if v not in graph:
+                    raise ValueError(f"group vertex {v!r} is not in the graph.")
+                if directed:
+                    augmented.add_edge(v, g_node, **{weight: 0})
+                else:
+                    augmented.add_edge(g_node, v, **{weight: 0})
+        return augmented, super_terminals
+
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for GroupSteinerProblem: "
+            "two distinct raw ILP solutions can strip to the same real edge set "
+            "(differing only in which connector vertex was used), needing "
+            "de-dup on the stripped set, not the raw one; see steinerpy#41 "
+            "follow-up."
+        )
 
     def get_solution(self, *args, **kwargs) -> 'Solution':
         import math as _math
@@ -749,6 +1481,54 @@ class GroupSteinerProblem(SteinerProblem):
         sol.original_selected_edges = real
         sol.selected_edges = real
         return sol
+
+
+class DirectedGroupSteinerProblem(GroupSteinerProblem):
+    """
+    Directed Group Steiner Tree Problem — the rooted-arborescence variant of
+    :class:`GroupSteinerProblem`.
+
+    Given a root and vertex *groups*, find a minimum-cost arborescence rooted at
+    ``root`` that reaches at least one vertex from each group via directed paths.
+    Uses the same super-terminal transformation as :class:`GroupSteinerProblem`,
+    except each group's zero-cost connector arcs run *from* the group's real
+    vertices *into* its super-terminal (instead of both directions), so a
+    super-terminal is only reachable once the arborescence reaches one of its
+    real group members. The transformed instance is then solved with the same
+    directed-cut model used by :class:`DirectedSteinerProblem`, rooted at
+    ``root`` with the super-terminals as its terminal set.
+
+    References:
+
+    - S. Voß (1999), *The Steiner tree problem with hop constraints*, Annals of
+      Operations Research 86, 321-345, doi:10.1023/A:1018967121276 — the
+      super-terminal transformation.
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.7.
+    - R. T. Wong (1984), *A dual ascent approach for Steiner tree problems on a
+      directed graph*, Mathematical Programming 28, 271-287,
+      doi:10.1007/BF02612335 — the underlying Steiner arborescence model (see
+      :class:`DirectedSteinerProblem`).
+    """
+
+    def __init__(self, graph: nx.DiGraph, groups: List[List], root,
+                 weight: str = "weight", **kwargs):
+        if not isinstance(graph, nx.DiGraph):
+            raise ValueError(
+                "DirectedGroupSteinerProblem requires a directed graph (nx.DiGraph)."
+            )
+        if root not in graph:
+            raise ValueError(f"root {root!r} is not in the graph.")
+
+        augmented, super_terminals = self._build_augmented(
+            graph, groups, weight, directed=True)
+        self._gstp_super_terminals = set(super_terminals)
+        kwargs['preprocess'] = False
+        # Bypass GroupSteinerProblem.__init__ (which rejects DiGraph and wires
+        # undirected connector edges); go straight to BaseSteinerProblem via
+        # SteinerProblem, as DirectedSteinerProblem does.
+        SteinerProblem.__init__(
+            self, augmented, [[root] + super_terminals], weight=weight, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -770,7 +1550,7 @@ class RectilinearSolution(Solution):
 
 class RectilinearSteinerProblem(SteinerProblem):
     """
-    Rectilinear Steiner Minimum Tree (RSMT), thesis Ch. 5.4.
+    Rectilinear Steiner Minimum Tree (RSMT), Rehfeldt (2021), Ch. 5.4.
 
     Given points in the plane, find a minimum-total-length tree that uses only
     horizontal and vertical segments (the L1 / Manhattan metric), allowing extra
@@ -779,6 +1559,14 @@ class RectilinearSteinerProblem(SteinerProblem):
     for modest point counts (the grid has up to ``k^2`` nodes for ``k`` points).
 
     Nodes of the underlying graph are ``(x, y)`` coordinate tuples.
+
+    References:
+
+    - M. Hanan (1966), *On Steiner's problem with rectilinear distance*, SIAM
+      Journal on Applied Mathematics 14(2), 255-265, doi:10.1137/0114025 — the
+      Hanan grid reduction.
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.4.
     """
 
     def __init__(self, points, weight: str = "weight", **kwargs):
@@ -787,6 +1575,14 @@ class RectilinearSteinerProblem(SteinerProblem):
         grid, terminals = hanan_grid(self.points, weight=weight)
         self._rsmt_terminals = set(terminals)
         super().__init__(grid, [terminals], weight=weight, **kwargs)
+
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for "
+            "RectilinearSteinerProblem: solutions are wrapped in "
+            "RectilinearSolution (segments/steiner_points), which "
+            "OptimalSolutionPool does not hold; see steinerpy#41 follow-up."
+        )
 
     def get_solution(self, *args, **kwargs) -> 'RectilinearSolution':
         sol = super().get_solution(*args, **kwargs)
@@ -803,6 +1599,31 @@ class RectilinearSteinerProblem(SteinerProblem):
 
 
 class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem instead of BaseSteinerProblem
+    """
+    Prize-Collecting Steiner Tree Problem (PCSTP).
+
+    A Steiner tree problem in which terminals carry *prizes* and may be left
+    unconnected at a cost: the objective trades edge costs against forgone
+    prizes / penalties.  The default solve path is a penalty-based flow ILP on
+    top of the DO-D formulation (see :class:`SteinerProblem`); the opt-in
+    ``pc_transform=`` path solves the classic forgo-prize PCSTP exactly via the
+    PCSTP -> Steiner Arborescence (SAP) transformation, and ``pc_reduce=``
+    applies prize-safe edge deletions, both following Rehfeldt & Koch (2020).
+
+    References:
+
+    - D. Rehfeldt, T. Koch (2020), *On the exact solution of prize-collecting
+      Steiner tree problems*, ZIB-Report 20-11 (published in INFORMS Journal on
+      Computing, doi:10.1287/ijoc.2021.1087) — the SAP transformation
+      (:mod:`steinerpy.pc_transform`) and the prize-constrained-distance
+      reductions (:mod:`steinerpy.pc_reductions`).
+    - M. Leitner, I. Ljubić, M. Luipersbeck, M. Sinnl (2018), *A dual
+      ascent-based branch-and-bound framework for the prize-collecting Steiner
+      tree and related problems*, INFORMS Journal on Computing 30(2), 402-420,
+      doi:10.1287/ijoc.2017.0788 — reduced-cost variable fixing used by the
+      dual-ascent accelerator (:mod:`steinerpy.dual_ascent`).
+    """
+
     def __init__(self, graph, terminal_groups, node_prizes, penalty_cost=1000, penalty_budget=None, **kwargs):
         """
         Prize Collecting Steiner Problem - extends regular Steiner problem.
@@ -829,10 +1650,12 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         # Opt-in accelerators (mirror the dual_ascent=/da_reduce=/heavy= pattern):
         #   pc_transform — solve via the classic PCSTP/MWCSP -> SAP transformation
         #     and the existing dual-ascent + directed-cut machinery (exact path).
-        #   pc_reduce    — prize-safe edge deletion (prize-constrained distance).
+        #   pc_reduce    — prize-safe PCD, or an experimental stronger stack.
         # Both default off; the default path remains the penalty/Big-M flow ILP.
         self.pc_transform = kwargs.pop('pc_transform', False)
         self.pc_reduce = kwargs.pop('pc_reduce', False)
+        self.pc_reduction_stats = {}
+        self._pc_reduction_options()  # validate even if this path is ineligible
 
         # Initialize base Steiner problem first
         super().__init__(graph, terminal_groups, **kwargs)
@@ -850,7 +1673,11 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         self._pc_reduced = False
         if self.pc_reduce and self.penalty_cost == 0 and self._pc_eligible():
             from .pc_reductions import reduce_pcstp_graph
-            self.graph = reduce_pcstp_graph(self.graph, self.node_prizes, self.weight)
+            protected = {t for group in self.terminal_groups for t in group}
+            self.graph, self.pc_reduction_stats = reduce_pcstp_graph(
+                self.graph, self.node_prizes, self.weight,
+                protected_nodes=protected, return_stats=True,
+                **self._pc_reduction_options())
             self.edges = list(self.graph.edges())
             self.arcs = self.edges + [(v, u) for (u, v) in self.edges]
             self.nodes = list(self.graph.nodes())
@@ -893,13 +1720,35 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         """
         return self.graph, self.node_prizes, None
 
+    def _pc_reduction_options(self):
+        """Map the backward-compatible ``pc_reduce`` option to a stack.
+
+        ``True`` and ``"pcd"`` retain the historical edge-only PCD behavior.
+        The terminal-regions stacks are explicit strings and remain
+        experimental/off by default.
+        """
+        if self.pc_reduce in (False, None):
+            return {'bound_edges': False, 'bound_nodes': False}
+        if self.pc_reduce is True or self.pc_reduce == 'pcd':
+            return {'bound_edges': False, 'bound_nodes': False}
+        if self.pc_reduce == 'pcd+trd':
+            return {'bound_edges': True, 'bound_nodes': False}
+        if self.pc_reduce == 'pcd+trd+nodes':
+            return {'bound_edges': True, 'bound_nodes': True}
+        raise ValueError(
+            "pc_reduce must be False, True, 'pcd', 'pcd+trd', or "
+            "'pcd+trd+nodes'."
+        )
+
     def _build_pc_transform(self):
         """Build the PCSTP -> SAP transform context (optionally PCD-reduced)."""
         from .pc_transform import transform_pcstp_to_sap
         graph, prizes, mwcsp_const = self._classic_pcstp()
         if self.pc_reduce and not self._pc_reduced:
             from .pc_reductions import reduce_pcstp_graph
-            graph = reduce_pcstp_graph(graph, prizes, self.weight)
+            graph, self.pc_reduction_stats = reduce_pcstp_graph(
+                graph, prizes, self.weight, return_stats=True,
+                **self._pc_reduction_options())
         ctx = transform_pcstp_to_sap(graph, prizes, self.weight)
         ctx.mwcsp_const = mwcsp_const
         return ctx
@@ -953,11 +1802,12 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             da_ub = da.upper_bound
 
         solve = solve_sap_gurobi if solver == "gurobi" else solve_sap_highs
-        gap, _rt, _sap_obj, sap_arcs = solve(
+        gap, _rt, _sap_obj, sap_arcs, _status = solve(
             view, time_limit=time_limit, logfile=log_file,
             fixing=fixing, da_cuts=da_cuts, da_ub=da_ub, primal=da_primal,
-            threads=threads,
+            threads=threads, return_status=True,
         )
+        self.cut_stats = dict(getattr(view, "cut_stats", {}))
 
         edges, nodes, pcstp_obj = map_sap_solution_to_pcstp(ctx, sap_arcs)
         return self._pc_finalize(ctx, edges, nodes, pcstp_obj, gap, _time.time() - t0)
@@ -1011,6 +1861,15 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             gap = max(0.0, (pcstp_obj - lb) / max(1.0, abs(pcstp_obj)))
         return self._pc_make_solution(ctx, edges, nodes, pcstp_obj, gap, _time.time() - t0)
 
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for "
+            "PrizeCollectingProblem (and its subclasses): the penalty ILP "
+            "(node_vars/penalty_vars) or the SAP-transform path has no shared "
+            "plain edge indicator to enumerate against; see steinerpy#41 "
+            "follow-up."
+        )
+
     def get_solution(self, time_limit: float = 300, log_file: str = "",
                      solver: str = "highs", pc_transform: bool = None,
                      exact: bool = True, threads: int = None) -> 'PrizeCollectingSolution':
@@ -1057,9 +1916,16 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
             self, time_limit=time_limit, logfile=log_file, threads=threads
         )
         
-        gap, runtime, objective, selected_edges, selected_nodes, penalties = run_prize_collecting_model(
-            model, self, x, node_vars, penalty_vars
+        (gap, runtime, objective, selected_edges, selected_nodes, penalties,
+         _status) = run_prize_collecting_model(
+            model, self, x, node_vars, penalty_vars, return_status=True
         )
+        if _status != "optimal" and objective == float("inf"):
+            reason = (
+                "was proved infeasible" if _status == "infeasible"
+                else "stopped before finding a valid feasible incumbent"
+            )
+            raise RuntimeError(f"Prize-collecting solve {reason}.")
 
         # Map solution back to original graph if preprocessing was used
         if self.preprocess:
@@ -1103,6 +1969,195 @@ class PrizeCollectingSolution(Solution):
 
 
 # ---------------------------------------------------------------------------
+# Directed Prize-Collecting Steiner Tree (prize-collecting Steiner arborescence)
+# ---------------------------------------------------------------------------
+
+class DirectedPrizeCollectingProblem(PrizeCollectingProblem):
+    """
+    Directed Prize-Collecting Steiner Tree Problem (prize-collecting Steiner
+    arborescence).
+
+    The graph is directed (``nx.DiGraph``) and arcs are used only in the
+    direction they are defined — no reverse arcs are added.  The solver finds a
+    directed arborescence ``S`` minimising the classic forgo-prize objective
+
+        ``C(S) = sum_{a in S} c(a) + sum_{v not in S} p(v)``
+
+    with arc costs ``c >= 0`` and node prizes ``p >= 0``: every prize node left
+    out of the arborescence forgoes its prize.
+
+    Two variants are supported:
+
+    * **unrooted** (``root=None``, default): the arborescence may be rooted at
+      any vertex (including a prize-less one), and the empty tree is allowed;
+    * **rooted** (``root=r``): the arborescence must grow from ``r`` via
+      directed paths, and ``r`` is always part of the solution — the rooted
+      prize-collecting Steiner arborescence used e.g. for retrieving candidate
+      subgraphs from knowledge graphs (He et al. 2024, "G-Retriever").
+
+    Solved exactly via the directed PCSTP -> Steiner Arborescence (SAP)
+    transformation (:func:`steinerpy.pc_transform.transform_directed_pcstp_to_sap`,
+    the digraph adaptation of Rehfeldt & Koch 2020, Transformation 2) and the
+    existing dual-ascent + directed-cut machinery; the back-map preserves arc
+    orientation.  Graph preprocessing and the prize-constrained-distance
+    reductions are undirected-only and therefore disabled.
+
+    References:
+
+    - D. Rehfeldt, T. Koch (2020), *On the exact solution of prize-collecting
+      Steiner tree problems*, ZIB-Report 20-11 (published in INFORMS Journal on
+      Computing, doi:10.1287/ijoc.2021.1087) — the PCSTP -> SAP transformation
+      adapted here to directed graphs.
+    - R. T. Wong (1984), *A dual ascent approach for Steiner tree problems on a
+      directed graph*, Mathematical Programming 28, 271-287,
+      doi:10.1007/BF02612335 — the Steiner arborescence model and the
+      dual-ascent accelerator (:mod:`steinerpy.dual_ascent`).
+    - X. He, Y. Tian, Y. Sun, N. V. Chawla, T. Laurent, Y. LeCun, X. Bresson,
+      B. Hooi (2024), *G-Retriever: Retrieval-augmented generation for textual
+      graph understanding and question answering*, NeurIPS 2024 — the rooted
+      prize-collecting application on knowledge graphs (issue #28).
+    """
+
+    def __init__(self, graph: nx.DiGraph, node_prizes: Dict, root=None,
+                 weight: str = "weight", **kwargs):
+        """
+        :param graph: networkx DiGraph with non-negative arc costs.
+        :param node_prizes: dict mapping node -> prize value (``>= 0``).
+        :param root: optional mandatory root of the arborescence; ``None`` for
+            the unrooted variant.
+        :param weight: edge attribute for arc weights.
+        """
+        if not isinstance(graph, nx.DiGraph):
+            raise ValueError(
+                "DirectedPrizeCollectingProblem requires a directed graph (nx.DiGraph)."
+            )
+        if graph.number_of_nodes() == 0:
+            raise ValueError("graph must contain at least one node.")
+        if root is not None and root not in graph:
+            raise ValueError(f"root {root!r} is not in the graph.")
+        if kwargs.pop('pc_reduce', False):
+            raise ValueError(
+                "pc_reduce is not supported for directed graphs (the "
+                "prize-constrained-distance reductions are undirected-only)."
+            )
+        for bad in ('budget', 'max_degree', 'hop_limit', 'penalty_budget'):
+            if kwargs.get(bad) is not None:
+                raise ValueError(
+                    f"{bad} is not supported by DirectedPrizeCollectingProblem."
+                )
+        kwargs.pop('penalty_budget', None)
+
+        self.pc_root = root
+
+        # The potential terminals are exactly the prize-bearing nodes; the
+        # group's first entry anchors ``self.roots`` for the base class.
+        prize_nodes = [v for v in graph.nodes() if node_prizes.get(v, 0) > 0]
+        if root is not None:
+            anchor = root
+        elif prize_nodes:
+            anchor = prize_nodes[0]
+        else:
+            anchor = next(iter(graph.nodes()))
+        terminal_group = [anchor] + [v for v in prize_nodes if v != anchor]
+
+        # Preprocessing is undirected-only (as in DirectedSteinerProblem), and
+        # the transform path is the only directed-aware solve path.
+        kwargs['preprocess'] = False
+        kwargs.setdefault('pc_transform', True)
+        super().__init__(graph, [terminal_group], node_prizes,
+                         penalty_cost=0, weight=weight, **kwargs)
+
+    def _build_pc_transform(self):
+        """Build the *directed* PCSTP -> SAP transform context."""
+        from .pc_transform import transform_directed_pcstp_to_sap
+        return transform_directed_pcstp_to_sap(
+            self.graph, self.node_prizes, self.weight, root=self.pc_root
+        )
+
+    def _pc_finalize(self, ctx, edges, nodes, pcstp_obj, gap, runtime) -> 'PrizeCollectingSolution':
+        """Rooted: skip the unrooted trivial baselines (empty tree / arbitrary
+        single vertex), which are infeasible when the root is mandatory; the
+        SAP already represents every rooted solution including the root-only
+        tree.  Unrooted: same trivial compare as the undirected path."""
+        if self.pc_root is not None:
+            if not nodes:
+                nodes = [self.pc_root]
+            return self._pc_make_solution(ctx, edges, nodes, pcstp_obj, gap, runtime)
+        return super()._pc_finalize(ctx, edges, nodes, pcstp_obj, gap, runtime)
+
+    def _pc_heuristic_solution(self) -> 'PrizeCollectingSolution':
+        """Heuristic-only mode: the dual-ascent SAP primal, no ILP, valid gap.
+
+        The undirected refinement portfolio (MST / Dijkstra insertion / leaf
+        pruning) does not apply to arborescences, so the primal is the mapped
+        dual-ascent solution compared against the trivial baselines.
+        ``gap == 0.0`` certifies the primal is provably optimal.
+        """
+        import time as _time, math as _math
+        from .pc_transform import map_sap_solution_to_pcstp, best_trivial_pcstp
+        from .dual_ascent import dual_ascent as _run_da
+
+        ctx = self._build_pc_transform()
+        view = DirectedSteinerProblem(ctx.sap_graph, ctx.root, ctx.terminals, weight=ctx.weight)
+        t0 = _time.time()
+        da = _run_da(view, ctx.weight)
+        if not da.feasible or _math.isinf(da.upper_bound):
+            raise RuntimeError(
+                "dual-ascent heuristic found no feasible solution for the transformed SAP."
+            )
+        edges, nodes, pcstp_obj = map_sap_solution_to_pcstp(ctx, da.primal_edges)
+        if self.pc_root is None:
+            triv_nodes, triv_obj = best_trivial_pcstp(ctx.node_prizes)
+            if triv_obj < pcstp_obj - 1e-9:
+                edges, nodes, pcstp_obj = [], triv_nodes, triv_obj
+        elif not nodes:
+            nodes = [self.pc_root]
+
+        if _math.isinf(da.lower_bound):
+            gap = _math.inf
+        else:
+            lb = da.lower_bound - ctx.offset
+            gap = max(0.0, (pcstp_obj - lb) / max(1.0, abs(pcstp_obj)))
+        return self._pc_make_solution(ctx, edges, nodes, pcstp_obj, gap, _time.time() - t0)
+
+    def get_solution(self, time_limit: float = 300, log_file: str = "",
+                     solver: str = "highs", pc_transform: bool = None,
+                     exact: bool = True, threads: int = None) -> 'PrizeCollectingSolution':
+        """Solve the directed prize-collecting problem.
+
+        Always routes through the directed PCSTP -> SAP transformation with the
+        dual-ascent-accelerated directed-cut ILP (the penalty/Big-M flow ILP of
+        the undirected :class:`PrizeCollectingProblem` supports undirected
+        graphs only).  ``exact=False`` returns the dual-ascent primal with a
+        *valid* optimality gap and no ILP; ``solver`` selects ``"highs"``
+        (default) or ``"gurobi"``.
+        """
+        solver = solver.lower()
+        if solver not in ("highs", "gurobi"):
+            raise ValueError(f"Unknown solver '{solver}'. Choose 'highs' or 'gurobi'.")
+        if pc_transform is not None and not pc_transform:
+            raise NotImplementedError(
+                "DirectedPrizeCollectingProblem always solves via the directed "
+                "PCSTP -> SAP transformation; the penalty flow ILP path supports "
+                "undirected graphs only."
+            )
+
+        # No prizes at all: the optimum is trivial — the empty tree (unrooted)
+        # or the bare root (rooted) — and the SAP would be degenerate.
+        if not any(self.node_prizes.get(v, 0) > 0 for v in self.graph.nodes()):
+            nodes = [self.pc_root] if self.pc_root is not None else []
+            return PrizeCollectingSolution(
+                gap=0.0, runtime=0.0, objective=0.0, selected_edges=[],
+                original_selected_edges=[], selected_nodes=nodes, penalties={},
+                total_prize=0.0, edge_cost=0.0, was_preprocessed=False,
+            )
+
+        if not exact:
+            return self._pc_heuristic_solution()
+        return self._pc_exact_solution(time_limit, log_file, solver, threads=threads)
+
+
+# ---------------------------------------------------------------------------
 # Node-Weighted Steiner Tree (NWST) and Maximum-Weight Connected Subgraph (MWCS)
 # ---------------------------------------------------------------------------
 
@@ -1116,6 +2171,11 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
 
     Terminal node costs are always incurred (they are part of every solution) and
     are added as a constant to the reported objective value.
+
+    The node-splitting reduction is the standard (folklore) device for moving
+    node weights onto edges and is not taken from a single dedicated paper; the
+    transformed instance is solved with the machinery documented in
+    :class:`SteinerProblem`.
     """
 
     def __init__(self, graph: nx.Graph, terminal_groups: List[List], node_weights: Dict,
@@ -1129,6 +2189,14 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         Note: graph preprocessing is not supported for node-weighted problems because
         the node-splitting transformation produces a directed graph internally.
         """
+        negative_nodes = [(v, cost) for v, cost in node_weights.items() if cost < 0]
+        if negative_nodes:
+            raise ValueError(
+                "NodeWeightedSteinerProblem requires non-negative node costs; "
+                f"found {negative_nodes[:5]}"
+                f"{' ...' if len(negative_nodes) > 5 else ''}. Use "
+                "MaxWeightConnectedSubgraph for semantically negative node weights."
+            )
         self.node_weights = node_weights
         self.original_terminal_groups_nw = terminal_groups
 
@@ -1140,6 +2208,14 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         super().__init__(transformed_graph, new_terminal_groups, weight=weight,
                          preprocess=False, **kwargs)
 
+    def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
+        raise NotImplementedError(
+            "get_optimal_solutions is not yet supported for "
+            "NodeWeightedSteinerProblem: get_solution reads the tree from arc "
+            "(y1) values, not the plain edge indicator x this method's "
+            "no-good cut enumerates against; see steinerpy#41 follow-up."
+        )
+
     def get_solution(self, time_limit: float = 300, log_file: str = "", solver: str = "highs", threads: int = None) -> 'NodeWeightedSolution':
         """Solve and map solution back to the original node-weighted graph."""
         from .mathematical_model import build_model, run_model, build_model_gurobi, run_model_gurobi
@@ -1150,10 +2226,21 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
 
         if solver == "gurobi":
             model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
-            gap, runtime, objective, _ = run_model_gurobi(model, self, x, y2, z)
+            gap, runtime, objective, _, _status = run_model_gurobi(model, self, x, y2, z, return_status=True)
         else:
             model, x, y1, y2, z = build_model(self, time_limit=time_limit, logfile=log_file, threads=threads)
-            gap, runtime, objective, _ = run_model(model, self, x, y2, z)
+            gap, runtime, objective, _, _status = run_model(model, self, x, y2, z, return_status=True)
+
+        if _status == "incomplete" and objective == float("inf"):
+            raise RuntimeError(
+                "Node-weighted exact solve stopped before finding a "
+                "connectivity-valid feasible incumbent."
+            )
+        if objective == float("inf"):
+            return NodeWeightedSolution(
+                gap=gap, runtime=runtime, objective=objective,
+                selected_edges=[], original_selected_edges=[], selected_nodes=[],
+            )
 
         # Use arc (y1) variables for the actual directed tree structure instead of edge
         # (x) variables, to avoid degenerate zero-weight cross-edges being included.
@@ -1248,6 +2335,14 @@ class MaxWeightConnectedSubgraph(PrizeCollectingProblem):
     negative weights are treated as Steiner points that are included only when
     they are necessary connectors.  A user-supplied (or automatically chosen)
     root node anchors the solution.
+
+    References:
+
+    - D. Rehfeldt, T. Koch (2020), *On the exact solution of prize-collecting
+      Steiner tree problems*, ZIB-Report 20-11 (published in INFORMS Journal on
+      Computing, doi:10.1287/ijoc.2021.1087), Sec. 2.2 — the exact
+      MWCSP -> PCSTP -> SAP transformation used by the opt-in
+      ``pc_transform=`` path (:mod:`steinerpy.pc_transform`).
     """
 
     def __init__(self, graph: nx.Graph, node_weights: Dict, root=None,
@@ -1322,7 +2417,8 @@ class MaxWeightConnectedSubgraph(PrizeCollectingProblem):
 
 class BudgetedMaxWeightConnectedSubgraph(MaxWeightConnectedSubgraph):
     """
-    Maximum-Weight Connected Subgraph with a vertex-cost Budget (MWCSPB), thesis Ch. 5.6.
+    Maximum-Weight Connected Subgraph with a vertex-cost Budget (MWCSPB),
+    Rehfeldt (2021), Ch. 5.6.
 
     Like :class:`MaxWeightConnectedSubgraph`, but every chosen vertex consumes a
     vertex *cost* and the total cost of the chosen connected subgraph may not exceed a
@@ -1334,7 +2430,16 @@ class BudgetedMaxWeightConnectedSubgraph(MaxWeightConnectedSubgraph):
     the ``"highs"`` and ``"gurobi"`` backends.  This variant does not use the
     SAP-transform / dual-ascent accelerators (same opt-out convention as the
     budget/degree variants).
+
+    References:
+
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.6.
     """
+
+    # Original edge attributes are topology-only in MWCSPB: neither the
+    # node-weight objective nor the node-cost budget reads them.
+    _requires_nonnegative_edge_costs = False
 
     def __init__(self, graph: nx.Graph, node_weights: Dict, node_costs: Dict,
                  node_budget: float, root=None, weight: str = "weight", **kwargs):
@@ -1365,16 +2470,25 @@ class BudgetedMaxWeightConnectedSubgraph(MaxWeightConnectedSubgraph):
             model, x, y1, y2, z, node_vars = build_mwcsb_model_gurobi(
                 self, time_limit=time_limit, logfile=log_file, threads=threads
             )
-            gap, runtime, mwcs_weight, selected_edges, selected_nodes = run_mwcsb_model_gurobi(
-                model, self, y1, node_vars
+            (gap, runtime, mwcs_weight, selected_edges, selected_nodes,
+             _status) = run_mwcsb_model_gurobi(
+                model, self, y1, node_vars, return_status=True
             )
         else:
             model, x, y1, y2, z, node_vars = build_mwcsb_model(
                 self, time_limit=time_limit, logfile=log_file, threads=threads
             )
-            gap, runtime, mwcs_weight, selected_edges, selected_nodes = run_mwcsb_model(
-                model, self, y1, node_vars
+            (gap, runtime, mwcs_weight, selected_edges, selected_nodes,
+             _status) = run_mwcsb_model(
+                model, self, y1, node_vars, return_status=True
             )
+
+        if _status != "optimal" and mwcs_weight == float("-inf"):
+            reason = (
+                "was proved infeasible" if _status == "infeasible"
+                else "stopped before finding a valid feasible incumbent"
+            )
+            raise RuntimeError(f"Budgeted MWCS solve {reason}.")
 
         total_prize = sum(max(0.0, self._mwcs_node_weights.get(v, 0.0)) for v in selected_nodes)
         return PrizeCollectingSolution(
@@ -1481,6 +2595,27 @@ class DirectedSteinerProblem(BaseSteinerProblem):
     The graph is a directed graph (nx.DiGraph).  A designated root node must
     have a directed path to every terminal node.  Edges only allow flow in the
     direction they are defined; reverse arcs are not added.
+
+    There is no single dedicated source paper for this implementation: it is the
+    directed-graph specialisation of the DO-D directed-cut formulation used for
+    the undirected problem (see :class:`SteinerProblem`), with the difference
+    that only the arcs present in the ``DiGraph`` are used instead of both
+    orientations of every undirected edge.  The Steiner arborescence model and
+    its directed-cut formulation go back to Wong (1984).
+
+    References:
+
+    - B. Markhorst, J. Berkhout, A. Zocca, J. Pruyn, R. van der Mei (2025),
+      *Future-proof ship pipe routing: Navigating the energy transition*,
+      Ocean Engineering 319, 120113, doi:10.1016/j.oceaneng.2024.120113 —
+      the DO-D formulation solved here.
+    - D. Schmidt, B. Zey, F. Margot (2021), *Stronger MIP formulations for the
+      Steiner forest problem*, Mathematical Programming 186, 373-407,
+      doi:10.1007/s10107-019-01460-6 — the formulation the DO-D model builds on.
+    - R. T. Wong (1984), *A dual ascent approach for Steiner tree problems on a
+      directed graph*, Mathematical Programming 28, 271-287,
+      doi:10.1007/BF02612335 — the Steiner arborescence directed-cut model and
+      the dual-ascent accelerator (:mod:`steinerpy.dual_ascent`).
     """
 
     def __init__(self, graph: nx.DiGraph, root, terminals: List, weight: str = "weight", **kwargs):
@@ -1508,7 +2643,7 @@ class DirectedSteinerProblem(BaseSteinerProblem):
 
 class HopConstrainedSteinerProblem(DirectedSteinerProblem):
     """
-    Hop-Constrained Directed Steiner Tree Problem (HCDSTP), thesis Ch. 5.8.
+    Hop-Constrained Directed Steiner Tree Problem (HCDSTP), Rehfeldt (2021), Ch. 5.8.
 
     A Steiner arborescence in which the number of arcs (hops) is bounded by
     ``hop_limit`` and no terminal (other than the root) has outgoing arcs.
@@ -1518,6 +2653,11 @@ class HopConstrainedSteinerProblem(DirectedSteinerProblem):
     constraint ``sum(y1) <= hop_limit`` (see
     :func:`steinerpy.mathematical_model.add_hop_constraint`).  The dual-ascent
     accelerator is skipped automatically because ``hop_limit`` is set.
+
+    References:
+
+    - D. Rehfeldt (2021), *Faster algorithms for Steiner tree and related
+      problems: From theory to practice*, PhD thesis, TU Berlin, Ch. 5.8.
     """
 
     def __init__(self, graph: nx.DiGraph, root, terminals: List, hop_limit: int,
@@ -1531,6 +2671,7 @@ class HopConstrainedSteinerProblem(DirectedSteinerProblem):
         """
         if not isinstance(graph, nx.DiGraph):
             raise ValueError("HopConstrainedSteinerProblem requires a directed graph (nx.DiGraph).")
+        _validate_nonnegative_edge_costs(graph, weight, type(self).__name__)
 
         # Drop outgoing arcs of every non-root terminal (thesis: delta^+_S(t) = 0).
         non_root_terminals = {t for t in terminals if t != root}

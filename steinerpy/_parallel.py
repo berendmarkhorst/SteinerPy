@@ -1,4 +1,4 @@
-"""Shared-memory parallel helpers (thesis Ch. 6.3.1).
+"""Shared-memory parallel helpers (Rehfeldt 2021, Ch. 6.3.1).
 
 Implements the "collect-then-apply" parallelisation pattern used by the reduction
 tests and the multi-root dual ascent: independent, read-only tests run in worker

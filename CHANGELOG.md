@@ -8,6 +8,263 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Experimental terminal-regions PCSTP reductions** (off by default):
+  `pc_reduce="pcd+trd"` adds Rehfeldt & Koch's (2020) terminal-regions
+  decomposition and Proposition 12 lower bound for bound-based edge deletion;
+  `"pcd+trd+nodes"` also deletes certified zero-prize nodes. Edge bounds use
+  the equivalent zero-prize subdivision-vertex construction. Prize-bearing
+  nodes and user terminals are retained, all deletions require strict
+  `LB > UB`, and `problem.pc_reduction_stats` exposes phase timings and removal
+  counts. `True`/`"pcd"` remain backward-compatible PCD-only aliases. Small
+  exact PCSTP oracle tests cover all four stacks.
+- **Experimental HiGHS cut aging/purging** (off by default): set
+  `STEINERPY_CUT_PURGE_AGE` to a positive number to delete generated directed
+  cuts after that many consecutively slack re-solves. Active signatures prevent
+  duplicates; purged inequalities may be rediscovered; batch deletion updates
+  every surviving HiGHS row index. Structural and dual-ascent seed rows remain
+  permanent. `problem.cut_stats` reports active/peak rows, purged/reintroduced
+  cuts, separation rounds, and separate LP/MIP re-solve times. The policy is
+  integrated into both forest and SAP HiGHS loops and composes with LP-first and
+  nested cuts.
+- **Fresh-process Phase-1 benchmark harness**:
+  `benchmarks/benchmark_phase1.py` compares arbitrary source checkouts with
+  fixed seeds, repeats, single-thread controls, dependency/commit metadata,
+  objective-and-gap validation, phase counters, and isolated peak RSS for the
+  PC reductions, primal portfolio, and cut-purge age sweep. It also accepts
+  standard SteinLib and prize-bearing PCSPG `.stp` instances, recording known
+  B-series optima and rejecting certified disagreements.
+- **Experimental primal-heuristic portfolio** (off by default):
+  `primal_local_search=True` applies the vertex-elimination and key-path-exchange
+  neighborhoods of Uchoa & Werneck (2012), while `implied_profit=True` adds the
+  implied-profit shortest-path heuristic of Rehfeldt & Koch (2023, Section
+  5.1.1, equations 28–29). The options are available at construction or per
+  `get_solution()` call for undirected single-group trees. Candidates from dual
+  ascent, Kou, Mehlhorn, and implied profit are feasibility-checked, MST-pruned,
+  and compared; local moves are accepted only on a strict objective decrease.
+  The best upper bound feeds exact-solver cutoff, reduced-cost fixing,
+  `LB == UB` early exit, and MIP warm start without changing the dual lower
+  bound or certified-gap semantics. Separate runtime and move counters are
+  exposed through `problem.heuristic_stats`.
+- **`enumeration_safe=True` preprocessing mode for `get_optimal_solutions()`**
+  (steinerpy#43): `get_optimal_solutions()` previously required
+  `preprocess=False`, since the default reduction pipeline can silently
+  collapse tied-cost alternatives before the ILP ever runs — degree-2
+  contraction against a same-cost parallel edge, node replacement, and the
+  adjacent-terminal/Nearest-Vertex/Short-Links terminal-contraction tests
+  each pick one witness among possibly several tied ones and structurally
+  erase the rest. Constructing with `enumeration_safe=True` now restricts
+  preprocessing to reductions proven to preserve the **complete set** of
+  optima: special distance, long-edge and bound-based deletions, and
+  non-terminal degree-1 removal, are already exact (strict inequalities) and
+  unaffected; degree-2 contraction skips a node instead of contracting it
+  when the contracted path ties an existing parallel edge; node replacement
+  is disabled outright; and of the terminal-contraction tests, only the
+  forced degree-1 case still fires. `get_optimal_solutions()` now accepts
+  `preprocess=True` when `enumeration_safe=True` and back-maps solutions to
+  the original graph accordingly. Requires strictly positive edge weights
+  (`ValueError` otherwise, since the preservation argument assumes positive
+  costs) and is not supported together with `max_degree`/`hop_limit`
+  (`NotImplementedError`), since the structural degree-1/degree-2 fixpoint
+  runs regardless of those modifiers and is not degree- or hop-aware. The
+  dual-ascent bound-based reduction (`da_reduce=True`) now also forwards
+  `enumeration_safe` into its structural cascade, so it composes safely with
+  the new mode.
+- **`DirectedGroupSteinerProblem`**: the directed (rooted-arborescence)
+  variant of `GroupSteinerProblem` — minimum-cost directed tree from a
+  `root` reaching at least one vertex of each group. Uses the same
+  super-terminal transformation as the undirected case, but with directed
+  zero-cost arcs running from each group's real vertices into its
+  super-terminal, then solves it with the directed-cut model shared with
+  `DirectedSteinerProblem`.
+- **Nearest-Vertex (NV), Short-Links (SL) and bound-based (BND) reductions**
+  (Polzin & Vahdati Daneshmand 1998, Obs. 3.2/3.3/3.5/3.6; Steiner **tree**
+  only): NV contracts a terminal's cheapest incident edge when
+  `c(e') + d(v', tj) <= c(e'')` for another terminal `tj` (certified via the
+  two-label Voronoi diagram); SL contracts a Voronoi region's cheapest
+  boundary link when every other link costs at least its full link length —
+  promoting the merged endpoint to a **new terminal** when needed
+  (`ReductionTracker.added_terminals`); BND deletes nodes/edges whose
+  Voronoi-radius lower bound `d1 + d2 + sum of smallest (s-2) radii` exceeds a
+  Mehlhorn-SPH upper bound (`bound_based=` flag, grouped with `heavy`).
+  NV/SL join the `contract_terminals` cascade; contraction sub-rounds run on a
+  fresh Voronoi diagram and the diagram is rebuilt before the deletion tests
+  (whose bounds must remain lower bounds). Validated by randomized sweeps
+  against unreduced solves, including zero-weight-edge (group-Steiner-style)
+  instances.
+- **Terminal contraction (fixed-edge) reductions** (on by default, opt out with
+  `contract_terminals=False`; Steiner **tree** only): two inclusion tests that
+  *fix* an edge into the solution and merge its endpoints — **degree-1
+  terminals** (the sole incident edge is in every feasible solution) and
+  **adjacent terminals** whose connecting edge is cheapest at one endpoint (in
+  at least one optimal solution, by the classic cut-exchange argument). The
+  new fixed-edge channel on `ReductionTracker` (`fixed_cost`, `fixed_edges`,
+  `terminal_merges`) moves the fixed cost out of the reduced model (every
+  reporting site adds it back), re-homes the merged node's edges with full
+  back-mapping support, and remaps the terminal groups to the surviving
+  representatives. Contraction shrinks the terminal set, which strengthens the
+  Special-Distance/replacement tests and can solve instances outright during
+  preprocessing (the solver then returns immediately). Validated against
+  `preprocess=False` solves and a brute-force oracle on hundreds of random
+  instances. The full NSV/SL terminal-to-non-terminal contractions remain
+  future work; the infrastructure now supports them.
+- **Few-terminal exact dynamic program** (Dreyfus & Wagner 1971, in the
+  Erickson–Monma–Veinott formulation): plain undirected single-group Steiner
+  tree instances with at most `STEINERPY_DW_MAX_TERMINALS` terminals (default
+  10, `0` disables) are now solved by an `O(3^k·n + 2^k·(m + n log n))` dynamic
+  program instead of the ILP — the reductions + DP recipe of the PACE 2018
+  winning solvers. Vectorised merge steps (numpy) and virtual-source scipy
+  Dijkstra grow steps; auto-selected after preprocessing, exactness-preserving
+  (validated against a brute-force oracle and the ILP), 4–30x faster than the
+  accelerated ILP on benchmarked instances. Applies transparently to the
+  transformed group-Steiner, terminal-leaf, and rectilinear variants.
+- **LP-first cut loop (HiGHS)**: before the integer cut loop starts, the
+  directed Steiner cuts are separated on the **LP relaxation** — each round is
+  a cheap LP re-solve instead of a full branch-and-bound run, and the
+  accumulated root cuts strengthen every subsequent MIP solve (the classic
+  root-separation scheme of branch-and-cut Steiner codes, Koch & Martin 1998).
+  Applies to the iterative HiGHS path (`run_model`, `solve_sap_highs`); the
+  Gurobi path already separates fractional points in its callback.  Configure
+  with `STEINERPY_LP_CUT_ROUNDS` (default 50, `0` disables).  Speedups of
+  5–10x on seeded tree instances and ~1.6x on a forest instance, with
+  identical optima.  A dual-ascent MIP warm start set before `run_model` is
+  re-applied after the LP phase via the new `reapply_start` callback.
+- **Nested cuts in the directed-cut separation** (Koch & Martin 1998): when a
+  terminal's minimum cut is violated, the cut's arcs are saturated (capacity
+  raised to 1) and the max-flow re-run, emitting up to `STEINERPY_NESTED_CUTS`
+  (default 1, `0` disables) further violated cuts per separation round. Extra
+  max-flows are spent only on violated terminals, and capacities are only ever
+  raised, so every nested cut is guaranteed violated at the current solution.
+  Joins the existing creep-flow and back-cut accelerators; scipy path only.
+
+### Changed
+- Near-integral connectivity candidates use capacity-checked reachability
+  cuts before max-flow. Identical certificates within a separation round are
+  emitted once; fractional and uncertified demands retain min-cut separation.
+  LP separation retains minimum cuts even at integral relaxations.
+  Denser graphs use SciPy bounded Dijkstra for long-edge reduction when the
+  settled-node work cap covers the entire graph; other graphs keep the Python
+  search and its work cap.
+- Heavy reductions use a lazy tree-path maximum index instead of storing all
+  terminal-pair bottleneck distances: construction and storage are now
+  `O(|T| log |T|)`, with logarithmic queries. The final unchanged DA reduction
+  pass can hand its result to the solve once, after validating graph and
+  formulation inputs, avoiding duplicate dual-ascent work.
+- Connectivity cut separation now certifies sufficient-capacity paths before
+  running per-terminal max-flow, skips residual traversal for satisfied cuts,
+  and extracts cut arcs with NumPy arrays. Separation defaults to one worker;
+  `STEINERPY_SEP_THREADS` still overrides it independently of solver threads.
+- **Faster Dreyfus-Wagner grow steps**: the few-terminal dynamic program now
+  builds the fixed graph-plus-virtual-source CSR structure once and updates
+  only the virtual-source weights for each subset, avoiding repeated sparse
+  matrix construction and its temporary coordinate arrays.
+- **Optimal-solution enumeration now has explicit inclusion-minimal
+  semantics** (issue #45): redundant zero-cost branches and cycles are removed
+  without treating them as distinct Steiner trees, consistently for branches
+  attached to roots and internal nodes. Distinct tied-optimal trees whose
+  zero-cost edges are necessary for connectivity remain enumerable.
+- **Flow variables are now continuous**: the flow-based models (prize-collecting
+  penalty ILP, budget-constrained, MWCSPB) declared every per-terminal arc-flow
+  variable as a binary integer — O(|T|·|A|) integer columns. Flow integrality
+  follows from the integral arc/connection variables (each block is a unit s–t
+  flow with integral capacities, and flow never enters the objective), so the
+  variables are now continuous in `[0, 1]`. Same optimum, far smaller MIP.
+- **Model construction is now O(|A|) instead of O(|V|·|A|) per group**: the
+  HiGHS and Gurobi builders scanned the full arc list per node (indegree,
+  flow-conservation, degree, and root-linking constraints, plus the per-call
+  terminal-group lookup in `demand_and_supply_directed`). Incoming/outgoing arc
+  adjacency and the terminal→group map are now precomputed once per build.
+
+### Fixed
+- NetworkX cut separation completes the maximum flow before extracting a
+  source-side cut; an intermediate preflow can leave excess at internal nodes
+  and produce a source partition that is not a minimum cut.
+- **Prize-constrained-distance deletion could change the PCSTP optimum** in two
+  cases: it discounted the destination endpoint's prize even though equation
+  (8) excludes both endpoints, and it batch-deleted tied alternatives under
+  Corollary 7 even though that corollary only guarantees an optimum avoiding
+  each edge individually. The implementation now excludes the destination
+  prize and uses Theorem 6's strict inequality for collect-then-apply batches.
+  A minimal tied-alternative regression and randomized brute-force PCSTP oracle
+  sweeps cover the failure.
+- **Zero-edge Steiner forests with singleton terminal groups**: the HiGHS and
+  Gurobi fast paths determined feasibility from the graph's total node count,
+  incorrectly rejecting an empty forest such as groups `[['A'], ['B']]` on two
+  isolated nodes. They now test each terminal group independently for at most
+  one distinct terminal, while a group such as `[['A', 'B']]` remains
+  infeasible.
+- **`get_optimal_solutions()` correctness fixes** (PR #42 review): the no-good
+  cuts identified edges with `frozenset(e)`, discarding arc orientation, so an
+  antiparallel arc pair `(u, v)`/`(v, u)` in a directed graph collapsed to one
+  key and a cut could fail to exclude the previous solution — directed arcs
+  now keep their ordered `tuple` identity, only undirected edges are
+  `frozenset`-normalised. The directed-cut model's `x` <-> `y1` link
+  (Constraint 3) is now an equality instead of `y1 <= x`, so a zero-cost edge
+  unused by the tree can no longer be toggled on in `x` for free and counted
+  as a spurious extra "distinct" solution. The enumeration loop now inspects
+  the solver status (`run_model`/`run_model_gurobi` return an added `status`
+  of `"optimal"`/`"infeasible"`/`"incomplete"`) instead of only checking
+  whether the objective is finite: a probe that times out before proving
+  optimality or infeasibility (e.g. `time_limit=0`) used to either be
+  silently treated as proof enumeration is exhausted, or, when the model was
+  never actually solved, fall through to a bogus zero-cost empty "solution"
+  repeated across iterations and trip an internal duplicate-solution
+  assertion. Such a probe now stops enumeration with `exhausted=False`
+  instead of raising or misreporting. `limit < 0` now raises `ValueError`
+  instead of silently returning an empty, non-exhausted pool.
+- **`get_optimal_solutions()` correctness fixes, round 2** (PR #42 review):
+  the zero-cost-edge fix to Constraint 3 (`x` <-> `y1` equality) was only
+  applied to the HiGHS builder; `build_model_gurobi()` still used `<=`, so an
+  unused zero-cost edge could still be toggled on in `x` and double-counted
+  as a distinct solution when `solver="gurobi"` — the Gurobi builder now
+  mirrors the equality. Also, `run_model()`/`run_model_gurobi()` are public
+  (re-exported from `steinerpy`), and adding the `status` return value as an
+  unconditional 5th tuple element broke existing 4-value callers; both now
+  take a `return_status: bool = False` parameter and default back to their
+  original 4-value `(gap, runtime, objective, selected_edges)` signature,
+  with `status` only appended when `return_status=True`.
+- **Zero-edge reductions crashed instead of reporting infeasibility, on both
+  the plain and budget-constrained solve paths**: when graph reduction left an
+  empty `self.graph` while a group still held >= 2 distinct terminals, the
+  empty edge set made `sum(x[e] * ... for e in self.edges)` collapse to the
+  plain Python value `0` — `0 <= budget` then evaluates eagerly to a Python
+  `bool`/`int` rather than building a HiGHS expression, and highspy's
+  `setObjective`/`addConstr` unconditionally read `expr.bounds`, raising a
+  bare `AttributeError` deep inside the solver instead of a clean error.
+  `get_solution()` now raises a `RuntimeError` up front on the plain path; the
+  budget-constrained path (`build_budget_model`) instead skips the now-vacuous
+  budget constraint, since an empty edge set is not actually infeasible there
+  (all non-root terminals are simply penalised). The trivial-instance
+  fast-path also now de-duplicates each group (`len(set(g))` instead of
+  `len(g)`) so a group with a repeated terminal (e.g. `['A', 'A']`) is
+  correctly recognised as already-solved instead of falsely tripping the new
+  infeasibility guard.
+- **Directed-cut model inflated the objective when a real 2-cycle existed
+  between two nodes on the optimal path** (HiGHS and Gurobi builders):
+  Constraint 3 (`y1` -> `x`) bundled arc `(u, v)` with its reverse `(v, u)`
+  into a single edge-cost variable `x[(u, v)]` whenever `(v, u)` appeared as
+  an arc — the intended behaviour for the reverse arcs `objects.py` mirrors
+  onto every *undirected* edge, which share one edge-cost variable. On a
+  genuine `nx.DiGraph` with an explicit two-way arc pair, each direction is
+  its own edge with its own `x` variable, so bundling forced the unused
+  direction's `x` to 1 whenever the used direction was selected, inflating
+  the reported objective while `gap` was still (incorrectly) certified as
+  `0.0`. Fixed by only bundling when the reverse arc has no `x` variable of
+  its own (i.e. it is the synthesized undirected companion, not a real
+  independent edge). Affects `DirectedSteinerProblem` and anything built on
+  the same directed-cut kernel (e.g. `HopConstrainedSteinerProblem`).
+- **Mixed node-type crash in the reduction Dijkstras**: the long-edge test and
+  the terminal-Voronoi construction pushed `(distance, node)` pairs onto their
+  heaps, so a distance tie compared node labels — a `TypeError` when labels mix
+  types (e.g. the group-Steiner transform's string super-terminals next to int
+  nodes). Heap entries now carry a sequence tiebreaker.
+- **HiGHS variable typing in the penalty/budget/MWCSPB models**:
+  `addVariable(0, 1, hp.HighsVarType.kInteger)` passed the integrality enum as
+  the *objective coefficient* (the third positional argument is `obj`, not
+  `type`), so the prize-collecting node/penalty variables, the budget
+  penalty/connection variables, and the MWCSPB node variables were silently
+  created as continuous columns. They are implied-integral at any optimum with
+  integral arc variables (which is why results were still correct), but they
+  are now declared integer explicitly via the `type=` keyword.
 - **Degree-k node replacement / pseudo-elimination** (`replace_nodes=`, part of
   `heavy`): the Rehfeldt & Koch (2023, Prop. 4) test eliminates a non-terminal
   that provably has degree ≤ 2 in at least one minimum Steiner tree (checked
@@ -71,28 +328,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directed problems; raises `NotImplementedError` for budget/degree-constrained
   variants. Default stays `exact=True` (solve to optimality).
 
-### Fixed
-- NetworkX cut separation completes the maximum flow before extracting a
-  source-side cut; an intermediate preflow can leave excess at internal nodes
-  and produce a source partition that is not a minimum cut.
-
 ### Changed
-- Near-integral connectivity candidates use capacity-checked reachability
-  cuts before max-flow. Identical certificates within a separation round are
-  emitted once; fractional and uncertified demands retain min-cut separation.
-  Gurobi LP-node callbacks retain minimum cuts even at integral relaxations.
-  Denser graphs use SciPy bounded Dijkstra for long-edge reduction when the
-  settled-node work cap covers the entire graph; other graphs keep the Python
-  search and its work cap.
-- Heavy reductions use a lazy tree-path maximum index instead of storing all
-  terminal-pair bottleneck distances: construction and storage are now
-  `O(|T| log |T|)`, with logarithmic queries. The final unchanged DA reduction
-  pass can hand its result to the solve once, after validating graph and
-  formulation inputs, avoiding duplicate dual-ascent work.
-- Connectivity cut separation now certifies sufficient-capacity paths before
-  running per-terminal max-flow, skips residual traversal for satisfied cuts,
-  and extracts cut arcs with NumPy arrays. Separation defaults to one worker;
-  `STEINERPY_SEP_THREADS` still overrides it independently of solver threads.
 - **Heavy reductions are now ON by default** (`heavy=True`): Special Distance,
   long-edge, and node replacement run automatically for undirected problems
   without `budget`/`max_degree`/`hop_limit` modifiers (prize-collecting and

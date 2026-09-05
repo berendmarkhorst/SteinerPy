@@ -1,5 +1,7 @@
 # Third profiling pass: integer connectivity cuts and long-edge reduction
 
+For measurements after integration with current main, see [PR validation](PR_VALIDATION.md).
+
 This pass compares against `5ca239aa82f402d0b44da0e7a24951d118a4d5a3`, which already includes both earlier optimization rounds. These are additional improvements on `perf/reduce-cut-separation-overhead`.
 
 ## What the new profile found

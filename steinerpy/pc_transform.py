@@ -55,6 +55,19 @@ def _term_label(t) -> Arc:
     return ("__pc_term__", t)
 
 
+def _validate_nonnegative_costs(graph, weight: str, transform: str) -> None:
+    negative = [
+        (u, v, data.get(weight, 1))
+        for u, v, data in graph.edges(data=True)
+        if data.get(weight, 1) < 0
+    ]
+    if negative:
+        raise ValueError(
+            f"{transform} requires non-negative edge/arc costs; found "
+            f"{negative[:5]}{' ...' if len(negative) > 5 else ''}."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Transform context
 # ---------------------------------------------------------------------------
@@ -71,6 +84,11 @@ class PCTransform:
     aux_arc_kind: Dict[Arc, str]       # 'orig' | 'root' | 'gadget' | 'collect'
     offset: float                      # pcstp_obj = sap_obj - offset
     big_m: float
+    # Directed PCSTP context: the original graph is a DiGraph and the back-map
+    # must preserve arc orientation.  ``pcstp_root`` is the mandatory root of
+    # the rooted variant (None for the unrooted variant).
+    directed: bool = False
+    pcstp_root: Optional[Hashable] = None
     # Constant added to recover an MWCSP weight from a PCSTP objective:
     # mwcsp_weight = mwcsp_const - pcstp_obj.  None for a native PCSTP.
     mwcsp_const: Optional[float] = None
@@ -132,6 +150,7 @@ def transform_pcstp_to_sap(
 
     :returns: a :class:`PCTransform`.
     """
+    _validate_nonnegative_costs(graph, weight, "transform_pcstp_to_sap")
     proper: Set = set()
     nonproper: Set = set()
     for v in graph.nodes():
@@ -187,6 +206,121 @@ def transform_pcstp_to_sap(
 
 
 # ---------------------------------------------------------------------------
+# Directed PCSTP -> SAP
+# ---------------------------------------------------------------------------
+
+def transform_directed_pcstp_to_sap(
+    graph: nx.DiGraph,
+    node_prizes: Dict,
+    weight: str = "weight",
+    root: Optional[Hashable] = None,
+    big_m: Optional[float] = None,
+) -> PCTransform:
+    """Directed (prize-collecting Steiner arborescence) PCSTP -> equivalent SAP.
+
+    Directed counterpart of :func:`transform_pcstp_to_sap` (Rehfeldt & Koch
+    2020, Transformation 2, adapted to digraphs): the original arcs are kept
+    with their own orientation and per-arc cost — no bidirecting of undirected
+    edges — and the prize gadgets are attached on top.  For clarity no
+    cost-shifting is performed; every potential terminal (``p(v) > 0``) gets a
+    gadget.
+
+    **Unrooted** (``root is None``): an artificial root ``r'`` is added with an
+    anchor arc ``(r', v) = M`` to *every* original vertex — in a digraph the
+    optimal arborescence may be rooted at a prize-less vertex (e.g. a source
+    whose arcs lead to several prize nodes), so anchoring only at potential
+    terminals would be unsound.  A shared forgo-hub ``v0'`` is reachable from
+    every potential terminal via ``(t, v0') = 0``; each potential terminal
+    ``t`` gets an auxiliary SAP terminal ``t'`` with ``(t, t') = 0`` and
+    ``(v0', t') = p(t)``.  Exactly one anchor arc is used at the optimum
+    (``M`` exceeds the total prize), and ``pcstp_obj = sap_obj - M``, so
+    ``offset = M``.  Trees containing no potential terminal are not
+    representable, but they are dominated by the empty tree, which the caller
+    compares separately (:func:`best_trivial_pcstp`).
+
+    **Rooted** (``root`` given): the SAP is rooted at the *real* ``root``
+    vertex — no anchor arcs and no big-M are needed.  The forgo-hub is entered
+    directly via ``(root, v0') = 0``, so every arborescence containing the
+    root (including the root-only tree) is representable and
+    ``pcstp_obj = sap_obj`` (``offset = 0``).
+
+    :param graph: directed graph (``nx.DiGraph``) with non-negative arc costs.
+    :param node_prizes: dict mapping node -> prize (``>= 0``).
+    :param root: optional mandatory root of the arborescence.
+    :param big_m: anchor-arc cost for the unrooted variant (auto-chosen when
+        omitted); unused for the rooted variant.
+    :returns: a :class:`PCTransform` with ``directed=True``.
+    """
+    if not isinstance(graph, nx.DiGraph):
+        raise ValueError(
+            "transform_directed_pcstp_to_sap requires a directed graph (nx.DiGraph)."
+        )
+    _validate_nonnegative_costs(
+        graph, weight, "transform_directed_pcstp_to_sap"
+    )
+    if root is not None and root not in graph:
+        raise ValueError(f"root {root!r} is not in the graph.")
+
+    potential: Set = {v for v in graph.nodes() if node_prizes.get(v, 0) > 0}
+    sum_p = sum(node_prizes[t] for t in potential)
+    if big_m is None:
+        big_m = sum_p + max((node_prizes[t] for t in potential), default=0.0) + 1.0
+
+    D = nx.DiGraph()
+    D.add_nodes_from(graph.nodes())
+    aux_kind: Dict[Arc, str] = {}
+
+    # Original arcs keep their own orientation and cost (no bidirecting).
+    for u, v, data in graph.edges(data=True):
+        D.add_edge(u, v, **{weight: data.get(weight, 1)})
+        aux_kind[(u, v)] = "orig"
+
+    hub = _hub_label()
+    terminals: List = []
+    if root is None:
+        sap_root = _root_label()
+        D.add_node(sap_root)
+        # Any vertex may root the optimal arborescence: anchor them all.
+        for v in graph.nodes():
+            D.add_edge(sap_root, v, **{weight: big_m})
+            aux_kind[(sap_root, v)] = "root"
+        if potential:
+            D.add_node(hub)
+        for t in potential:
+            tp = _term_label(t)
+            D.add_node(tp)
+            terminals.append(tp)
+            D.add_edge(t, hub, **{weight: 0.0});          aux_kind[(t, hub)] = "gadget"
+            D.add_edge(t, tp, **{weight: 0.0});           aux_kind[(t, tp)] = "gadget"
+            D.add_edge(hub, tp, **{weight: node_prizes[t]}); aux_kind[(hub, tp)] = "collect"
+        offset = big_m
+    else:
+        sap_root = root
+        if potential:
+            D.add_node(hub)
+            # The mandatory root is always in the tree, so the forgo-hub is
+            # entered directly from it (no anchor / big-M machinery needed).
+            D.add_edge(root, hub, **{weight: 0.0})
+            aux_kind[(root, hub)] = "gadget"
+        for t in potential:
+            tp = _term_label(t)
+            D.add_node(tp)
+            terminals.append(tp)
+            D.add_edge(t, tp, **{weight: 0.0});           aux_kind[(t, tp)] = "gadget"
+            D.add_edge(hub, tp, **{weight: node_prizes[t]}); aux_kind[(hub, tp)] = "collect"
+        offset = 0.0
+        big_m = 0.0
+
+    return PCTransform(
+        sap_graph=D, root=sap_root, terminals=terminals, weight=weight,
+        node_prizes=dict(node_prizes), proper_terminals=potential,
+        aux_arc_kind=aux_kind, offset=offset, big_m=big_m,
+        directed=True, pcstp_root=root,
+        _orig_graph=graph,
+    )
+
+
+# ---------------------------------------------------------------------------
 # MWCSP -> PCSTP (then compose with transform_pcstp_to_sap)
 # ---------------------------------------------------------------------------
 
@@ -197,8 +331,9 @@ def transform_mwcsp_to_pcstp(
 ) -> Tuple[nx.Graph, Dict, float]:
     """MWCSP ``(graph, node_weights)`` -> equivalent classic PCSTP.
 
-    Rehfeldt & Koch (2020), Sec. 2.2: let ``w0 = min_v w(v)``.  Define edge costs
-    ``c(e) := -w0`` (``> 0`` when some weight is negative) and prizes
+    Rehfeldt & Koch (2020), Sec. 2.2: let
+    ``w0 = min(0, min_v w(v))``. Define edge costs ``c(e) := -w0``
+    (``> 0`` when some weight is negative) and prizes
     ``p(v) := w(v) - w0 >= 0``.  Maximising ``sum_{v in S} w(v)`` over connected
     ``S`` is then equivalent to minimising the PCSTP objective, and the original
     weight is recovered by ``mwcsp_weight = mwcsp_const - pcstp_obj`` with
@@ -209,12 +344,15 @@ def transform_mwcsp_to_pcstp(
     """
     if not node_weights:
         raise ValueError("node_weights must be non-empty for MWCSP.")
-    w0 = min(node_weights.get(v, 0) for v in graph.nodes())
+    # Clamping at zero matters when all node weights are positive. The algebraic
+    # tree transformation still works with a positive shift, but it would create
+    # negative edge costs and invalidate the SAP shortest-path/cut machinery.
+    w0 = min(0, min(node_weights.get(v, 0) for v in graph.nodes()))
     n = graph.number_of_nodes()
 
     pc_graph = nx.Graph()
     pc_graph.add_nodes_from(graph.nodes())
-    edge_cost = -w0  # >= 0; 0 only in the degenerate all-nonnegative case
+    edge_cost = -w0  # >= 0; zero when all node weights are non-negative
     for u, v in graph.edges():
         pc_graph.add_edge(u, v, **{weight: edge_cost})
 
@@ -248,8 +386,20 @@ def map_sap_solution_to_pcstp(
     a no-op; for a heuristic primal that branched, it extracts the best valid
     sub-tree.
 
+    For a **directed** context (``ctx.directed``) the back-map preserves arc
+    orientation instead of collapsing to undirected edges: the recovered
+    original arcs form one directed arborescence per anchor.  In the rooted
+    variant only the arcs reachable from ``ctx.pcstp_root`` are kept (the root
+    is always part of the solution); in the unrooted variant every weakly
+    connected component — a directed arborescence rooted at its anchor vertex —
+    is evaluated and the cheapest is returned, exactly as in the undirected
+    case.
+
     :returns: ``(original_edges, collected_nodes, pcstp_objective)``.
     """
+    if ctx.directed:
+        return _map_sap_solution_to_directed_pcstp(ctx, sap_arcs)
+
     arc_set = set(sap_arcs)
     kind = ctx.aux_arc_kind
 
@@ -283,6 +433,62 @@ def map_sap_solution_to_pcstp(
             best_edges = [(u, v) for u, v in sub.edges()]
             best_nodes = sorted(comp, key=lambda n: str(n))
 
+    return best_edges, best_nodes, best_obj
+
+
+def _map_sap_solution_to_directed_pcstp(
+    ctx: PCTransform,
+    sap_arcs: List[Arc],
+) -> Tuple[List[Arc], List, float]:
+    """Orientation-preserving back-map for a directed PCSTP context.
+
+    See :func:`map_sap_solution_to_pcstp`; recovered arcs keep the orientation
+    they have in the original ``nx.DiGraph``.
+    """
+    arc_set = set(sap_arcs)
+    kind = ctx.aux_arc_kind
+
+    H = nx.DiGraph()
+    for a in sap_arcs:
+        if kind.get(a) == "orig":
+            w = ctx._orig_graph.get_edge_data(a[0], a[1]).get(ctx.weight, 1)
+            H.add_edge(a[0], a[1], _w=w)
+    # Potential terminals collected through their own (t, t') gadget arc:
+    # include even without an original arc (isolated single-vertex tree).
+    for t in ctx.proper_terminals:
+        if (t, _term_label(t)) in arc_set:
+            H.add_node(t)
+
+    total_prize = sum(p for p in ctx.node_prizes.values() if p > 0)
+
+    if ctx.pcstp_root is not None:
+        # Rooted variant: the solution is the arborescence grown from the
+        # mandatory root; anything not reachable from it is a SAP artifact.
+        r = ctx.pcstp_root
+        H.add_node(r)
+        reach = {r} | nx.descendants(H, r)
+        arcs = [(u, v) for (u, v) in H.edges() if u in reach]
+        edge_cost = sum(H[u][v]["_w"] for (u, v) in arcs)
+        comp_prize = sum(ctx.node_prizes.get(v, 0) for v in reach)
+        obj = edge_cost + (total_prize - comp_prize)
+        return arcs, sorted(reach, key=lambda n: str(n)), obj
+
+    # Unrooted variant: each weakly connected component is one anchored
+    # directed arborescence (SAP in-degrees are <= 1, so anchored subtrees are
+    # vertex-disjoint); evaluate each as a candidate and keep the cheapest,
+    # against the empty-tree baseline.
+    best_edges: List[Arc] = []
+    best_nodes: List = []
+    best_obj = total_prize  # the empty tree (forgo everything)
+    for comp in nx.weakly_connected_components(H):
+        sub = H.subgraph(comp)
+        edge_cost = sum(d.get("_w", 1) for _, _, d in sub.edges(data=True))
+        comp_prize = sum(ctx.node_prizes.get(v, 0) for v in comp)
+        obj = edge_cost + (total_prize - comp_prize)
+        if obj < best_obj - 1e-12:
+            best_obj = obj
+            best_edges = list(sub.edges())
+            best_nodes = sorted(comp, key=lambda n: str(n))
     return best_edges, best_nodes, best_obj
 
 
