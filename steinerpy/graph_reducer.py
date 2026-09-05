@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from collections import deque
 from itertools import count
 from typing import Set, Union, List, Tuple, Dict
+from ._fastgraph import HAS_SCIPY, ArcCSR, dijkstra_from
 
 
 class ReductionTracker:
@@ -743,6 +744,26 @@ def _long_edge_for_vertex(v0):
     return out
 
 
+def _long_edge_deletions_scipy(adj, nodes, eps):
+    """Cost-bounded native Dijkstra with one shared CSR graph per pass."""
+    arcs = [(u, v) for u in nodes for v, _ in adj[u]]
+    costs = [cost for u in nodes for _, cost in adj[u]]
+    csr = ArcCSR(nodes, arcs)
+    matrix = csr.build_csr(costs)
+    found = set()
+    for u in nodes:
+        neighbors = adj[u]
+        if not neighbors:
+            continue
+        distances = dijkstra_from(
+            matrix, csr.node_index[u], limit=max(cost for _, cost in neighbors),
+        )
+        for v, cost in neighbors:
+            if distances[csr.node_index[v]] < cost - eps:
+                found.add((u, v))
+    return found
+
+
 def long_edge_deletions(G: nx.Graph, weight: str = "weight",
                         max_settle: int = 2000, eps: float = 1e-9,
                         jobs: int = None) -> Set[Tuple]:
@@ -773,6 +794,13 @@ def long_edge_deletions(G: nx.Graph, weight: str = "weight",
     adj = {v: tuple((w, float(a.get(weight, 1))) for w, a in G[v].items())
            for v in G.nodes()}
     nodes = list(G.nodes())
+    # Native calls amortize their setup on denser, medium-sized graphs. Keep
+    # the cheaper Python search for small/sparse graphs. SciPy has no settled-
+    # node limit, so use it only when max_settle already covers the whole graph;
+    # otherwise retain the existing work cap and multiprocessing path.
+    if (HAS_SCIPY and 128 <= len(nodes) <= max_settle
+            and G.number_of_edges() >= 2 * len(nodes)):
+        return _long_edge_deletions_scipy(adj, nodes, eps)
     njobs = reduce_jobs() if jobs is None else jobs
     results = pmap(_long_edge_for_vertex, nodes, njobs, (adj, max_settle, eps),
                    min_items=_LONG_EDGE_PARALLEL_MIN_NODES)

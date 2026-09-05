@@ -155,20 +155,30 @@ def get_arc_csr(problem) -> ArcCSR:
 # Minimum cut (scipy max-flow + residual reachability)
 # ---------------------------------------------------------------------------
 
+def capacity_support(int_csr, required: float):
+    """CSR graph retaining only arcs that can carry ``required`` flow."""
+    support = int_csr.copy()
+    support.data = (support.data / FLOW_SCALE >= required).astype(np.int8)
+    support.eliminate_zeros()
+    return support
+
+
+def reachable_mask(graph_csr, source_idx: int):
+    """Boolean mask of nodes reachable in a CSR graph with no stored zeros."""
+    order = _sp_bfo(graph_csr, source_idx, directed=True, return_predecessors=False)
+    reached = np.zeros(graph_csr.shape[0], dtype=bool)
+    reached[order] = True
+    return reached
+
+
 def capacity_reachable(int_csr, source_idx: int, required: float):
     """Nodes reached by a path whose every arc can carry ``required`` flow.
 
     Such a path certifies that every source/sink cut has at least that
-    capacity. This is only a sufficient test: other sinks still need max-flow.
+    capacity. This is only a sufficient test: other sinks still need separation.
     Use the same scaled capacities as the separator, including its tolerance.
     """
-    support = int_csr.copy()
-    support.data = (support.data / FLOW_SCALE >= required).astype(np.int8)
-    support.eliminate_zeros()
-    order = _sp_bfo(support, source_idx, directed=True, return_predecessors=False)
-    reached = np.zeros(int_csr.shape[0], dtype=bool)
-    reached[order] = True
-    return reached
+    return reachable_mask(capacity_support(int_csr, required), source_idx)
 
 
 def min_cut_scipy(int_csr, source_idx: int, sink_idx: int,
@@ -215,7 +225,8 @@ def min_cut_scipy(int_csr, source_idx: int, sink_idx: int,
 # Shortest paths (scipy dijkstra)
 # ---------------------------------------------------------------------------
 
-def dijkstra_from(csr, source_indices, return_predecessors: bool = False):
+def dijkstra_from(csr, source_indices, return_predecessors: bool = False,
+                  limit: float = float("inf")):
     """``scipy`` single/multi-source Dijkstra wrapper (non-negative weights)."""
     return _sp_dijkstra(csr, directed=True, indices=source_indices,
-                        return_predecessors=return_predecessors)
+                        return_predecessors=return_predecessors, limit=limit)

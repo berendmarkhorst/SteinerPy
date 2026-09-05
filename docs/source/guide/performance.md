@@ -29,6 +29,14 @@ capacity to satisfy the connectivity demand. Such terminals need no maximum
 flow. Remaining flows skip residual graph traversal when their value already
 satisfies the cut, and cut edges are extracted with NumPy array operations.
 
+For near-integral candidates, forward/reverse reachability and disconnected
+components can also expose connectivity violations directly. Each cut's capacity
+is checked before it is emitted, and duplicate certificates within a round are removed. Fractional
+and uncertified demands still use maximum flow. The certificates are valid
+connectivity cuts, although they need not be minimum cuts and can change the
+solver's search path. Gurobi uses these certificates for incumbent checks;
+LP-node separation retains minimum cuts even at integral node relaxations.
+
 Separation uses one thread by default: on the measured 500–1,000-node SteinLib
 instances, dispatching many small tasks to a thread pool costs more than it
 saves. To benchmark parallel separation on larger instances, set
@@ -79,6 +87,11 @@ Terminal bottleneck distances are queried from a tree-path maximum index,
 using `O(|T| log |T|)` storage and construction time rather than a quadratic
 table. Each lookup takes `O(log |T|)` time; previously computed pairs are not
 cached, so memory does not grow quadratically as more pairs are queried.
+
+Long-edge reduction uses SciPy's compiled bounded Dijkstra on denser graphs
+with at least 128 nodes and average degree at least four, provided the node
+search cap covers the whole graph. Small/sparse graphs and searches where the
+cap could bind retain the Python implementation and its existing work limit.
 
 `heavy` requires `preprocess=True` (the default), applies to undirected problems only, is skipped under a `budget`/`max_degree`/`hop_limit` modifier (those variants do not minimise plain edge cost), and preserves the optimum **value** — solutions still map back to the original graph, though among several equal-cost optima a different one may be returned than with `heavy=False`.
 It composes with `da_reduce=True` and `dual_ascent=True`; a good "throw everything at it" configuration is:

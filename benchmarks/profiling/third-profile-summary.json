@@ -1,0 +1,314 @@
+[
+  {
+    "revision": "before",
+    "case": "c05-accelerated",
+    "profile_total_s": 1.095133706,
+    "functions": {
+      "find_violated_cuts_from_values": {
+        "calls": 7,
+        "cumulative_s": 0.627752916
+      },
+      "min_cut_scipy": {
+        "calls": 1258,
+        "cumulative_s": 0.594489265
+      },
+      "_integral_cut_certificates": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "long_edge_deletions": {
+        "calls": 3,
+        "cumulative_s": 0.014181959000000001
+      },
+      "_long_edge_deletions_scipy": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_long_edge_for_vertex": {
+        "calls": 970,
+        "cumulative_s": 0.010278309000000001
+      },
+      "dual_ascent": {
+        "calls": 2,
+        "cumulative_s": 0.34612383300000005
+      },
+      "_cut_callback": {
+        "calls": 441,
+        "cumulative_s": 0.6390482120000001
+      }
+    }
+  },
+  {
+    "revision": "before",
+    "case": "c05-default",
+    "profile_total_s": 1.1206792479999999,
+    "functions": {
+      "find_violated_cuts_from_values": {
+        "calls": 11,
+        "cumulative_s": 0.985001459
+      },
+      "min_cut_scipy": {
+        "calls": 2047,
+        "cumulative_s": 0.928675506
+      },
+      "_integral_cut_certificates": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "long_edge_deletions": {
+        "calls": 3,
+        "cumulative_s": 0.024816958
+      },
+      "_long_edge_deletions_scipy": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_long_edge_for_vertex": {
+        "calls": 970,
+        "cumulative_s": 0.008580266000000001
+      },
+      "dual_ascent": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_cut_callback": {
+        "calls": 222,
+        "cumulative_s": 1.003087313
+      }
+    }
+  },
+  {
+    "revision": "before",
+    "case": "d15-accelerated",
+    "profile_total_s": 6.293847459000001,
+    "functions": {
+      "find_violated_cuts_from_values": {
+        "calls": 14,
+        "cumulative_s": 3.5288387090000004
+      },
+      "min_cut_scipy": {
+        "calls": 4212,
+        "cumulative_s": 3.2826126220000003
+      },
+      "_integral_cut_certificates": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "long_edge_deletions": {
+        "calls": 4,
+        "cumulative_s": 1.011004792
+      },
+      "_long_edge_deletions_scipy": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_long_edge_for_vertex": {
+        "calls": 3495,
+        "cumulative_s": 0.9783848850000001
+      },
+      "dual_ascent": {
+        "calls": 2,
+        "cumulative_s": 1.0872030000000001
+      },
+      "_cut_callback": {
+        "calls": 529,
+        "cumulative_s": 3.596070623
+      }
+    }
+  },
+  {
+    "revision": "before",
+    "case": "d15-default",
+    "profile_total_s": 5.426800751999998,
+    "functions": {
+      "find_violated_cuts_from_values": {
+        "calls": 18,
+        "cumulative_s": 3.8406142090000004
+      },
+      "min_cut_scipy": {
+        "calls": 4977,
+        "cumulative_s": 3.581308717
+      },
+      "_integral_cut_certificates": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "long_edge_deletions": {
+        "calls": 4,
+        "cumulative_s": 0.9860383340000001
+      },
+      "_long_edge_deletions_scipy": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_long_edge_for_vertex": {
+        "calls": 3495,
+        "cumulative_s": 0.955498394
+      },
+      "dual_ascent": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_cut_callback": {
+        "calls": 296,
+        "cumulative_s": 3.9046871760000004
+      }
+    }
+  },
+  {
+    "revision": "after",
+    "case": "c05-accelerated",
+    "profile_total_s": 0.5969080429999993,
+    "functions": {
+      "find_violated_cuts_from_values": {
+        "calls": 6,
+        "cumulative_s": 0.16401916600000002
+      },
+      "min_cut_scipy": {
+        "calls": 235,
+        "cumulative_s": 0.11606880500000001
+      },
+      "_integral_cut_certificates": {
+        "calls": 4,
+        "cumulative_s": 0.039272334
+      },
+      "long_edge_deletions": {
+        "calls": 3,
+        "cumulative_s": 0.012848458
+      },
+      "_long_edge_deletions_scipy": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_long_edge_for_vertex": {
+        "calls": 970,
+        "cumulative_s": 0.008801321
+      },
+      "dual_ascent": {
+        "calls": 2,
+        "cumulative_s": 0.32602475000000003
+      },
+      "_cut_callback": {
+        "calls": 446,
+        "cumulative_s": 0.17234738900000002
+      }
+    }
+  },
+  {
+    "revision": "after",
+    "case": "c05-default",
+    "profile_total_s": 0.1921154579999999,
+    "functions": {
+      "find_violated_cuts_from_values": {
+        "calls": 8,
+        "cumulative_s": 0.08773233300000001
+      },
+      "min_cut_scipy": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_integral_cut_certificates": {
+        "calls": 7,
+        "cumulative_s": 0.083958501
+      },
+      "long_edge_deletions": {
+        "calls": 3,
+        "cumulative_s": 0.02340375
+      },
+      "_long_edge_deletions_scipy": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_long_edge_for_vertex": {
+        "calls": 970,
+        "cumulative_s": 0.00885381
+      },
+      "dual_ascent": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_cut_callback": {
+        "calls": 207,
+        "cumulative_s": 0.09587171500000001
+      }
+    }
+  },
+  {
+    "revision": "after",
+    "case": "d15-accelerated",
+    "profile_total_s": 3.4112233329999992,
+    "functions": {
+      "find_violated_cuts_from_values": {
+        "calls": 14,
+        "cumulative_s": 1.5047718760000002
+      },
+      "min_cut_scipy": {
+        "calls": 1479,
+        "cumulative_s": 1.213782253
+      },
+      "_integral_cut_certificates": {
+        "calls": 9,
+        "cumulative_s": 0.183562042
+      },
+      "long_edge_deletions": {
+        "calls": 4,
+        "cumulative_s": 0.127877126
+      },
+      "_long_edge_deletions_scipy": {
+        "calls": 1,
+        "cumulative_s": 0.069032708
+      },
+      "_long_edge_for_vertex": {
+        "calls": 2495,
+        "cumulative_s": 0.040183859
+      },
+      "dual_ascent": {
+        "calls": 2,
+        "cumulative_s": 1.094866708
+      },
+      "_cut_callback": {
+        "calls": 547,
+        "cumulative_s": 1.565443394
+      }
+    }
+  },
+  {
+    "revision": "after",
+    "case": "d15-default",
+    "profile_total_s": 1.0108694170000003,
+    "functions": {
+      "find_violated_cuts_from_values": {
+        "calls": 13,
+        "cumulative_s": 0.346802167
+      },
+      "min_cut_scipy": {
+        "calls": 37,
+        "cumulative_s": 0.031935165
+      },
+      "_integral_cut_certificates": {
+        "calls": 11,
+        "cumulative_s": 0.299372542
+      },
+      "long_edge_deletions": {
+        "calls": 4,
+        "cumulative_s": 0.137829375
+      },
+      "_long_edge_deletions_scipy": {
+        "calls": 1,
+        "cumulative_s": 0.068232416
+      },
+      "_long_edge_for_vertex": {
+        "calls": 2495,
+        "cumulative_s": 0.052113452000000005
+      },
+      "dual_ascent": {
+        "calls": 0,
+        "cumulative_s": 0
+      },
+      "_cut_callback": {
+        "calls": 269,
+        "cumulative_s": 0.391667804
+      }
+    }
+  }
+]

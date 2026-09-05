@@ -142,3 +142,60 @@ def test_separation_threads_remain_configurable(monkeypatch):
     assert mm._sep_thread_count() == 1
     monkeypatch.setenv('STEINERPY_SEP_THREADS', '4')
     assert mm._sep_thread_count() == 4
+
+
+@pytest.mark.parametrize('back_cuts', [False, True])
+@pytest.mark.parametrize('noise', [-1e-9, 0.0, 1e-9])
+def test_disconnected_integral_candidates_need_no_max_flow(monkeypatch, back_cuts, noise):
+    graph = nx.DiGraph([('r', 'a'), ('a', 't'), ('a', 'u'), ('t', 'u')])
+    problem = _problem(graph, [['r', 't', 'u']])
+    values = {(0, a): 1.0 - noise if a == ('r', 'a') else noise for a in problem.arcs}
+    def unexpected(*args, **kwargs):
+        pytest.fail('Integral disconnection should have a reachability certificate')
+    monkeypatch.setattr(mm, 'min_cut_scipy', unexpected)
+    cuts = mm.find_violated_cuts_from_values(problem, values, {(0, 0): 1.0},
+                                            back_cuts=back_cuts)
+    assert cuts
+    assert len(cuts) == len({(k, l, frozenset(arcs)) for k, l, arcs in cuts})
+    for _, _, arcs in cuts:
+        assert sum(values[0, a] for a in arcs) < 1.0 - EPS
+        remainder = graph.copy()
+        remainder.remove_edges_from(arcs)
+        assert any(not nx.has_path(remainder, 'r', t) for t in ['t', 'u'])
+
+
+def test_integral_certificate_checks_capacity_and_falls_back(monkeypatch):
+    # Large creep capacities can collectively satisfy a demand even with all
+    # root arcs at zero. The quick partition is not a violated cut here.
+    graph = nx.DiGraph()
+    graph.add_edges_from(('r', i) for i in range(5))
+    graph.add_edges_from((i, 't') for i in range(5))
+    problem = _problem(graph, [['r', 't']])
+    values = {(0, a): 0.0 if a[0] == 'r' else 1.0 for a in problem.arcs}
+    calls = []
+    original = mm.min_cut_scipy
+    def record(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(mm, 'min_cut_scipy', record)
+    assert mm.find_violated_cuts_from_values(problem, values, {(0, 0): 1.0}, eps=.2) == []
+    assert calls
+
+
+def test_integral_cut_for_graph_without_arcs():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['r', 't'])
+    problem = _problem(graph, [['r', 't']])
+    assert mm.find_violated_cuts_from_values(problem, {}, {(0, 0): 1.0}) == [(0, 0, [])]
+
+
+def test_minimum_cuts_can_be_requested_for_integral_values(monkeypatch):
+    graph = nx.DiGraph([('r', 'a'), ('a', 't')])
+    problem = _problem(graph, [['r', 't']])
+    values = {(0, ('r', 'a')): 1.0, (0, ('a', 't')): 0.0}
+    def unexpected(*args, **kwargs):
+        pytest.fail('LP separation must retain minimum cuts when requested')
+    monkeypatch.setattr(mm, '_integral_cut_certificates', unexpected)
+    cuts = mm.find_violated_cuts_from_values(problem, values, {(0, 0): 1.0},
+                                            integral_cuts=False)
+    assert cuts == [(0, 0, [('a', 't')])]

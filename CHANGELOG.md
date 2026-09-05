@@ -77,6 +77,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and produce a source partition that is not a minimum cut.
 
 ### Changed
+- Near-integral connectivity candidates use capacity-checked reachability
+  cuts before max-flow. Identical certificates within a separation round are
+  emitted once; fractional and uncertified demands retain min-cut separation.
+  Gurobi LP-node callbacks retain minimum cuts even at integral relaxations.
+  Denser graphs use SciPy bounded Dijkstra for long-edge reduction when the
+  settled-node work cap covers the entire graph; other graphs keep the Python
+  search and its work cap.
 - Heavy reductions use a lazy tree-path maximum index instead of storing all
   terminal-pair bottleneck distances: construction and storage are now
   `O(|T| log |T|)`, with logarithmic queries. The final unchanged DA reduction

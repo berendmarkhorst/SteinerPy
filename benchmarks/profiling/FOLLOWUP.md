@@ -66,3 +66,5 @@ python benchmarks/profiling/benchmark_bottlenecks.py --sizes 512 2048 --repeats 
 ```
 
 Repeat the full-solve command with new tags three times per revision and alternate the order. Raw observations are in [followup-comparison.csv](followup-comparison.csv), [bottleneck-before.jsonl](bottleneck-before.jsonl), and [bottleneck-after.jsonl](bottleneck-after.jsonl). Constructor, dual-ascent and separation timers can overlap and should not be summed.
+
+Further profiling and measurements, including branching instances, are in [the third profiling pass](INTEGER_CUTS.md).
