@@ -124,6 +124,22 @@ Three classic accelerators are applied automatically (no flags needed):
 
 All of these change only how fast the cut loop converges, never the optimum.
 
+An **experimental HiGHS cut purger** is also available. Set
+`STEINERPY_CUT_PURGE_AGE` to a positive number (for example `3`, `5`, or `10`)
+to remove generated cuts that have positive slack for that many consecutive
+re-solves. A deleted valid inequality remains discoverable by normal separation
+if it becomes violated again. The default is `0` (disabled): aggressive values
+can churn rows and be much slower on some instances. Structural constraints and
+dual-ascent seed cuts are never purged. The policy follows the cut-purging
+experiment of [Schmidt, Zey & Margot (2021)](https://doi.org/10.1007/s10107-019-01460-6),
+Section 5.1.1, and works with LP-first and nested-cut separation.
+
+After a HiGHS solve, `problem.cut_stats` reports generated/active/purged and
+reintroduced cuts, active and peak model rows, separation rounds, and separate
+LP/MIP re-solve times. Use `benchmarks/benchmark_phase1.py --feature cut` for
+the fixed-seed age sweep. Cut purging remains off by default until representative
+instance suites show a robust benefit.
+
 ## Heuristic-only mode
 
 An exact solver can't match a polynomial-time heuristic such as `networkx.steiner_tree` in general.
@@ -141,6 +157,37 @@ Unlike a pure heuristic, the returned `Solution.gap` is a **valid optimality cer
 It is supported for plain Steiner **tree**/**forest** and **directed** problems, and raises `NotImplementedError` for the budget/degree-constrained variants.
 The default is `exact=True` (solve to optimality).
 
+### Experimental primal portfolio
+
+Two stronger, independently switchable candidates are available for plain
+undirected, single-group trees:
+
+```python
+problem = SteinerProblem(
+    graph,
+    [terminals],
+    primal_local_search=True,  # vertex elimination + key-path exchange
+    implied_profit=True,       # implied-profit shortest-path candidates
+)
+solution = problem.get_solution(dual_ascent=True)
+print(problem.heuristic_stats)
+```
+
+`primal_local_search` implements the vertex-elimination and key-path-exchange
+neighborhoods of Uchoa & Werneck (2012). `implied_profit` implements the
+shortest-path bias in Rehfeldt & Koch (2023), Section 5.1.1, equations (28–29).
+Both flags are **off by default** pending broader benchmarks. Enabling either
+also enables the dual-ascent pipeline so the best candidate can strengthen the
+objective cutoff, reduced-cost fixing, the `LB == UB` early exit, and the MIP
+warm start. Every candidate is checked for terminal connectivity, and a local
+move is accepted only when it strictly lowers the objective. The dual lower
+bound remains unchanged, so exactness and the meaning of `Solution.gap` do not
+change.
+
+The same flags may be passed to `get_solution(...)` to override the constructor
+setting for one call. `problem.heuristic_stats` reports the separate portfolio
+runtime, before/after objectives, candidate count, and accepted local moves.
+
 ## Prize-collecting / MWCSP acceleration
 
 {class}`~steinerpy.PrizeCollectingProblem` and {class}`~steinerpy.MaxWeightConnectedSubgraph` default to a penalty/Big-M flow ILP.
@@ -153,12 +200,39 @@ sol = PrizeCollectingProblem(graph, [[root]], node_prizes, penalty_cost=0).get_s
 # Heuristic-only: dual-ascent primal, no ILP, with a PROVEN optimality gap:
 sol = PrizeCollectingProblem(graph, [[root]], node_prizes, penalty_cost=0).get_solution(exact=False)
 
-# Prize-safe edge reduction (prize-constrained distance) before solving:
+# Historical prize-constrained-distance (PCD) edge reduction:
 sol = PrizeCollectingProblem(graph, [[root]], node_prizes, penalty_cost=0, pc_reduce=True).get_solution(pc_transform=True)
+
+# Experimental terminal-regions lower bounds + edge deletion:
+sol = PrizeCollectingProblem(
+    graph, [[root]], node_prizes, penalty_cost=0,
+    pc_reduce="pcd+trd",
+).get_solution(pc_transform=True)
+
+# Also delete certified zero-prize nodes:
+sol = PrizeCollectingProblem(
+    graph, [[root]], node_prizes, penalty_cost=0,
+    pc_reduce="pcd+trd+nodes",
+).get_solution(pc_transform=True)
 
 # MWCSP uses the exact MWCSP -> PCSTP -> SAP mapping:
 sol = MaxWeightConnectedSubgraph(graph, node_weights).get_solution(pc_transform=True)
 ```
 
-All three flags are off by default (the penalty ILP is unchanged) and gated to the classic forgo-prize objective: a `penalty_budget`, multiple terminal groups, or a non-zero `penalty_cost` raises `NotImplementedError` (use the default penalty ILP for those).
-`pc_reduce` deletes only edges provably in no optimal solution and removes no nodes, so every prize is preserved.
+All three feature families are off by default (the penalty ILP is unchanged) and gated to the classic forgo-prize objective: a `penalty_budget`, multiple terminal groups, or a non-zero `penalty_cost` raises `NotImplementedError` (use the default penalty ILP for those).
+
+`pc_reduce=True` and `pc_reduce="pcd"` retain the historical PCD stack.
+`"pcd+trd"` adds the terminal-regions decomposition and Proposition 12
+mandatory-vertex lower bound of Rehfeldt & Koch (2020); an edge bound is obtained
+by subdividing the edge with a zero-prize mandatory vertex, an objective-
+preserving equivalent graph. `"pcd+trd+nodes"` additionally deletes lower-bound-
+certified **zero-prize** nodes. Prize-carrying nodes are reported as protected
+and retained because the legacy graph representation has no deletion offset for
+their forgone prize. User-supplied terminals are protected as well. Every bound
+deletion uses a strict `LB > UB` comparison.
+
+`problem.pc_reduction_stats` reports preprocessing time, passes, edge/node
+counts by test, protected prize nodes, and the feasible upper bound. Run
+`benchmarks/benchmark_phase1.py --feature pc` to compare all four stacks.
+The terminal-regions stacks remain experimental and off by default pending
+representative PCSPG/MWCS benchmark results.

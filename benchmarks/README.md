@@ -60,6 +60,51 @@ python benchmarks/benchmark_dreyfus_memory.py \
   --output candidate.csv
 ```
 
+### Phase-1 research benchmarks
+
+`benchmark_phase1.py` measures the experimental PCSTP reductions, primal
+portfolio, and HiGHS cut purger. Every configuration and repetition runs in a
+fresh process, with fixed seeds and thread counts; the CSV includes dependency
+versions, commit, phase timings, cut/reduction counters, objective and gap, and
+isolated peak RSS. Compare the candidate with a detached checkout of current
+main, for example:
+
+```bash
+python benchmarks/benchmark_phase1.py --feature pc \
+  --source-root /tmp/steinerpy-main --label main --configs none,pcd \
+  --threads 1 --repeats 3 --output /tmp/phase1-pc.csv
+python benchmarks/benchmark_phase1.py --feature pc \
+  --source-root . --label candidate \
+  --configs none,pcd,pcd+trd,pcd+trd+nodes \
+  --threads 1 --repeats 3 --output /tmp/phase1-pc.csv --append
+```
+
+Use `--feature primal` or `--feature cut` for the other sweeps. The built-in
+suite is deterministic and intended as a smoke/microbenchmark; robust default
+decisions still require representative SteinLib/PCSPG suites. A configuration
+is marked `MISMATCH` unless every compared run has the same proven objective.
+
+For the primal and PC reduction sweeps, `--instances` accepts either a
+directory or a quoted glob. Standard SteinLib instances are used with
+`--feature primal`; PCSPG instances (with `TP` prize records) are used with
+`--feature pc`. For example:
+
+```bash
+python benchmarks/benchmark_phase1.py --feature primal \
+  --source-root . --label candidate --instances benchmarks/data/B \
+  --configs baseline,local,implied,portfolio --repeats 1 \
+  --output /tmp/phase1-B.csv
+python benchmarks/benchmark_phase1.py --feature pc \
+  --source-root . --label candidate \
+  --instances 'benchmarks/data/PCSPG-JMP/K100.*.stp' \
+  --configs none,pcd,pcd+trd,pcd+trd+nodes --repeats 1 \
+  --output /tmp/phase1-PCSPG.csv
+```
+
+Known B-series optima are recorded in every row and a zero-gap disagreement is
+reported as `WRONG_OPT`. All instance/configuration objective or certificate
+disagreements are still rejected as `MISMATCH`.
+
 ## Output columns
 
 `instance, nodes, edges, terminals, opt, base_obj, base_rt, base_gap,
