@@ -12,10 +12,10 @@ implements the data-structure / separation ideas from Rehfeldt's thesis Ch. 6:
 * **single-source shortest paths** via ``scipy.sparse.csgraph.dijkstra``,
   replacing ``networkx.single_source_dijkstra`` in the reductions / dual ascent.
 
-The scipy routines release the GIL, which is what makes thread-based intra-solve
-parallelism (separation, reductions) actually scale.  When scipy is unavailable
-every routine degrades to a networkx / pure-Python fallback so the package still
-imports and runs (just slower).
+Compiled kernels are surrounded by Python allocation and graph processing;
+threading is not necessarily faster for small per-terminal tasks. When scipy
+is unavailable every routine degrades to a networkx / pure-Python fallback so
+the package still imports and runs (just slower).
 """
 
 from __future__ import annotations
@@ -55,8 +55,8 @@ class ArcCSR:
     """Cached index/array substrate over a fixed node + arc set.
 
     Built once per (reduced) graph and reused for every max-flow / Dijkstra call.
-    Holds the node<->index maps, the per-arc tail/head index arrays, and grouped
-    out-arc indices for output-sensitive cut extraction.
+    Holds the node<->index maps, per-arc tail/head index arrays for vectorized
+    cut extraction, and grouped out-arc indices for the Python fallback.
     """
 
     __slots__ = (
@@ -115,7 +115,12 @@ class ArcCSR:
     # -- cut extraction ------------------------------------------------------
 
     def cut_arcs(self, source_side: Set[int]) -> List[Arc]:
-        """Arcs leaving ``source_side`` (delta+(S)); output-sensitive."""
+        """Arcs leaving ``source_side`` (delta+(S))."""
+        if HAS_SCIPY:
+            inside = np.zeros(self.n, dtype=bool)
+            inside[list(source_side)] = True
+            crossing = inside[self.tails] & ~inside[self.heads]
+            return [self.arcs[i] for i in np.flatnonzero(crossing)]
         heads = self.heads
         arcs = self.arcs
         out = self.out_by_tail
@@ -150,7 +155,24 @@ def get_arc_csr(problem) -> ArcCSR:
 # Minimum cut (scipy max-flow + residual reachability)
 # ---------------------------------------------------------------------------
 
-def min_cut_scipy(int_csr, source_idx: int, sink_idx: int
+def capacity_reachable(int_csr, source_idx: int, required: float):
+    """Nodes reached by a path whose every arc can carry ``required`` flow.
+
+    Such a path certifies that every source/sink cut has at least that
+    capacity. This is only a sufficient test: other sinks still need max-flow.
+    Use the same scaled capacities as the separator, including its tolerance.
+    """
+    support = int_csr.copy()
+    support.data = (support.data / FLOW_SCALE >= required).astype(np.int8)
+    support.eliminate_zeros()
+    order = _sp_bfo(support, source_idx, directed=True, return_predecessors=False)
+    reached = np.zeros(int_csr.shape[0], dtype=bool)
+    reached[order] = True
+    return reached
+
+
+def min_cut_scipy(int_csr, source_idx: int, sink_idx: int,
+                  required: Optional[float] = None, back_cuts: bool = True
                   ) -> Tuple[float, Set[int], Set[int]]:
     """Minimum (source, sink) cut on an integer-capacity CSR matrix.
 
@@ -159,9 +181,14 @@ def min_cut_scipy(int_csr, source_idx: int, sink_idx: int
         graph (the root-side min cut) and ``back_side`` is ``V \\ R`` with R the
         set of nodes that can reach ``sink`` (the terminal-side / back cut).
         ``cut_value`` is the float min-cut value (de-scaled).
+        If ``required`` is supplied and the flow already meets it, both sets
+        are empty: no violated cut needs extracting. With ``back_cuts=False``
+        only the source-side set is computed.
     """
     res = _sp_maximum_flow(int_csr, source_idx, sink_idx)
     flow_value = res.flow_value / FLOW_SCALE
+    if required is not None and flow_value >= required:
+        return flow_value, set(), set()
 
     # Residual capacities (cap - flow) over the union sparsity pattern; this
     # naturally includes reverse residual arcs (flow cancellation).
@@ -169,13 +196,15 @@ def min_cut_scipy(int_csr, source_idx: int, sink_idx: int
     residual.data[residual.data <= 0] = 0
     residual.eliminate_zeros()
 
-    order, _ = _sp_bfo(residual, source_idx, directed=True, return_predecessors=True)
+    order = _sp_bfo(residual, source_idx, directed=True, return_predecessors=False)
     source_side: Set[int] = set(int(i) for i in order)
+    if not back_cuts:
+        return flow_value, source_side, set()
 
     # Back cut: nodes that can reach the sink = forward-reachable from sink in
     # the transposed residual graph.
     residual_t = residual.T.tocsr()
-    order_b, _ = _sp_bfo(residual_t, sink_idx, directed=True, return_predecessors=True)
+    order_b = _sp_bfo(residual_t, sink_idx, directed=True, return_predecessors=False)
     reach_sink: Set[int] = set(int(i) for i in order_b)
     back_side: Set[int] = set(range(int_csr.shape[0])) - reach_sink
 

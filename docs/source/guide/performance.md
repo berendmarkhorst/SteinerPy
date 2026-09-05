@@ -21,6 +21,20 @@ Supported for Steiner **tree**, **forest** (multi-root), and **directed** ({clas
 
 When enabled it additionally **warm-starts** the cut loop with the Steiner cuts found during dual ascent and runs a **multi-start primal** from several roots, so many instances are solved entirely by dual ascent with no ILP.
 
+## Connectivity cut separation
+
+Both HiGHS and Gurobi use the accelerated SciPy separator. Before computing
+per-terminal maximum flows, it checks for paths whose arcs each carry enough
+capacity to satisfy the connectivity demand. Such terminals need no maximum
+flow. Remaining flows skip residual graph traversal when their value already
+satisfies the cut, and cut edges are extracted with NumPy array operations.
+
+Separation uses one thread by default: on the measured 500–1,000-node SteinLib
+instances, dispatching many small tasks to a thread pool costs more than it
+saves. To benchmark parallel separation on larger instances, set
+`STEINERPY_SEP_THREADS=4` (or another positive count). This setting is independent
+of the `threads` argument to `get_solution()`, which controls the MIP solver.
+
 ## Bound-based graph reduction
 
 ```python

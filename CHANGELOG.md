@@ -71,7 +71,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directed problems; raises `NotImplementedError` for budget/degree-constrained
   variants. Default stays `exact=True` (solve to optimality).
 
+### Fixed
+- NetworkX cut separation completes the maximum flow before extracting a
+  source-side cut; an intermediate preflow can leave excess at internal nodes
+  and produce a source partition that is not a minimum cut.
+
 ### Changed
+- Connectivity cut separation now certifies sufficient-capacity paths before
+  running per-terminal max-flow, skips residual traversal for satisfied cuts,
+  and extracts cut arcs with NumPy arrays. Separation defaults to one worker;
+  `STEINERPY_SEP_THREADS` still overrides it independently of solver threads.
 - **Heavy reductions are now ON by default** (`heavy=True`): Special Distance,
   long-edge, and node replacement run automatically for undirected problems
   without `budget`/`max_degree`/`hop_limit` modifiers (prize-collecting and

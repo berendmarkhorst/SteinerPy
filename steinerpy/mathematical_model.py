@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Set, Tuple, Dict, Union
 
-from ._fastgraph import HAS_SCIPY, get_arc_csr, min_cut_scipy, cpu_count
+from ._fastgraph import HAS_SCIPY, get_arc_csr, min_cut_scipy, capacity_reachable
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +34,8 @@ def _resolve_threads(threads) -> int:
 
 
 # Separation parallelism: number of worker threads for the per-terminal min-cut
-# computations.  scipy's maximum_flow releases the GIL, so threads overlap.
+# computations. Sparse allocation and Python processing can outweigh native
+# parallelism; use serial separation unless explicitly requested.
 def _sep_thread_count() -> int:
     env = os.environ.get("STEINERPY_SEP_THREADS")
     if env is not None:
@@ -42,7 +43,7 @@ def _sep_thread_count() -> int:
             return max(1, int(env))
         except ValueError:
             pass
-    return max(1, min(8, cpu_count()))
+    return 1
 
 
 # Below this many independent min-cut tasks per group it is not worth paying the
@@ -434,19 +435,28 @@ def _group_cuts_scipy(steiner_problem, csr, group_id_k, tasks, y2_vals,
         dtype=np.float64, count=len(csr.arcs),
     )
     int_csr = csr.build_int_csr(cap)
+    # One traversal can certify many terminals, at integer AND fractional
+    # nodes. The largest demand makes this safe for every task in the group:
+    # each cut separating a reached terminal crosses a sufficiently large arc.
+    reached = capacity_reachable(int_csr, src_idx, max(z for _, _, z in tasks) - eps)
 
     def _solve(idx_task):
         i, (group_id_l, t, z_val) = idx_task
         sink_idx = ni.get(t)
-        if sink_idx is None or sink_idx == src_idx:
+        if sink_idx is None or sink_idx == src_idx or reached[sink_idx]:
             return i, None
-        flow_value, src_side, back_side = min_cut_scipy(int_csr, src_idx, sink_idx)
+        flow_value, src_side, back_side = min_cut_scipy(
+            int_csr, src_idx, sink_idx, required=z_val - eps, back_cuts=back_cuts,
+        )
+        if flow_value >= z_val - eps:
+            return i, None
         sides = [src_side]
         if back_cuts and back_side != src_side:
             sides.append(back_side)
         return i, (group_id_l, t, flow_value, z_val, sides)
 
-    indexed = list(enumerate(tasks))
+    indexed = [(i, task) for i, task in enumerate(tasks)
+               if task[1] in ni and not reached[ni[task[1]]]]
     if threads > 1 and len(indexed) >= _SEP_PARALLEL_MIN_TASKS:
         with ThreadPoolExecutor(max_workers=min(threads, len(indexed))) as ex:
             results = list(ex.map(_solve, indexed))
@@ -485,7 +495,9 @@ def _group_cuts_nx(steiner_problem, group_id_k, tasks, y2_vals, eps, back_cuts):
             continue
         try:
             residual = nx.algorithms.flow.preflow_push(
-                digraph, root_k, t, capacity="capacity", value_only=True
+                # Source-side reachability requires a feasible maximum flow,
+                # not the intermediate preflow returned by value_only=True.
+                digraph, root_k, t, capacity="capacity", value_only=False
             )
             cut_value = residual.graph["flow_value"]
             sides = [_residual_source_set(residual, root_k, eps)]
