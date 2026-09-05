@@ -21,6 +21,29 @@ Supported for Steiner **tree**, **forest** (multi-root), and **directed** ({clas
 
 When enabled it additionally **warm-starts** the cut loop with the Steiner cuts found during dual ascent and runs a **multi-start primal** from several roots, so many instances are solved entirely by dual ascent with no ILP.
 
+## Connectivity cut separation
+
+Both HiGHS and Gurobi use the accelerated SciPy separator. Before computing
+per-terminal maximum flows, it checks for paths whose arcs each carry enough
+capacity to satisfy the connectivity demand. Such terminals need no maximum
+flow. Remaining flows skip residual graph traversal when their value already
+satisfies the cut, and cut edges are extracted with NumPy array operations.
+
+For near-integral candidates, forward/reverse reachability and disconnected
+components can also expose connectivity violations directly. Each cut's capacity
+is checked before it is emitted, and duplicate certificates within a round are
+removed. Fractional and uncertified demands still use maximum flow. The certificates are valid
+connectivity cuts, although they need not be minimum cuts and can change the
+solver's search path. Gurobi uses these certificates for incumbent checks, and
+HiGHS uses them in its integer cut loop. LP separation retains minimum cuts even
+at integral relaxations; fractional and uncertified demands retain nested cuts.
+
+Separation uses one thread by default: on the measured 500–1,000-node SteinLib
+instances, dispatching many small tasks to a thread pool costs more than it
+saves. To benchmark parallel separation on larger instances, set
+`STEINERPY_SEP_THREADS=4` (or another positive count). This setting is independent
+of the `threads` argument to `get_solution()`, which controls the MIP solver.
+
 ## Bound-based graph reduction
 
 ```python
@@ -32,6 +55,11 @@ solution = SteinerProblem(graph, terminal_groups, da_reduce=True).get_solution()
 `da_reduce` is a **reduction test**: it removes edges *and nodes* that the dual-ascent reduced costs prove cannot appear in any optimal solution (bound-based edge and node elimination) and cascades the degree-1/degree-2 reductions to a fixpoint.
 It requires `preprocess=True` (the default), applies to undirected problems only, is skipped under a `budget`/`max_degree` modifier, and preserves the optimum (solutions still map back to the original graph).
 It composes with `dual_ascent=True`.
+
+When the last DA reduction pass leaves the graph unchanged, its dual-ascent
+result is retained for one use by the solve. The graph structure, costs,
+terminal groups, roots, and arc ordering are checked before reuse; changed
+inputs cause a fresh computation.
 
 ## Heavy graph reductions
 
@@ -55,6 +83,16 @@ SteinerProblem(graph, terminal_groups, special_distance=True, long_edge=False,
 - **Node replacement (pseudo-elimination)** — eliminates a non-terminal of degree ≤ 4 that provably has degree ≤ 2 in at least one minimum Steiner tree (Rehfeldt & Koch 2023, Prop. 4: the criterion compares the largest terminal-MST weights against the cheapest incident edges), bridging each neighbour pair with the two-edge path cost. Replacement edges are pre-filtered by the Special Distance bound and merged into cheaper parallels, so the graph never grows. **Steiner tree only.**
 
 The tests are implemented with the fast constructions used by state-of-the-art SPG solvers: a single two-label multi-source Dijkstra (terminal Voronoi diagram) plus Mehlhorn's (1988) boundary MST — `O(m + n log n)` rather than one shortest-path tree per terminal — shared by the Special Distance and replacement tests, and one bounded Dijkstra per *vertex* rather than per *edge* for the long-edge test (Rehfeldt & Koch 2023, §2.3). The degree-1/degree-2 cascades run in place off a change-driven worklist.
+
+Terminal bottleneck distances are queried from a tree-path maximum index,
+using `O(|T| log |T|)` storage and construction time rather than a quadratic
+table. Each lookup takes `O(log |T|)` time; previously computed pairs are not
+cached, so memory does not grow quadratically as more pairs are queried.
+
+Long-edge reduction uses SciPy's compiled bounded Dijkstra on denser graphs
+with at least 128 nodes and average degree at least four, provided the node
+search cap covers the whole graph. Small/sparse graphs and searches where the
+cap could bind retain the Python implementation and its existing work limit.
 
 `heavy` requires `preprocess=True` (the default), applies to undirected problems only, is skipped under a `budget`/`max_degree`/`hop_limit` modifier (those variants do not minimise plain edge cost), and preserves the optimum **value** — solutions still map back to the original graph, though among several equal-cost optima a different one may be returned than with `heavy=False`.
 It composes with `da_reduce=True` and `dual_ascent=True`; a good "throw everything at it" configuration is:

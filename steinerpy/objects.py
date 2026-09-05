@@ -176,9 +176,11 @@ class BaseSteinerProblem:
                     terminal_groups[0] = list(dict.fromkeys(terminal_groups[0] + extra))
             if self.da_reduce and kwargs.get('budget') is None and kwargs.get('max_degree') is None:
                 from .dual_ascent import reduce_graph_with_dual_ascent
+                self._preprocessing_ascent = {}
                 self.graph = reduce_graph_with_dual_ascent(
                     self.graph, terminal_groups, weight, self.reduction_tracker,
-                    enumeration_safe=self.enumeration_safe)
+                    enumeration_safe=self.enumeration_safe,
+                    _reuse=self._preprocessing_ascent)
             stats = reduction_stats(self.original_graph, self.graph)
             logger.info(f"Graph reduced: {stats['nodes_removed']} nodes ({stats['node_reduction_percent']:.1f}%), "
                   f"{stats['edges_removed']} edges ({stats['edge_reduction_percent']:.1f}%) removed")

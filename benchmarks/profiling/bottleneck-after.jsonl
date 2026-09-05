@@ -1,0 +1,2 @@
+{"terminals": 512, "repeats": 3, "queries": 10000, "build_s": 0.0005989999999655993, "query_s": 0.006970333999561262, "peak_python_bytes": 132040, "checksum": 8617929.0}
+{"terminals": 2048, "repeats": 3, "queries": 10000, "build_s": 0.002449874999911117, "query_s": 0.007787957999425998, "peak_python_bytes": 554056, "checksum": 8994059.0}

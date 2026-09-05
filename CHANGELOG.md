@@ -137,6 +137,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- Near-integral connectivity candidates use capacity-checked reachability
+  cuts before max-flow. Identical certificates within a separation round are
+  emitted once; fractional and uncertified demands retain min-cut separation.
+  LP separation retains minimum cuts even at integral relaxations.
+  Denser graphs use SciPy bounded Dijkstra for long-edge reduction when the
+  settled-node work cap covers the entire graph; other graphs keep the Python
+  search and its work cap.
+- Heavy reductions use a lazy tree-path maximum index instead of storing all
+  terminal-pair bottleneck distances: construction and storage are now
+  `O(|T| log |T|)`, with logarithmic queries. The final unchanged DA reduction
+  pass can hand its result to the solve once, after validating graph and
+  formulation inputs, avoiding duplicate dual-ascent work.
+- Connectivity cut separation now certifies sufficient-capacity paths before
+  running per-terminal max-flow, skips residual traversal for satisfied cuts,
+  and extracts cut arcs with NumPy arrays. Separation defaults to one worker;
+  `STEINERPY_SEP_THREADS` still overrides it independently of solver threads.
 - **Faster Dreyfus-Wagner grow steps**: the few-terminal dynamic program now
   builds the fixed graph-plus-virtual-source CSR structure once and updates
   only the virtual-source weights for each subset, avoiding repeated sparse
@@ -159,6 +175,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- NetworkX cut separation completes the maximum flow before extracting a
+  source-side cut; an intermediate preflow can leave excess at internal nodes
+  and produce a source partition that is not a minimum cut.
 - **Prize-constrained-distance deletion could change the PCSTP optimum** in two
   cases: it discounted the destination endpoint's prize even though equation
   (8) excludes both endpoints, and it batch-deleted tied alternatives under

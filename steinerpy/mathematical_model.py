@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from ._fastgraph import HAS_SCIPY, get_arc_csr, min_cut_scipy, cpu_count
+from ._fastgraph import (
+    HAS_SCIPY, FLOW_SCALE, get_arc_csr, min_cut_scipy,
+    capacity_support, reachable_mask,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -79,7 +82,8 @@ def _gurobi_outcome(model, GRB) -> Tuple[str, bool]:
 
 
 # Separation parallelism: number of worker threads for the per-terminal min-cut
-# computations.  scipy's maximum_flow releases the GIL, so threads overlap.
+# computations. Sparse allocation and Python processing can outweigh native
+# parallelism; use serial separation unless explicitly requested.
 def _sep_thread_count() -> int:
     env = os.environ.get("STEINERPY_SEP_THREADS")
     if env is not None:
@@ -87,7 +91,7 @@ def _sep_thread_count() -> int:
             return max(1, int(env))
         except ValueError:
             pass
-    return max(1, min(8, cpu_count()))
+    return 1
 
 
 # Below this many independent min-cut tasks per group it is not worth paying the
@@ -776,14 +780,73 @@ def _emit_cuts_for_terminal(group_id_k, group_id_l, t, cut_value, z_val,
     return out
 
 
+def _integral_cut_certificates(csr, group_id_k, indexed, capacities, support,
+                               reached, eps, back_cuts):
+    """Separate integral candidates using capacity-checked reachability cuts.
+
+    The root's reachable set, disconnected weak components, and complements
+    of reverse-reachable sink sets define connectivity cuts. They need not be
+    minimum cuts. Explicitly sum their scaled capacities before using them;
+    any uncertified terminal stays pending for max-flow (including unusual
+    tolerances or creep sums).
+    """
+    import numpy as np
+    from scipy.sparse.csgraph import connected_components
+
+    def cut(side):
+        indices = np.flatnonzero(side[csr.tails] & ~side[csr.heads])
+        value = capacities[indices].sum() / FLOW_SCALE
+        return value, [csr.arcs[i] for i in indices]
+
+    root_value, root_arcs = cut(reached)
+    reverse = support.T.tocsr() if back_cuts else None
+    labels = connected_components(support, directed=True, connection='weak',
+                                  return_labels=True)[1] if back_cuts else None
+    root_component = labels[np.flatnonzero(reached)[0]] if back_cuts else None
+    component_cuts = {}
+    cuts, pending = [], []
+    seen = set()
+
+    def emit(group_id_l, arcs):
+        key = (group_id_l, frozenset(arcs))
+        if key not in seen:
+            seen.add(key)
+            cuts.append((group_id_k, group_id_l, arcs))
+
+    for i, task in indexed:
+        group_id_l, terminal, demand = task
+        certified = False
+        if root_value < demand - eps:
+            emit(group_id_l, root_arcs)
+            certified = True
+        if back_cuts:
+            component = labels[csr.node_index[terminal]]
+            if component != root_component:
+                if component not in component_cuts:
+                    component_cuts[component] = cut(labels != component)
+                value, arcs = component_cuts[component]
+                if value < demand - eps:
+                    emit(group_id_l, arcs)
+                    certified = True
+            side = ~reachable_mask(reverse, csr.node_index[terminal])
+            value, arcs = cut(side)
+            if value < demand - eps:
+                emit(group_id_l, arcs)
+                certified = True
+        if not certified:
+            pending.append((i, task))
+    return cuts, pending
+
+
 def _group_cuts_scipy(steiner_problem, csr, group_id_k, tasks, y2_vals,
-                      eps, back_cuts, threads):
+                      eps, back_cuts, threads, integral_cuts=True):
     """Min-cut separation for one source group ``k`` using scipy max-flow.
 
     ``tasks`` is a list of ``(group_id_l, terminal, z_val)`` to check from
     ``roots[group_id_k]``.  The capacity CSR is built **once** for the whole
-    group (capacities depend only on ``k``); the per-terminal min cuts are
-    independent and run concurrently in a thread pool (scipy releases the GIL).
+    group (capacities depend only on ``k``). Near-integral candidates first
+    use capacity-checked reachability cuts. Fractional or uncertified demands
+    use per-terminal max-flow, optionally dispatched to a thread pool.
     """
     import numpy as np
     root_k = steiner_problem.roots[group_id_k]
@@ -797,6 +860,11 @@ def _group_cuts_scipy(steiner_problem, csr, group_id_k, tasks, y2_vals,
         dtype=np.float64, count=len(csr.arcs),
     )
     int_csr = csr.build_int_csr(cap)
+    # One traversal can certify many terminals, at integer AND fractional
+    # nodes. The largest demand makes this safe for every task in the group:
+    # each cut separating a reached terminal crosses a sufficiently large arc.
+    support = capacity_support(int_csr, max(z for _, _, z in tasks) - eps)
+    reached = reachable_mask(support, src_idx)
     max_nested = _nested_cut_rounds()
 
     def _cut_arc_indices(side):
@@ -807,9 +875,13 @@ def _group_cuts_scipy(steiner_problem, csr, group_id_k, tasks, y2_vals,
     def _solve(idx_task):
         i, (group_id_l, t, z_val) = idx_task
         sink_idx = ni.get(t)
-        if sink_idx is None or sink_idx == src_idx:
+        if sink_idx is None or sink_idx == src_idx or reached[sink_idx]:
             return i, None
-        flow_value, src_side, back_side = min_cut_scipy(int_csr, src_idx, sink_idx)
+        flow_value, src_side, back_side = min_cut_scipy(
+            int_csr, src_idx, sink_idx, required=z_val - eps, back_cuts=back_cuts,
+        )
+        if flow_value >= z_val - eps:
+            return i, None
         sides = [src_side]
         if back_cuts and back_side != src_side:
             sides.append(back_side)
@@ -833,7 +905,15 @@ def _group_cuts_scipy(steiner_problem, csr, group_id_k, tasks, y2_vals,
                 cur_side = s_side
         return i, (group_id_l, t, flow_value, z_val, sides)
 
-    indexed = list(enumerate(tasks))
+    indexed = [(i, task) for i, task in enumerate(tasks)
+               if task[1] in ni and not reached[ni[task[1]]]]
+    violated = []
+    values = cap - eps
+    if integral_cuts and indexed and np.all(np.abs(values - np.rint(values)) <= 1e-8):
+        capacities = np.rint(cap * FLOW_SCALE).astype(np.int64)
+        violated, indexed = _integral_cut_certificates(
+            csr, group_id_k, indexed, capacities, support, reached, eps, back_cuts,
+        )
     if threads > 1 and len(indexed) >= _SEP_PARALLEL_MIN_TASKS:
         with ThreadPoolExecutor(max_workers=min(threads, len(indexed))) as ex:
             results = list(ex.map(_solve, indexed))
@@ -842,7 +922,6 @@ def _group_cuts_scipy(steiner_problem, csr, group_id_k, tasks, y2_vals,
 
     # Re-assemble in task order for a deterministic constraint sequence.
     results.sort(key=lambda r: r[0])
-    violated: List[Tuple[int, int, List[Tuple]]] = []
     for _i, payload in results:
         if payload is None:
             continue
@@ -872,7 +951,9 @@ def _group_cuts_nx(steiner_problem, group_id_k, tasks, y2_vals, eps, back_cuts):
             continue
         try:
             residual = nx.algorithms.flow.preflow_push(
-                digraph, root_k, t, capacity="capacity", value_only=True
+                # Source-side reachability requires a feasible maximum flow,
+                # not the intermediate preflow returned by value_only=True.
+                digraph, root_k, t, capacity="capacity", value_only=False
             )
             cut_value = residual.graph["flow_value"]
             sides = [_residual_source_set(residual, root_k, eps)]
@@ -896,6 +977,7 @@ def find_violated_cuts_from_values(
     eps: float = 1e-6,
     back_cuts: bool = True,
     threads: int = None,
+    integral_cuts: bool = True,
 ) -> List[Tuple[int, int, List[Tuple]]]:
     """
     Find violated directed cut constraints given pre-extracted variable values.
@@ -912,14 +994,16 @@ def find_violated_cuts_from_values(
     The capacity graph for a fixed source group ``k`` is built **once** and
     reused across every ``l >= k`` and every terminal (it depends only on ``k``).
     Minimum cuts are computed with ``scipy.sparse.csgraph.maximum_flow`` (C, GIL
-    releasing) when scipy is available and run concurrently across terminals;
+    releasing) when scipy is available, optionally using terminal worker threads;
     otherwise a networkx ``preflow_push`` fallback is used.
 
     Two acceleration techniques from Schmidt, Zey & Margot (2021), Sect. 4.1 are
     applied: *creep flows* (the ``eps`` added to each arc capacity, which biases
     the minimum cut towards cutting few arcs) and, when ``back_cuts`` is set, the
     *back cut* — the second minimum cut on the terminal side, added alongside the
-    usual root-side cut.  The scipy path additionally emits *nested cuts*
+    usual root-side cut. Integer candidates may instead use capacity-checked
+    reachability certificates. For demands still needing maximum flow, the
+    scipy path additionally emits *nested cuts*
     (Koch & Martin 1998): for each violated terminal the cut arcs are saturated
     and the max-flow re-run, yielding up to ``STEINERPY_NESTED_CUTS`` further
     violated cuts per separation round (see :func:`_nested_cut_rounds`).
@@ -930,6 +1014,9 @@ def find_violated_cuts_from_values(
     :param eps: numerical tolerance / creep-flow added to each arc capacity.
     :param back_cuts: also emit the terminal-side (back) minimum cut.
     :param threads: separation worker threads (``None`` -> auto).
+    :param integral_cuts: allow reachability certificates for near-integral
+        values. LP separation disables these to retain minimum
+        cuts there, including when the node relaxation happens to be integral.
     :return: list of (group_id_k, group_id_l, cut_arcs) for each violated cut.
     """
     # No terminals → nothing to check
@@ -960,7 +1047,7 @@ def find_violated_cuts_from_values(
         if use_scipy:
             violated_cuts.extend(_group_cuts_scipy(
                 steiner_problem, csr, group_id_k, tasks, y2_vals,
-                eps, back_cuts, nthreads,
+                eps, back_cuts, nthreads, integral_cuts,
             ))
         else:
             violated_cuts.extend(_group_cuts_nx(
@@ -977,6 +1064,7 @@ def find_violated_cuts(
     model: hp.HighsModel,
     eps: float = 1e-6,
     back_cuts: bool = True,
+    integral_cuts: bool = True,
 ) -> List[Tuple[int, int, List[Tuple]]]:
     """
     Find violated directed cut constraints for the current HiGHS LP/MIP solution.
@@ -990,6 +1078,7 @@ def find_violated_cuts(
     :param model: HiGHS model (used to read current variable values).
     :param eps: numerical tolerance / creep-flow added to each arc capacity.
     :param back_cuts: also emit the terminal-side (back) minimum cut.
+    :param integral_cuts: allow integer certificates (disabled during the LP phase).
     :return: list of (group_id_k, group_id_l, cut_arcs) for each violated cut.
     """
     group_indices = range(len(steiner_problem.terminal_groups))
@@ -1003,7 +1092,10 @@ def find_violated_cuts(
         y2_vals = {(group_id, a): model.variableValue(y2[(group_id, a)])
                    for group_id in group_indices for a in steiner_problem.arcs}
         z_vals = {key: model.variableValue(var) for key, var in z.items()}
-    return find_violated_cuts_from_values(steiner_problem, y2_vals, z_vals, eps, back_cuts)
+    return find_violated_cuts_from_values(
+        steiner_problem, y2_vals, z_vals, eps, back_cuts,
+        integral_cuts=integral_cuts,
+    )
 
 
 def build_model(steiner_problem: 'SteinerProblem', time_limit: float = 300, logfile: str = "", threads=None) -> Tuple[hp.HighsModel, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType, hp.HighsVarType]:
@@ -1139,7 +1231,9 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
                 if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
                         or not model.getSolution().value_valid):
                     break
-                violated_cuts = find_violated_cuts(steiner_problem, y2, z, model)
+                violated_cuts = find_violated_cuts(
+                    steiner_problem, y2, z, model, integral_cuts=False,
+                )
                 cut_pool.record_separation()
                 if not violated_cuts:
                     break
@@ -1303,7 +1397,7 @@ def build_prize_collecting_model(steiner_problem: 'PrizeCollectingProblem', time
     group_indices = range(len(steiner_problem.terminal_groups))
     
     # Node selection variables (whether we collect prize from a node)
-    node_vars = {node: model.addVariable(0, 1, type=hp.HighsVarType.kInteger, name=f"node[{node}]") 
+    node_vars = {node: model.addVariable(0, 1, type=hp.HighsVarType.kInteger, name=f"node[{node}]")
                  for node in steiner_problem.nodes}
     
     # Terminal penalty variables (penalty for not connecting a terminal)
@@ -1842,7 +1936,8 @@ def run_model_gurobi(
         z_vals = {key: get_val(var) for key, var in cb_model._z.items()}
 
         violated = find_violated_cuts_from_values(
-            cb_model._steiner_problem, y2_vals, z_vals
+            cb_model._steiner_problem, y2_vals, z_vals,
+            integral_cuts=(where == GRB.Callback.MIPSOL),
         )
 
         for group_id_k, group_id_l, cut_arcs in violated:
@@ -2008,7 +2103,9 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
                     break
                 col_value = model.getSolution().col_value
                 xa_vals = {(0, a): col_value[xa[a].index] for a in arcs}
-                violated = find_violated_cuts_from_values(view, xa_vals, {(0, 0): 1.0})
+                violated = find_violated_cuts_from_values(
+                    view, xa_vals, {(0, 0): 1.0}, integral_cuts=False,
+                )
                 cut_pool.record_separation()
                 if not violated:
                     break
@@ -2204,7 +2301,10 @@ def solve_sap_gurobi(view, time_limit: float = 300, logfile: str = "",
             return
         xa_vals = {(0, a): get_val(cb_model._xa[a])
                    for a in cb_model._view.arcs}
-        violated = find_violated_cuts_from_values(cb_model._view, xa_vals, {(0, 0): 1.0})
+        violated = find_violated_cuts_from_values(
+            cb_model._view, xa_vals, {(0, 0): 1.0},
+            integral_cuts=(where == GRB.Callback.MIPSOL),
+        )
         for (_k, _l, cut_arcs) in violated:
             if cut_arcs:
                 add_cut(gp.quicksum(cb_model._xa[a] for a in cut_arcs) >= 1)

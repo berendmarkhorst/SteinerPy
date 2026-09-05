@@ -13,8 +13,9 @@ It covers single-group Steiner trees, multi-group Steiner **forests**
 (via a sequential shared edge-budget that keeps the bound valid), and
 **directed** Steiner arborescences (native Wong setting, no bidirection).
 
-All functions are pure and operate on the *reduced* graph (``self.graph``) so
-that reduced-cost fixing aligns column-for-column with the ILP variables.
+Functions operate on the *reduced* graph (``self.graph``) so reduced-cost fixing
+aligns column-for-column with the ILP variables. A validated, one-use handoff
+can reuse the final preprocessing ascent before model construction.
 """
 
 from dataclasses import dataclass, field
@@ -530,9 +531,31 @@ def _dual_ascent_forest(steiner_problem, arcs, edges, weight) -> DualAscentResul
 # Top-level dispatch
 # ---------------------------------------------------------------------------
 
+def _ascent_signature(problem, weight):
+    """Snapshot every graph/formulation input used by dual ascent.
+
+    Comparing values (not graph identity) also detects in-place changes between
+    construction and solving. This linear scan is much cheaper than an ascent.
+    """
+    graph = problem.graph
+    return (
+        weight, graph.is_directed(), tuple(graph),
+        tuple((u, v, float(d.get(weight, 1))) for u, v, d in graph.edges(data=True)),
+        tuple(problem.edges), tuple(problem.arcs),
+        tuple(tuple(group) for group in problem.terminal_groups), tuple(problem.roots),
+    )
+
+
 def dual_ascent(steiner_problem, weight: Optional[str] = None) -> DualAscentResult:
     """Run dual ascent + primal heuristic on ``steiner_problem.graph``."""
     weight = weight or steiner_problem.weight
+    # One-use handoff from the last unchanged reduction pass. Consume even a
+    # stale entry, so a later call can never reuse a result returned to a caller.
+    reuse = getattr(steiner_problem, '_preprocessing_ascent', None)
+    if reuse:
+        signature, result = reuse.pop('entry')
+        if signature == _ascent_signature(steiner_problem, weight):
+            return result
     graph = steiner_problem.graph
     negative = [
         (u, v, data.get(weight, 1))
@@ -1003,7 +1026,7 @@ def _terminals_connected(graph, terminal_groups) -> bool:
 
 def reduce_graph_with_dual_ascent(graph, terminal_groups, weight, tracker,
                                   max_passes: int = 3,
-                                  enumeration_safe: bool = False):
+                                  enumeration_safe: bool = False, *, _reuse=None):
     """Bound-based reduction test: delete edges *and nodes* that reduced-cost
     fixing proves are in **no** optimal solution, then cascade the
     degree-1/degree-2 reductions, iterating to a fixpoint.
@@ -1023,8 +1046,13 @@ def reduce_graph_with_dual_ascent(graph, terminal_groups, weight, tracker,
         therefore always safe, but this cascade forwarding was missing).
 
     Returns the reduced graph (a copy; the input is never mutated).
+    Internal ``_reuse`` receives the last ascent only when no graph changes
+    follow it; the solver validates its input snapshot before consuming it.
     """
     from .graph_reducer import _structural_fixpoint
+
+    if _reuse is not None:
+        _reuse.clear()
 
     if isinstance(graph, nx.DiGraph):
         return graph
@@ -1038,6 +1066,8 @@ def reduce_graph_with_dual_ascent(graph, terminal_groups, weight, tracker,
             break
         fixing = reduced_cost_fixing(view, da)
         if not fixing.fix_x_edges and not fixing.fix_nodes:
+            if _reuse is not None:
+                _reuse['entry'] = (_ascent_signature(view, weight), da)
             break
 
         snapshot = G.copy()

@@ -1,0 +1,4 @@
+# Machine-local profiles and per-run metadata; compact benchmark tables are tracked.
+*/
+*.prof
+*.txt
