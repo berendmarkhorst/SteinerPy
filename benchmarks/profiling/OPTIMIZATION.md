@@ -54,4 +54,6 @@ Run directories contain raw JSON and metadata. Binary profiles and machine-local
 
 ## Follow-up work
 
-The all-pairs terminal bottleneck table and repeated dual-ascent runs remain useful next targets. This branch deliberately confines the performance changes to cut separation so their effect can be measured and reviewed independently.
+The subsequent [follow-up](FOLLOWUP.md) replaces the all-pairs terminal
+bottleneck table and reuses unchanged preprocessing dual-ascent results. It is
+benchmarked separately against this first cut-separation optimization.

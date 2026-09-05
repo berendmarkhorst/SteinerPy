@@ -1,4 +1,5 @@
 import networkx as nx
+from collections.abc import Mapping
 from collections import deque
 from itertools import count
 from typing import Set, Union, List, Tuple, Dict
@@ -520,37 +521,107 @@ def _terminal_mst(G: nx.Graph, terminals, dist: Dict, base: Dict,
     return nx.minimum_spanning_tree(K, weight="weight")
 
 
-def _bottleneck_from_mst(mst: nx.Graph, terminals) -> Dict:
-    """All-pairs terminal *bottleneck* distances read off a terminal MST.
+class _BottleneckRow(Mapping):
+    """Lazy dictionary-compatible view of one terminal's tree distances."""
 
-    The minimax (bottleneck) distance between two nodes is identical across
-    *all* spanning trees of a graph, so the bottleneck distances read off the
-    Mehlhorn MST equal those of the exact distance network.
+    def __init__(self, index, source):
+        self.index = index
+        self.source = source
 
-    Returns ``bott[a][b]`` for terminals ``a, b``.
+    def __getitem__(self, target):
+        index = self.index
+        dest = index.node_index[target]
+        if index.component[self.source] != index.component[dest]:
+            raise KeyError(target)
+        return index.query(self.source, dest)
+
+    def __iter__(self):
+        index = self.index
+        comp = index.component[self.source]
+        return (v for v, i in index.node_index.items() if index.component[i] == comp)
+
+    def __len__(self):
+        return sum(1 for _ in self)
+
+
+class _BottleneckIndex(dict):
+    """Tree-path maxima with O(t log t) storage/build and O(log t) queries.
+
+    Binary lifting stores ancestors and maximum edge weights for paths of
+    length 1, 2, 4, ... . Rows are lazy, so asking many different terminal
+    pairs never creates a quadratic distance cache. Supports a forest too.
     """
-    bott: Dict = {}
-    for root in terminals:
-        if not mst.has_node(root):
-            continue
-        bott[root] = {root: 0.0}
-        seen = {root}
-        stack = [(root, 0.0)]
-        while stack:
-            u, mx = stack.pop()
-            for v in mst.neighbors(u):
-                if v in seen:
-                    continue
-                seen.add(v)
-                nm = max(mx, mst[u][v].get("weight", 1))
-                bott[root][v] = nm
-                stack.append((v, nm))
-    return bott
+
+    def __init__(self, mst, terminals):
+        super().__init__()
+        self.node_index = {v: i for i, v in enumerate(mst)}
+        n = len(mst)
+        self.depth = [0] * n
+        self.component = [-1] * n
+        parent = list(range(n))
+        maximum = [0.0] * n
+        for root in mst:
+            ri = self.node_index[root]
+            if self.component[ri] != -1:
+                continue
+            self.component[ri] = ri
+            stack = [root]
+            while stack:
+                u = stack.pop()
+                ui = self.node_index[u]
+                for v, attrs in mst[u].items():
+                    vi = self.node_index[v]
+                    if self.component[vi] != -1:
+                        continue
+                    self.component[vi] = ri
+                    self.depth[vi] = self.depth[ui] + 1
+                    parent[vi] = ui
+                    maximum[vi] = max(0.0, attrs.get("weight", 1))
+                    stack.append(v)
+        self.up = [parent]
+        self.maximum = [maximum]
+        for _ in range(1, max(self.depth, default=0).bit_length()):
+            prev, weights = self.up[-1], self.maximum[-1]
+            self.up.append([prev[prev[i]] for i in range(n)])
+            self.maximum.append([max(weights[i], weights[prev[i]]) for i in range(n)])
+        for terminal in terminals:
+            if terminal in self.node_index:
+                self[terminal] = _BottleneckRow(self, self.node_index[terminal])
+
+    def query(self, a, b):
+        """Maximum weight on a path between two connected node indices."""
+        answer = 0.0
+        if self.depth[a] < self.depth[b]:
+            a, b = b, a
+        difference = self.depth[a] - self.depth[b]
+        while difference:
+            level = difference.bit_length() - 1
+            answer = max(answer, self.maximum[level][a])
+            a = self.up[level][a]
+            difference -= 1 << level
+        if a == b:
+            return answer
+        for level in range(len(self.up) - 1, -1, -1):
+            ancestors = self.up[level]
+            if ancestors[a] != ancestors[b]:
+                weights = self.maximum[level]
+                answer = max(answer, weights[a], weights[b])
+                a, b = ancestors[a], ancestors[b]
+        return max(answer, self.maximum[0][a], self.maximum[0][b])
+
+
+def _bottleneck_from_mst(mst: nx.Graph, terminals) -> Dict:
+    """Lazy ``bott[a][b]`` lookup of maximum edge weights on MST paths.
+
+    Any minimum spanning tree preserves the original graph's minimax path
+    distances. Ordinary (non-minimum) spanning trees need not preserve them.
+    """
+    return _BottleneckIndex(mst, terminals)
 
 
 def _mehlhorn_terminal_mst(G: nx.Graph, terminals, dist: Dict, base: Dict,
                            weight: str) -> Dict:
-    """All-pairs terminal bottleneck distance via Mehlhorn's construction.
+    """Lazy terminal bottleneck queries via Mehlhorn's construction.
 
     Compatibility wrapper composing :func:`_terminal_mst` and
     :func:`_bottleneck_from_mst`; returns ``bott[a][b]`` for terminals ``a, b``.
@@ -601,9 +672,10 @@ def special_distance_deletions(G: nx.Graph, terminals: Set, weight: str = "weigh
 
     All ingredients are obtained the *fast* way (Mehlhorn 1988): one two-label
     multi-source Dijkstra (the terminal Voronoi diagram) yields the two nearest
-    terminals per node, and the Voronoi-boundary MST yields the terminal
-    bottleneck distances — ``O(m + n log n)`` overall, versus ``O(|T|)``
-    separate shortest-path computations.  ``vor`` / ``bott`` allow a caller
+    terminals per node. The Voronoi-boundary MST is built in
+    ``O(m + n log n)`` without a separate shortest-path search per terminal.
+    Its bottleneck index takes ``O(|T| log |T|)`` space and construction time,
+    with ``O(log |T|)`` per path query. ``vor`` / ``bott`` allow a caller
     that already built the data (see :func:`preprocess_graph`) to pass it in.
 
     The terminal-hopping bound is valid for a single terminal group (ordinary

@@ -77,6 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and produce a source partition that is not a minimum cut.
 
 ### Changed
+- Heavy reductions use a lazy tree-path maximum index instead of storing all
+  terminal-pair bottleneck distances: construction and storage are now
+  `O(|T| log |T|)`, with logarithmic queries. The final unchanged DA reduction
+  pass can hand its result to the solve once, after validating graph and
+  formulation inputs, avoiding duplicate dual-ascent work.
 - Connectivity cut separation now certifies sufficient-capacity paths before
   running per-terminal max-flow, skips residual traversal for satisfied cuts,
   and extracts cut arcs with NumPy arrays. Separation defaults to one worker;
