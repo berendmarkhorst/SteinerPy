@@ -8,6 +8,13 @@ package:
 
    from steinerpy import SteinerProblem, PrizeCollectingProblem, ...
 
+Unified interface
+-----------------
+
+.. autoclass:: steinerpy.Problem
+   :members:
+   :special-members: __init__
+
 Core problems
 -------------
 

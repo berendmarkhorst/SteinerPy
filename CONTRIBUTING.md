@@ -95,7 +95,9 @@ is no plugin system — variants are plain classes. The checklist:
    variant-specific arguments, and `get_solution()` returns a `Solution`
    object with `.objective`, `.selected_edges`/`.edges`, `.gap`, and
    `.runtime`.
-2. **Export it** from `steinerpy/__init__.py` (both the import block and
+2. **Register it** in `steinerpy/problem.py` so it is available through the
+   unified `Problem` interface, and add a case to `tests/test_problem.py`.
+   **Export it** from `steinerpy/__init__.py` (both the import block and
    `__all__`).
 3. **Add tests** in a new `tests/test_<variant>.py`, ideally with a
    brute-force oracle on small instances.

@@ -30,10 +30,12 @@ from .objects import (
 )
 from .mathematical_model import build_model, run_model, build_model_gurobi, run_model_gurobi
 from ._version import __version__
+from .problem import Problem
 __author__ = "Berend Markhorst, Joost Berkhout, Alessandro Zocca, Jeroen Pruyn, Rob van der Mei"
 __email__ = "berend.markhorst@cwi.nl" 
 
 __all__ = [
+    "Problem",
     "SteinerProblem",
     "Solution",
     "OptimalSolutionPool",

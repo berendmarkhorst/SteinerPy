@@ -16,6 +16,23 @@ SteinerPy solves Steiner tree and Steiner forest problems — and many advanced 
 
 📖 **Documentation: [steinerpy.readthedocs.io](https://steinerpy.readthedocs.io)**
 
+## Unified problem interface
+
+Use one class to select any supported problem variant:
+
+```python
+from steinerpy import Problem
+
+problem = Problem(graph, [["A", "D"]])  # Steiner tree; multiple lists give a forest
+solution = problem.get_solution(solver="highs", time_limit=60)
+
+problem = Problem(digraph, variant="directed", root="A", terminals=["D"])
+problem = Problem(graph, variant="group", groups=[["A", "B"], ["C", "D"]])
+```
+
+See the [variant guide](docs/source/guide/variants.md) for all configuration names.
+Existing problem classes remain supported.
+
 ## Installation
 
 ```bash
