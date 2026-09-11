@@ -124,16 +124,6 @@ def random_directed_group_instance(seed, n=6):
     return g, groups, root
 
 
-@pytest.mark.xfail(
-    reason="Pre-existing bug in the directed-cut kernel shared with "
-           "DirectedSteinerProblem: an unused 'back arc' can inflate the "
-           "reported objective while gap is still reported as 0.0 (proven "
-           "optimal) -- see https://github.com/berendmarkhorst/SteinerPy/"
-           "issues/30. Not specific to DirectedGroupSteinerProblem's "
-           "transformation; some seeds still pass because no back arc "
-           "happens to lie on the optimal path.",
-    strict=False,
-)
 @pytest.mark.parametrize("seed", range(20))
 def test_directed_group_steiner_matches_oracle(seed):
     g, groups, root = random_directed_group_instance(seed)
