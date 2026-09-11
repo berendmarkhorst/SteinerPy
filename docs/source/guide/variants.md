@@ -1,6 +1,59 @@
 # Problem variants
 
-Every variant below can be solved as a **Steiner tree** (a single group of terminals that must all be connected) or as a **Steiner forest** (multiple independent groups, each connected within itself but not necessarily to other groups).
+## One configurable problem class
+
+Use `Problem` for every supported variant. The `variant` keyword selects the
+mathematical problem, and the other arguments describe its data and modifiers:
+
+```python
+from steinerpy import Problem
+
+problem = Problem(graph, [["A", "D"]], max_degree=3)
+solution = problem.get_solution(solver="highs", time_limit=60)
+
+problem = Problem(digraph, variant="directed", root="A", terminals=["D"])
+problem = Problem(graph, variant="group", groups=[["A", "B"], ["C", "D"]])
+problem = Problem(variant="rectilinear", points=[(0, 0), (1, 1), (2, 0)])
+```
+
+The default `variant="steiner"` accepts one terminal list for a tree or multiple
+lists for a forest. `terminal_groups` requires **every** member of each list;
+`groups` requires **at least one** member of each list. The interface rejects
+misplaced arguments rather than silently treating these as the same problem.
+
+| `variant` | Data arguments besides `graph` | Existing implementation |
+|---|---|---|
+| `steiner` | `terminal_groups` | `SteinerProblem` |
+| `directed` | `root`, `terminals` | `DirectedSteinerProblem` |
+| `group` | `groups` | `GroupSteinerProblem` |
+| `directed_group` | `groups`, `root` | `DirectedGroupSteinerProblem` |
+| `partial_terminal` | `terminal_groups`, `partial_terminals` | `PartialTerminalSteinerProblem` |
+| `full_terminal` | `terminal_groups` | `FullTerminalSteinerProblem` |
+| `hop_constrained` | `root`, `terminals`, `hop_limit` | `HopConstrainedSteinerProblem` |
+| `prize_collecting` | `terminal_groups`, `node_prizes`; optional `penalty_cost`, `penalty_budget` | `PrizeCollectingProblem` |
+| `directed_prize_collecting` | `node_prizes`; optional `root` | `DirectedPrizeCollectingProblem` |
+| `node_weighted` | `terminal_groups`, `node_weights` | `NodeWeightedSteinerProblem` |
+| `max_weight_connected` | `node_weights`; optional `root` | `MaxWeightConnectedSubgraph` |
+| `budgeted_max_weight_connected` | `node_weights`, `node_costs`, `node_budget`; optional `root` | `BudgetedMaxWeightConnectedSubgraph` |
+| `rectilinear` | `points` (omit `graph`) | `RectilinearSteinerProblem` |
+
+Pass `budget=` and `max_degree=` as modifiers where the selected implementation
+supports them. `budget` is an edge-cost budget; `node_budget` is a vertex-cost
+budget. Solver arguments belong to `get_solution()`. `Problem.variants` lists
+the supported names.
+
+`Problem` composes the existing implementations, so their objective definitions,
+preprocessing restrictions, solver options and specialized solution types still
+apply. `get_optimal_solutions()` retains each variant's enumeration restrictions.
+This does not introduce arbitrary combinations of variants or new solvers.
+For advanced access, use `problem.implementation` (for example,
+`problem.implementation.cut_stats` or as input to a low-level model builder).
+All existing classes and imports remain supported; internal implementations
+still use their existing inheritance hierarchy.
+
+## Variant definitions
+
+The variants accepting `terminal_groups` can be solved as a **Steiner tree** (a single group of terminals that must all be connected) or as a **Steiner forest** (multiple independent groups, each connected within itself but not necessarily to other groups).
 Simply pass a list of terminal lists as `terminal_groups` — one list for a tree, multiple lists for a forest.
 
 | Variant | Class | Description |
