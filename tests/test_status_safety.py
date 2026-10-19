@@ -1,6 +1,7 @@
 """Regression tests for time-limited and otherwise incomplete exact solves."""
 
 import importlib.util
+import itertools
 import math
 from types import SimpleNamespace
 
@@ -279,6 +280,9 @@ def test_prize_and_budget_valid_unproven_incumbents(monkeypatch):
 
 def test_sap_tiny_positive_limit_and_valid_primal_fallback(monkeypatch):
     monkeypatch.setenv("STEINERPY_LP_CUT_ROUNDS", "0")
+    # Real clocks may not advance between calls on Windows; force expiry.
+    ticks = itertools.count()
+    monkeypatch.setattr(mm, "time", SimpleNamespace(time=lambda: float(next(ticks))))
     graph = nx.DiGraph()
     graph.add_edge("r", "a", weight=1)
     graph.add_edge("a", "t", weight=1)
