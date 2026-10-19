@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Dict, List, Optional, Set, Tuple, Union
 
+from ._objective import ObjectiveSpec
 from ._fastgraph import (
     HAS_SCIPY, FLOW_SCALE, get_arc_csr, min_cut_scipy,
     capacity_support, reachable_mask,
@@ -1197,10 +1198,9 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
             return _ret(0.0, 0.0, 0.0, [], "optimal")
         return _ret(float("inf"), 0.0, float("inf"), [], "infeasible")
 
-    objective_expr = sum(
-        x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
-        for e in steiner_problem.edges
-    )
+    # Use the working graph: reductions and transformations change its costs.
+    objective = ObjectiveSpec.from_graph(steiner_problem.graph, steiner_problem.weight)
+    objective_expr = sum(x[e] * objective.edge_cost(e) for e in steiner_problem.edges)
 
     # Bound the *total* cut-generation time. Each model.minimize() is already
     # capped at the model's time_limit, but the loop can add many rounds of cuts,
@@ -1898,9 +1898,9 @@ def run_model_gurobi(
     group_indices = range(len(steiner_problem.terminal_groups))
 
     # Objective: minimise total edge cost
+    objective = ObjectiveSpec.from_graph(steiner_problem.graph, steiner_problem.weight)
     obj = gp.quicksum(
-        x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
-        for e in steiner_problem.edges
+        x[e] * objective.edge_cost(e) for e in steiner_problem.edges
     )
     model.setObjective(obj, GRB.MINIMIZE)
 

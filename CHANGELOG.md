@@ -146,6 +146,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- Standard HiGHS and Gurobi edge objectives now consume shared objective
+  coefficients from the current working graph, preserving reduced/transformed
+  costs, directed arc orientation, and existing reporting corrections.
 - Existing objective conventions now have a private shared representation of
   original edge/node coefficients, terminal penalties, and reporting signs and
   offsets. Group/node-cost decoding uses it for cost checks; legacy solver

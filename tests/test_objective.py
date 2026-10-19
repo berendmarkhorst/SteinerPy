@@ -7,6 +7,7 @@ import networkx as nx
 import pytest
 
 from steinerpy import Problem
+from steinerpy import mathematical_model as mm
 from steinerpy._objective import ObjectiveSpec
 from steinerpy._problem_spec import normalize_problem
 from steinerpy.pc_transform import transform_mwcsp_to_pcstp
@@ -161,6 +162,98 @@ def test_arc_orientation_and_isolated_nodes_are_preserved():
     )
     assert objective.value([("a", "b")], ["alone"]) == 7
     assert objective.value([("b", "a")]) == 9
+
+
+@pytest.mark.parametrize("directed", [False, True])
+def test_graph_coefficients_preserve_cost_defaults_and_snapshot_inputs(directed):
+    graph = nx.DiGraph() if directed else nx.Graph()
+    graph.add_edge("a", (1, 2), cost=3)
+    graph.add_edge((1, 2), "c")
+    if directed:
+        graph.add_edge((1, 2), "a", cost=9)
+    objective = ObjectiveSpec.from_graph(graph, "cost")
+    legacy_node = ObjectiveSpec.from_graph(graph, "cost", default_edge_cost=0)
+    graph.clear()
+    assert objective.edge_cost(("a", (1, 2))) == 3
+    assert objective.edge_cost(((1, 2), "c")) == 1
+    assert legacy_node.edge_cost(((1, 2), "c")) == 0
+    assert objective.edge_cost(((1, 2), "a")) == (9 if directed else 3)
+
+
+@pytest.mark.parametrize("solver", ["highs", "gurobi"])
+@pytest.mark.parametrize("mode", ["forest", "directed", "reduced", "node_split"])
+def test_standard_solver_objective_matches_working_graph_oracle(solver, mode):
+    if solver == "gurobi":
+        gp = pytest.importorskip("gurobipy")
+        try:
+            with gp.Env(params={"OutputFlag": 0}) as env:
+                with gp.Model(env=env):
+                    pass
+        except gp.GurobiError:
+            pytest.skip("Gurobi license is not available")
+
+    graph = nx.Graph()
+    graph.add_weighted_edges_from(
+        [(0, 1, 2), (1, 2, 3), (1, 3, 1), (0, 3, 8), (2, 3, 7)], weight="cost"
+    )
+    options = {"weight": "cost", "preprocess": False, "terminals": [0, 2]}
+    if mode == "forest":
+        options["terminals"] = [[0, 2], [0, 3]]
+    elif mode == "directed":
+        graph = graph.to_directed()
+        graph[1][0]["cost"] = 20
+        options["root"] = 0
+    elif mode == "reduced":
+        graph = nx.path_graph(4)
+        nx.set_edge_attributes(graph, 2, "cost")
+        options.update(
+            terminals=[0, 3], preprocess=True, heavy=False, contract_terminals=False
+        )
+    else:
+        graph = nx.path_graph(3)
+        nx.set_edge_attributes(graph, 2, "cost")
+        options.pop("preprocess")
+        options.update(variant="node_weighted", node_weights={0: 4, 1: 3, 2: 5})
+    problem = Problem(graph, **options)._implementation
+    if mode in {"reduced", "node_split"}:
+        assert set(problem.graph.edges) != set(graph.edges)
+
+    # Enumerate working-graph edges independently of the coefficient factory.
+    working = problem.graph
+    best = float("inf")
+    for flags in itertools.product((False, True), repeat=len(problem.edges)):
+        edges = [edge for edge, keep in zip(problem.edges, flags) if keep]
+        selected = type(working)()
+        selected.add_nodes_from(working)
+        selected.add_edges_from(edges)
+        if all(
+            nx.has_path(selected, group[0], terminal)
+            for group in problem.terminal_groups
+            for terminal in group[1:]
+        ):
+            best = min(best, sum(working.edges[e]["cost"] for e in edges))
+
+    builder = mm.build_model if solver == "highs" else mm.build_model_gurobi
+    runner = mm.run_model if solver == "highs" else mm.run_model_gurobi
+    model, x, _, y2, z = builder(problem)
+    try:
+        gap, _, value, edges, status = runner(
+            model, problem, x, y2, z, return_status=True
+        )
+        assert status == "optimal"
+        assert gap == 0
+        assert value == best
+        assert value == sum(working.edges[e]["cost"] for e in edges)
+        for edge, variable in x.items():
+            coefficient = (
+                model.getLp().col_cost_[variable.index]
+                if solver == "highs"
+                else variable.Obj
+            )
+            assert coefficient == working.edges[edge]["cost"]
+    finally:
+        if solver == "gurobi":
+            model.dispose()
 
 
 def test_prize_offset_cancellation_preserves_small_original_edge_cost():
