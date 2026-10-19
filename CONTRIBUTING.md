@@ -107,8 +107,12 @@ specification for working-graph coefficients. Native prize objectives and
 their normalized specifications use `ObjectiveSpec.from_prizes`, including
 the legacy maximum-weight penalty path. This conversion rewards positive
 prizes only and retains an explicit penalty per omitted terminal requirement.
-Classic prize offsets, signed maximum-weight transforms, budget objectives,
-and transformation corrections remain separate.
+Signed node-weight objectives use `ObjectiveSpec.from_node_weights`: negate
+the node weights, give topology edges zero cost, and report the opposite sign
+with `value(nodes=...)`. Both node-budgeted MWCS solvers and the normalized
+signed-weight specification use this conversion. Keep the node-cost budget
+mapping separate from these signed objective coefficients. Classic prize
+offsets, budget objectives, and transformation corrections remain separate.
 Check both the objective algebra and unchanged reported values against tiny
 independent oracles; the variant guide lists the reporting differences and special cases.
 Use `value(...)` on original selections for reporting: it cancels prize offsets

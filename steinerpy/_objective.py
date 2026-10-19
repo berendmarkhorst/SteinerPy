@@ -54,6 +54,19 @@ class ObjectiveSpec:
             penalty_cost=penalty_cost,
         )
 
+    @classmethod
+    def from_node_weights(cls, graph, weights):
+        """Minimize negative signed node weights; edges supply only topology."""
+        return cls(
+            edge_costs={
+                (u, v) if graph.is_directed() else frozenset((u, v)): 0
+                for u, v in graph.edges
+            },
+            node_costs={node: -weights.get(node, 0.0) for node in graph},
+            directed=graph.is_directed(),
+            report_sign=-1,
+        )
+
     def _selection_costs(self, edges, nodes):
         keys = dict.fromkeys(
             tuple(edge) if self.directed else frozenset(edge) for edge in edges
@@ -119,9 +132,7 @@ def objective_from_spec(spec, variant, *, pc_transform=None):
     elif variant == "budgeted_max_weight_connected" or (
         variant == "max_weight_connected" and transform
     ):
-        node_costs = {node: -spec.node_weights.get(node, 0) for node in graph}
-        topology_only = True
-        sign = -1
+        return ObjectiveSpec.from_node_weights(graph, spec.node_weights)
     elif variant in {"prize_collecting", "directed_prize_collecting"}:
         if transform:
             node_costs = {node: -spec.node_prizes.get(node, 0) for node in graph}
