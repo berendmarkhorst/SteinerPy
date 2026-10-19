@@ -165,6 +165,12 @@ For classic prize collecting, the offset restores the prizes of omitted nodes:
 worth 10 with edge cost 2 gives `L = -8` and a reported cost of 2. Maximizing
 signed node weight instead minimizes its negation and reports the opposite sign.
 
+Both node-budgeted maximum-weight solvers use the same signed node-weight
+coefficients and reporting conversion as the normalized specification. Negative
+node weights remain costs for undesirable connectors; missing node weights
+default to zero. Edge attributes supply topology only, and the separate
+`node_costs` mapping determines budget usage.
+
 Some existing paths require additional variables:
 
 - The legacy prize-collecting default minimizes edge costs minus collected

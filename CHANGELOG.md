@@ -149,6 +149,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- HiGHS and Gurobi node-budgeted maximum-weight objectives and reporting now
+  use shared signed node-weight coefficients. Negative connectors, zero or
+  missing weights, topology-only edges, and separate node-cost budgets retain
+  their existing semantics. The normalized signed-weight specification uses
+  the same conversion.
 - Native prize-collecting and legacy maximum-weight penalty objectives now
   consume shared edge/node coefficients and per-requirement penalties from
   `ObjectiveSpec`. Existing constraints, penalty amounts, reporting units,
