@@ -132,6 +132,18 @@ existing directed-cut solver. Preserve original-space semantics and explicit
 backmapping, and check new combinations against an independent tiny-instance
 oracle. A new public subclass is not required for each combination.
 
+Node-cost splitting lives in `steinerpy/_transformations.py` and is shared by
+the legacy node-weighted adapter and group/node-cost composition. Its
+`SplitNodes` result records the working graph, original-node input/output ports,
+paid node arcs, and cross-arcs mapped to original edges. Later stages attach
+group sinks to output ports, so group membership includes the member's node
+cost. Preserve these mappings when composing stages; never recover original
+identities by parsing artificial labels. Source graphs/cost mappings stay owned
+by their callers. Missing edge costs default to zero in legacy node weighting
+and one in composition. Existing terminal-cost corrections remain in the legacy
+adapter. Hop, degree, and budget meanings must be defined on original objects
+before enabling them on a split graph; existing compatibility checks still apply.
+
 New problem variants are a common and very welcome type of contribution. There
 is no plugin system — variants are plain classes. The checklist:
 

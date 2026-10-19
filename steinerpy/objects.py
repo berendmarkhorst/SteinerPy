@@ -10,6 +10,7 @@ from .mathematical_model import (
     build_budget_model, run_budget_model,
 )
 from .graph_reducer import preprocess_graph, reduction_stats, map_solution_to_original, ReductionTracker
+from ._transformations import split_node_costs as _split_node_costs
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ def node_split_graph(
     splitting each node v into v_in and v_out connected by a directed edge whose
     weight equals node_weights[v].  Original edges become directed cross-edges
     between the split nodes in both directions (to preserve undirected semantics).
+    Usual string labels are retained; colliding string representations use
+    distinct integer labels, with the returned map preserving original identities.
 
     :param graph: original undirected graph.
     :param terminal_groups: nested list of terminals.
@@ -50,23 +53,19 @@ def node_split_graph(
     :return: (new_graph, new_terminal_groups, node_map)
              where node_map maps every split-node name back to its original node.
     """
-    new_graph = nx.DiGraph()
-    node_map: Dict[str, object] = {}
-
-    for v in graph.nodes():
-        v_in, v_out = f"{v}_in", f"{v}_out"
-        node_map[v_in] = v
-        node_map[v_out] = v
-        new_graph.add_edge(v_in, v_out, **{weight: node_weights.get(v, 0)})
-
-    for u, v, data in graph.edges(data=True):
-        edge_cost = data.get(weight, 0)
-        # Both directions to preserve undirected semantics
-        new_graph.add_edge(f"{u}_out", f"{v}_in", **{weight: edge_cost})
-        new_graph.add_edge(f"{v}_out", f"{u}_in", **{weight: edge_cost})
-
-    new_terminal_groups = [[f"{t}_in" for t in group] for group in terminal_groups]
-    return new_graph, new_terminal_groups, node_map
+    # Preserve usual legacy labels, falling back when e.g. 1 and "1" collide.
+    split = {node: (f"{node}_in", f"{node}_out") for node in graph}
+    labels = [label for pair in split.values() for label in pair]
+    if len(set(labels)) != len(labels):
+        split = None
+    compiled = _split_node_costs(
+        graph, node_weights, weight, default_edge_cost=0, split=split
+    )
+    node_map = {label: node for node, pair in compiled.split.items() for label in pair}
+    new_terminal_groups = [
+        [compiled.split[node][0] for node in group] for group in terminal_groups
+    ]
+    return compiled.graph, new_terminal_groups, node_map
 
 
 class BaseSteinerProblem:

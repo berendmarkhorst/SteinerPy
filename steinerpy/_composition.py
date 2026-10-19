@@ -6,26 +6,8 @@ import math
 import networkx as nx
 
 from . import mathematical_model as mm
+from ._transformations import split_node_costs
 from .objects import DirectedSteinerProblem, NodeWeightedSolution
-
-
-def split_node_costs(spec):
-    """Move node costs onto arcs, retaining original node and edge identities."""
-    graph = nx.DiGraph()
-    split = {node: (2 * i, 2 * i + 1) for i, node in enumerate(spec.graph)}
-    node_arcs = {}
-    edge_arcs = {}
-    for node, (enter, leave) in split.items():
-        graph.add_edge(
-            enter, leave, **{spec.weight: (spec.node_costs or {}).get(node, 0)}
-        )
-        node_arcs[enter, leave] = node
-    for u, v, data in spec.graph.edges(data=True):
-        for a, b in ((u, v), (v, u)):
-            arc = (split[a][1], split[b][0])
-            graph.add_edge(*arc, **{spec.weight: data.get(spec.weight, 1)})
-            edge_arcs[arc] = (u, v)
-    return graph, split, node_arcs, edge_arcs
 
 
 @dataclass
@@ -46,7 +28,8 @@ def compile_groups(spec):
     cannot create original-space shortcuts. Every path to a group sink leaves
     a member's output node, so its node-cost arc must have been traversed.
     """
-    graph, split, node_arcs, edge_arcs = split_node_costs(spec)
+    split_nodes = split_node_costs(spec.graph, spec.node_costs, spec.weight)
+    graph = split_nodes.graph
     groups = list(spec.groups) + [(t,) for group in spec.terminal_groups for t in group]
     feasible_nodes = set()
     for component in nx.connected_components(spec.graph):
@@ -59,7 +42,7 @@ def compile_groups(spec):
     root = len(graph)
     graph.add_node(root)
     source_arcs = [
-        (root, split[node][0])
+        (root, split_nodes.split[node][0])
         for node in min(groups, key=len)
         if node in feasible_nodes
     ]
@@ -71,8 +54,15 @@ def compile_groups(spec):
         terminals.append(sink)
         graph.add_node(sink)
         for node in group:
-            graph.add_edge(split[node][1], sink, **{spec.weight: 0})
-    return CompiledGroups(graph, root, terminals, source_arcs, node_arcs, edge_arcs)
+            graph.add_edge(split_nodes.split[node][1], sink, **{spec.weight: 0})
+    return CompiledGroups(
+        graph,
+        root,
+        terminals,
+        source_arcs,
+        split_nodes.node_arcs,
+        split_nodes.edge_arcs,
+    )
 
 
 def decode_groups(spec, compiled, selected_arcs, objective):

@@ -149,6 +149,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- Legacy node-weighted solving and group/node-cost composition now share a
+  private node-splitting transformation with explicit input/output ports and
+  original-node/edge provenance. Legacy labels, missing-cost defaults, terminal
+  corrections, and existing compatibility checks are retained.
 - HiGHS and Gurobi node-budgeted maximum-weight objectives and reporting now
   use shared signed node-weight coefficients. Negative connectors, zero or
   missing weights, topology-only edges, and separate node-cost budgets retain
@@ -214,6 +218,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- Legacy node splitting keeps distinct original nodes whose string forms
+  collide (such as `1` and `"1"`) separate, using collision-free labels when
+  needed.
 - Native prize-collecting solving and edge-cost reporting now consistently
   default missing edge weights to one.
 - Directed hop limits now apply to HiGHS edge-budget solves as well as Gurobi,
