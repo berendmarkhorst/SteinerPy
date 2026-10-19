@@ -178,6 +178,107 @@ def test_native_prize_coefficients_snapshot_inputs_and_ignore_nonpositive_reward
     assert objective.report_sign == 1 and objective.report_offset == 0
 
 
+@pytest.mark.parametrize("directed", [False, True])
+def test_signed_weight_coefficients_snapshot_inputs_and_ignore_edge_costs(directed):
+    graph = nx.DiGraph() if directed else nx.Graph()
+    graph.add_edge("root", (1, 2), weight="topology only")
+    graph.add_node("missing")
+    weights = {"root": -4, (1, 2): 9, "outside": 100}
+    objective = ObjectiveSpec.from_node_weights(graph, weights)
+    graph.clear()
+    weights.clear()
+    assert objective.node_costs == {"root": 4, (1, 2): -9, "missing": 0}
+    assert objective.edge_cost(("root", (1, 2))) == 0
+    assert objective.canonical_value(nodes=["root", (1, 2)]) == -5
+    assert objective.value(nodes=["root", (1, 2)]) == 5
+    assert objective.value(nodes=["root"]) == -4
+    assert objective.report_offset == 0 and objective.penalty_cost == 0
+
+
+@pytest.mark.parametrize("solver", ["highs", "gurobi"])
+@pytest.mark.parametrize("budget", [1, 3, 5])
+@pytest.mark.parametrize(
+    "weights",
+    [
+        {0: 2, 1: -3, 2: 8, 3: 1},
+        {0: -4, 1: -2, 2: -1, 3: -3},
+        {},
+        {2: 5},
+    ],
+    ids=["mixed", "negative", "zero", "sparse"],
+)
+def test_signed_weight_solver_coefficients_and_report_match_node_subset_oracle(
+    solver, budget, weights
+):
+    if solver == "gurobi":
+        gp = pytest.importorskip("gurobipy")
+        try:
+            with gp.Env(params={"OutputFlag": 0}) as env:
+                with gp.Model(env=env):
+                    pass
+        except gp.GurobiError:
+            pytest.skip("Gurobi license is not available")
+    graph = nx.path_graph(4)
+    nx.set_edge_attributes(
+        graph, {(0, 1): "unused", (1, 2): float("nan"), (2, 3): -100}, "cost"
+    )
+    costs = {0: 1, 1: 1, 2: 2, 3: 1}
+    unified = Problem(
+        graph,
+        variant="budgeted_max_weight_connected",
+        root=0,
+        node_weights=weights,
+        node_costs=costs,
+        node_budget=budget,
+        weight="cost",
+    )
+    problem = unified.implementation
+    feasible = []
+    for flags in itertools.product((False, True), repeat=len(graph)):
+        nodes = [node for node, keep in zip(graph, flags) if keep]
+        if 0 not in nodes or sum(costs[node] for node in nodes) > budget:
+            continue
+        if nx.is_connected(graph.subgraph(nodes)):
+            feasible.append(sum(weights.get(node, 0) for node in nodes))
+    best = max(feasible)
+
+    builder = mm.build_mwcsb_model if solver == "highs" else mm.build_mwcsb_model_gurobi
+    runner = mm.run_mwcsb_model if solver == "highs" else mm.run_mwcsb_model_gurobi
+    model, x, y1, _, _, node_vars = builder(problem)
+    try:
+        gap, _, value, edges, nodes, status = runner(
+            model, problem, y1, node_vars, return_status=True
+        )
+        assert status == "optimal" and gap == 0
+        assert value == best == sum(weights.get(node, 0) for node in nodes)
+        assert 0 in nodes and sum(costs[node] for node in nodes) <= budget
+        selected = nx.Graph(edges)
+        selected.add_nodes_from(nodes)
+        assert set(selected) == set(nodes) and nx.is_connected(selected)
+        coefficients = unified._spec.objective(unified.variant)
+        assert coefficients.value(edges, nodes) == value
+        for node, variable in node_vars.items():
+            cost = (
+                model.getLp().col_cost_[variable.index]
+                if solver == "highs"
+                else variable.Obj
+            )
+            assert cost == -weights.get(node, 0)
+        for variable in x.values():
+            cost = (
+                model.getLp().col_cost_[variable.index]
+                if solver == "highs"
+                else variable.Obj
+            )
+            assert cost == 0
+    finally:
+        if solver == "gurobi":
+            model.dispose()
+    solution = unified.get_solution(solver=solver)
+    assert solution.objective == best and solution.gap == 0
+    assert solution.edge_cost == 0
+
+
 @pytest.mark.parametrize(
     "mode", ["default", "zero_penalty", "sparse", "legacy_negative", "mwcs", "forest"]
 )

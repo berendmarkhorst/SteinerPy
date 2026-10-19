@@ -2467,9 +2467,12 @@ def run_mwcsb_model(model, steiner_problem, y1: Dict, node_vars: Dict,
     :return: ``(gap, runtime, mwcs_weight, selected_edges, selected_nodes)`` where
         ``mwcs_weight`` is the sum of node weights over the chosen subgraph.
     """
-    nw = steiner_problem._mwcs_node_weights
-    # Maximise total node weight == minimise its negation.
-    objective_expr = sum(-nw.get(v, 0.0) * node_vars[v] for v in steiner_problem.nodes)
+    coefficients = ObjectiveSpec.from_node_weights(
+        steiner_problem.graph, steiner_problem._mwcs_node_weights
+    )
+    objective_expr = sum(
+        coefficients.node_costs[v] * node_vars[v] for v in steiner_problem.nodes
+    )
     model.minimize(objective_expr)
 
     def _ret(gap, runtime, objective, selected_edges, selected_nodes, status):
@@ -2494,7 +2497,7 @@ def run_mwcsb_model(model, steiner_problem, y1: Dict, node_vars: Dict,
         and model.variableValue(y1[a]) > 0.5  # noqa: W503
     ]
     selected_edges = _undirected_from_arcs(used_arcs)
-    mwcs_weight = sum(nw.get(v, 0.0) for v in selected_nodes)
+    mwcs_weight = coefficients.value(nodes=selected_nodes)
     if not _mwcsb_candidate_feasible(
         steiner_problem, selected_edges, selected_nodes
     ):
@@ -2578,9 +2581,13 @@ def run_mwcsb_model_gurobi(model, steiner_problem, y1: Dict, node_vars: Dict,
     import gurobipy as gp
     from gurobipy import GRB
 
-    nw = steiner_problem._mwcs_node_weights
+    coefficients = ObjectiveSpec.from_node_weights(
+        steiner_problem.graph, steiner_problem._mwcs_node_weights
+    )
     model.setObjective(
-        gp.quicksum(-nw.get(v, 0.0) * node_vars[v] for v in steiner_problem.nodes),
+        gp.quicksum(
+            coefficients.node_costs[v] * node_vars[v] for v in steiner_problem.nodes
+        ),
         GRB.MINIMIZE,
     )
     start = time.time()
@@ -2603,7 +2610,7 @@ def run_mwcsb_model_gurobi(model, steiner_problem, y1: Dict, node_vars: Dict,
         if a[0] in chosen and a[1] in chosen and y1[a].X > 0.5
     ]
     selected_edges = _undirected_from_arcs(used_arcs)
-    mwcs_weight = sum(nw.get(v, 0.0) for v in selected_nodes)
+    mwcs_weight = coefficients.value(nodes=selected_nodes)
     if not _mwcsb_candidate_feasible(
         steiner_problem, selected_edges, selected_nodes
     ):
