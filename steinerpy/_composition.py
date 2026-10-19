@@ -10,7 +10,7 @@ from . import mathematical_model as mm
 from .objects import DirectedSteinerProblem, NodeWeightedSolution
 
 
-def validate_composition(spec, options):
+def validate_composition(spec):
     """Reject features whose original-space meaning is not implemented yet."""
     if spec.graph.is_directed() or spec.graph.is_multigraph():
         raise ValueError(
@@ -24,6 +24,8 @@ def validate_composition(spec, options):
         )
     if not spec.groups:
         raise ValueError("node_costs requires groups in the modular interface for now.")
+    options = spec.implementation_options()
+    options.pop("node_costs", None)
     unknown = set(options) - {"weight", "preprocess"}
     if unknown:
         raise TypeError(
