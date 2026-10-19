@@ -100,8 +100,7 @@ def decode_groups(spec, compiled, selected_arcs, objective):
         raise RuntimeError("Composed solution does not cover every group.")
     if any(t not in original for group in spec.terminal_groups for t in group):
         raise RuntimeError("Composed solution omits mandatory terminals.")
-    cost = sum(spec.graph.edges[e].get(spec.weight, 1) for e in edges)
-    cost += sum((spec.node_costs or {}).get(node, 0) for node in nodes)
+    cost = spec.objective(None).value(edges, nodes)
     if not math.isclose(cost, objective, rel_tol=1e-7, abs_tol=1e-7):
         raise RuntimeError("Composed solution objective does not match original costs.")
     return edges, nodes, cost
