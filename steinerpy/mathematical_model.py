@@ -656,17 +656,16 @@ def add_optional_flow_constraints(
     The flow demand is scaled by this variable so that no flow is required for
     disconnected (penalised) terminals.
 
+    :param y2: per-group arc capacities; budget forests use shared edge variables.
     :param connection_vars: dict (group_id, terminal) -> HiGHS binary variable
     :return: model with added constraints and flow variable dict f.
     """
-    group_indices = range(len(steiner_problem.terminal_groups))
     # Continuous flow in [0, 1] — see add_flow_constraints: with integral y2 and
     # connection variables, a feasible continuous unit flow exists iff an
     # integral one does, and f never enters the objective.
     f = {
         (group_id, t, a): model.addVariable(0, 1, name=f"f_opt[{group_id},{a}]")
-        for group_id in group_indices
-        for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id)
+        for group_id, t in connection_vars
         for a in steiner_problem.arcs
     }
 
@@ -677,36 +676,31 @@ def add_optional_flow_constraints(
     for v in steiner_problem.nodes:
         arcs_out = out_arcs.get(v, ())
         arcs_in = in_arcs.get(v, ())
-        for group_id in group_indices:
-            for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
-                c = connection_vars[(group_id, t)]
+        for (group_id, t), c in connection_vars.items():
+            if v == steiner_problem.roots[group_id]:
+                demand = c
+            elif v == t:
+                demand = -c
+            else:
+                # demand = 0 (flow conservation); skip when node has no arcs
+                if not arcs_out and not arcs_in:
+                    continue
+                demand = 0
 
-                if v == steiner_problem.roots[group_id]:
-                    demand = c
-                elif v == t:
-                    demand = -c
-                else:
-                    # demand = 0 (flow conservation); skip when node has no arcs
-                    if not arcs_out and not arcs_in:
-                        continue
-                    demand = 0
-
-                first_term = sum(f[group_id, t, a] for a in arcs_out) if arcs_out else 0
-                second_term = sum(f[group_id, t, a] for a in arcs_in) if arcs_in else 0
-                model.addConstr(first_term - second_term == demand)
+            first_term = sum(f[group_id, t, a] for a in arcs_out) if arcs_out else 0
+            second_term = sum(f[group_id, t, a] for a in arcs_in) if arcs_in else 0
+            model.addConstr(first_term - second_term == demand)
 
     # Constraint 2: flow can only use selected arcs
-    for group_id in group_indices:
-        for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
-            for a in steiner_problem.arcs:
-                model.addConstr(f[group_id, t, a] <= y2[group_id, a])
+    for group_id, t in connection_vars:
+        for a in steiner_problem.arcs:
+            model.addConstr(f[group_id, t, a] <= y2[group_id, a])
 
     # Constraint 3: no flow leaving a terminal
-    for group_id in group_indices:
-        for t in terminal_groups_without_root(steiner_problem.terminal_groups, steiner_problem.roots, group_id):
-            terminal_out = out_arcs.get(t, ())
-            if terminal_out:
-                model.addConstr(sum(f[group_id, t, a] for a in terminal_out) == 0)
+    for group_id, t in connection_vars:
+        terminal_out = out_arcs.get(t, ())
+        if terminal_out:
+            model.addConstr(sum(f[group_id, t, a] for a in terminal_out) == 0)
 
     return model, f
 
@@ -1573,8 +1567,16 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
             # Exactly one of connected or penalised
             model.addConstr(connection_vars[(group_id, terminal)] + penalty_vars[(group_id, terminal)] == 1)
 
-    # Flow constraints that respect the optional connectivity
-    model, f = add_optional_flow_constraints(model, steiner_problem, y2, connection_vars)
+    # Each requirement starts at its own root; shared undirected edges can carry
+    # its flow in either direction, independently of the forest's orientation.
+    capacities = {
+        (group_id, arc): x[arc if arc in x else arc[::-1]]
+        for group_id in group_indices
+        for arc in steiner_problem.arcs
+    }
+    model, f = add_optional_flow_constraints(
+        model, steiner_problem, capacities, connection_vars
+    )
 
     # Budget constraint: total edge cost <= budget. Skip when the graph has no
     # edges: an empty edge set trivially respects any non-negative budget (cost
