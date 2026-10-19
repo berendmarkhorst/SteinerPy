@@ -149,6 +149,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- Legacy undirected/directed group solvers and group/node-cost composition now
+  share group-terminal attachment with collision-free labels, zero-cost
+  connectors, and original group-member provenance. Composition attaches at
+  paid output ports; supported combinations and solver formulations are
+  unchanged.
 - Legacy node-weighted solving and group/node-cost composition now share a
   private node-splitting transformation with explicit input/output ports and
   original-node/edge provenance. Legacy labels, missing-cost defaults, terminal
