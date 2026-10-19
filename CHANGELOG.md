@@ -146,6 +146,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- `Problem` input normalization and implementation dispatch now have separate
+  private modules. `ProblemSpec` records roots, objective data, constraints,
+  and geometry alongside connectivity, preserving omitted versus explicit
+  options, legacy defaults, validation errors, and supported combinations.
 - Near-integral connectivity candidates use capacity-checked reachability
   cuts before max-flow. Identical certificates within a separation round are
   emitted once; fractional and uncertified demands retain min-cut separation.
