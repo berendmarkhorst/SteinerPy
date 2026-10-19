@@ -10,7 +10,11 @@ from .mathematical_model import (
     build_budget_model, run_budget_model,
 )
 from .graph_reducer import preprocess_graph, reduction_stats, map_solution_to_original, ReductionTracker
-from ._transformations import split_node_costs as _split_node_costs
+from ._transformations import (
+    split_node_costs as _split_node_costs,
+    attach_group_terminals as _attach_group_terminals,
+    _fresh_label as _fresh_group_label,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1409,14 +1413,7 @@ class GroupSteinerProblem(SteinerProblem):
         self._gstp_super_terminals = set(super_terminals)
         super().__init__(augmented, [super_terminals], weight=weight, **kwargs)
 
-    @staticmethod
-    def _fresh_label(base, existing):
-        if base not in existing:
-            return base
-        i = 0
-        while f"{base}{i}" in existing:
-            i += 1
-        return f"{base}{i}"
+    _fresh_label = staticmethod(_fresh_group_label)
 
     @staticmethod
     def _build_augmented(
@@ -1433,24 +1430,9 @@ class GroupSteinerProblem(SteinerProblem):
         :return: (augmented_graph, super_terminals) — one super-terminal label
             per group.
         """
-        if not groups or any(len(g) == 0 for g in groups):
-            raise ValueError("Each group must contain at least one vertex.")
-        augmented = graph.copy()
-        existing = set(graph.nodes())
-        super_terminals = []
-        for i, grp in enumerate(groups):
-            g_node = GroupSteinerProblem._fresh_label(f"__group_{i}__", existing)
-            existing.add(g_node)
-            super_terminals.append(g_node)
-            augmented.add_node(g_node)
-            for v in grp:
-                if v not in graph:
-                    raise ValueError(f"group vertex {v!r} is not in the graph.")
-                if directed:
-                    augmented.add_edge(v, g_node, **{weight: 0})
-                else:
-                    augmented.add_edge(g_node, v, **{weight: 0})
-        return augmented, super_terminals
+        # Constructors validate graph direction; preserve the legacy call signature.
+        compiled = _attach_group_terminals(graph, groups, weight)
+        return compiled.graph, compiled.terminals
 
     def get_optimal_solutions(self, *args, **kwargs) -> 'OptimalSolutionPool':
         raise NotImplementedError(

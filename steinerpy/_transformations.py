@@ -5,6 +5,67 @@ from dataclasses import dataclass
 import networkx as nx
 
 
+def _fresh_label(base, existing):
+    if base not in existing:
+        return base
+    index = 0
+    while "{}{}".format(base, index) in existing:
+        index += 1
+    return "{}{}".format(base, index)
+
+
+@dataclass
+class GroupTerminals:
+    """Artificial terminals and connectors mapped to (group index, member).
+
+    Directed connector keys are arc tuples; undirected keys are frozensets.
+    """
+
+    graph: nx.Graph
+    terminals: list
+    connector_edges: dict
+
+
+def attach_group_terminals(original, groups, weight="weight", *, ports=None):
+    """Attach zero-cost group terminals to a copy of a working graph.
+
+    ``ports`` maps original group members to their working output nodes after
+    splitting; without splitting, members are their own ports. Directed
+    connectors enter sink-only terminals, so a group cannot create shortcuts.
+    """
+    groups = tuple(tuple(group) for group in groups)
+    if not groups or any(not group for group in groups):
+        raise ValueError("Each group must contain at least one vertex.")
+    ports = {node: node for node in original} if ports is None else dict(ports)
+    for group in groups:
+        for member in group:
+            if member not in ports:
+                raise ValueError(
+                    "group vertex {!r} is not in the graph.".format(member)
+                )
+            if ports[member] not in original:
+                raise ValueError(
+                    "Group port {!r} is not in the graph.".format(ports[member])
+                )
+
+    graph = original.copy()
+    existing = set(graph)
+    terminals = []
+    connectors = {}
+    for index, group in enumerate(groups):
+        terminal = _fresh_label("__group_{}__".format(index), existing)
+        existing.add(terminal)
+        terminals.append(terminal)
+        graph.add_node(terminal)
+        for member in group:
+            port = ports[member]
+            edge = (port, terminal) if graph.is_directed() else (terminal, port)
+            graph.add_edge(*edge, **{weight: 0})
+            key = edge if graph.is_directed() else frozenset(edge)
+            connectors[key] = (index, member)
+    return GroupTerminals(graph, terminals, connectors)
+
+
 @dataclass
 class SplitNodes:
     """Paid node traversals and original-edge arcs, ready for terminal attachment."""
