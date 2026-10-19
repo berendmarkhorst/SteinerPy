@@ -266,8 +266,9 @@ For budgeted forests, terminal groups may overlap and share selected edges;
 each edge is charged once. Connected terminals are counted per group, so a
 vertex required by two groups counts twice when both requirements are met.
 Each group's first terminal is its root and counts as connected even when
-isolated. Edge-budget solving currently uses HiGHS; Gurobi is not supported
-for this path.
+isolated. Both HiGHS and Gurobi support edge-budget solving, including shared
+forest edges, degree limits, and directed arc orientation. Select Gurobi with
+`problem.get_solution(solver="gurobi")`.
 
 ```python
 # Degree-constrained Steiner tree
