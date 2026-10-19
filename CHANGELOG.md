@@ -202,6 +202,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- Budgeted forests now build optional flows for each group's own requirements
+  and share purchased edges across groups. Overlapping terminals no longer
+  raise `KeyError`, and different roots can use an undirected edge in either
+  direction without paying for it twice. Reporting still counts requirements
+  per group, including repeated vertices. Missing edge costs default to one
+  in both budget constraints and incumbent validation.
 - NetworkX cut separation completes the maximum flow before extracting a
   source-side cut; an intermediate preflow can leave excess at internal nodes
   and produce a source partition that is not a minimum cut.
