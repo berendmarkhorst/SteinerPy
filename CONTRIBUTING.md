@@ -85,6 +85,13 @@ change adds or alters user-facing behaviour:
 
 ## Adding a new problem variant
 
+For feature combinations, first extend the normalized specification and central
+validation in `steinerpy/problem.py` / `steinerpy/_problem_spec.py`. The private
+`steinerpy/_composition.py` compiles group choices and node costs into the
+existing directed-cut solver. Preserve original-space semantics and explicit
+backmapping, and check new combinations against an independent tiny-instance
+oracle. A new public subclass is not required for each combination.
+
 New problem variants are a common and very welcome type of contribution. There
 is no plugin system — variants are plain classes. The checklist:
 

@@ -18,20 +18,27 @@ SteinerPy solves Steiner tree and Steiner forest problems — and many advanced 
 
 ## Unified problem interface
 
-Use one class to select any supported problem variant:
+Describe connectivity and costs with one class:
 
 ```python
 from steinerpy import Problem
 
-problem = Problem(graph, [["A", "D"]])  # Steiner tree; multiple lists give a forest
+problem = Problem(graph, terminals=["A", "D"])
 solution = problem.get_solution(solver="highs", time_limit=60)
 
-problem = Problem(digraph, variant="directed", root="A", terminals=["D"])
-problem = Problem(graph, variant="group", groups=[["A", "B"], ["C", "D"]])
+problem = Problem(graph, terminals=[["A", "B"], ["C", "D"]])  # Forest
+problem = Problem(digraph, root="A", terminals=["D"])
+problem = Problem(graph, groups=[["A", "B"], ["C", "D"]], node_costs={"B": 2})
 ```
 
-See the [variant guide](docs/source/guide/variants.md) for all configuration names.
-Existing problem classes remain supported.
+Flat `terminals` must all connect; nested lists must each connect internally,
+with sharing allowed. `groups` chooses at least one member per group in one
+connected tree. Group-plus-node-cost problems minimize edge costs plus selected
+node costs; this combination currently requires non-negative costs and exact
+solving without preprocessing.
+
+See the [variant guide](docs/source/guide/variants.md) for supported combinations.
+Explicit `variant=` calls, `terminal_groups=`, and existing classes remain supported.
 
 ## Installation
 

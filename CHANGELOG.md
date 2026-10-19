@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Feature-based `Problem` API**: flat `terminals` defines a tree; nested lists
+  define forest requirements with edge sharing. Directed and group variants
+  can be inferred from inputs; explicit variants, legacy classes, and the
+  `terminal_groups` alias remain supported.
+- **Composable group connectivity and node costs**: combine `groups`, optional
+  mandatory `terminals`, and non-negative `node_costs` with exact HiGHS/Gurobi
+  solving. Transformations track original nodes/edges, charge selected nodes
+  once, and validate decoded results. Unsupported constraints and preprocessing
+  are rejected before model construction.
 - **Experimental terminal-regions PCSTP reductions** (off by default):
   `pc_reduce="pcd+trd"` adds Rehfeldt & Koch's (2020) terminal-regions
   decomposition and Proposition 12 lower bound for bound-based edge deletion;

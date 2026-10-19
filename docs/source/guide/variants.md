@@ -2,24 +2,94 @@
 
 ## One configurable problem class
 
-Use `Problem` for every supported variant. The `variant` keyword selects the
-mathematical problem, and the other arguments describe its data and modifiers:
+Use `Problem` to describe connectivity and costs. For the supported feature
+combinations below, the implementation follows from those inputs:
 
 ```python
 from steinerpy import Problem
 
-problem = Problem(graph, [["A", "D"]], max_degree=3)
+problem = Problem(graph, terminals=["A", "D"], max_degree=3)
 solution = problem.get_solution(solver="highs", time_limit=60)
 
-problem = Problem(digraph, variant="directed", root="A", terminals=["D"])
-problem = Problem(graph, variant="group", groups=[["A", "B"], ["C", "D"]])
+problem = Problem(digraph, root="A", terminals=["D"])
+problem = Problem(graph, groups=[["A", "B"], ["C", "D"]], node_costs={"B": 2})
 problem = Problem(variant="rectilinear", points=[(0, 0), (1, 1), (2, 0)])
 ```
 
-The default `variant="steiner"` accepts one terminal list for a tree or multiple
-lists for a forest. `terminal_groups` requires **every** member of each list;
-`groups` requires **at least one** member of each list. The interface rejects
-misplaced arguments rather than silently treating these as the same problem.
+`terminals=["A", "B"]` requires every listed node in one connected tree.
+`terminals=[["A", "B"], ["C", "D"]]` requires A–B and C–D connectivity,
+without requiring a connection between the sets. These forest requirements
+may share edges. Flat and one-list nested forms are equivalent.
+
+`groups=[["A", "B"], ["C", "D"]]` instead requires **at least one** member
+of each group in **one connected tree**. With groups, flat terminals can also
+require particular nodes; a single nested terminal list is equivalent. Multiple
+forest terminal lists combined with groups are not yet supported.
+
+Use lists for nested terminal syntax; tuple-valued node labels remain atomic.
+Mixed flat/nested inputs are rejected. `terminal_groups=` remains an alias for
+the old nested syntax, including the positional second argument; supplying both
+`terminals` and `terminal_groups` is an error.
+
+| Features (no `variant` required) | Supported behavior |
+|---|---|
+| Undirected graph + flat or nested `terminals` | Steiner tree or forest; existing degree/edge-budget options apply |
+| Directed graph + `root` + one set of `terminals` | Rooted directed Steiner problem |
+| Directed graph + `root` + `terminals` + `hop_limit` | Existing hop-constrained problem |
+| Undirected graph + `groups` | Existing group Steiner problem |
+| Directed graph + `root` + `groups` | Existing directed group Steiner problem |
+| Undirected graph + `groups` + `node_costs` and/or mandatory `terminals` | New exact composition path, described below |
+
+Other named variants remain available through explicit `variant=` calls.
+Existing explicit calls and legacy classes retain their solution types and
+solver restrictions. Group and legacy node-weighted transformations reject
+degree/hop limits and budgets rather than applying those to artificial nodes.
+
+## Combining group choices and node costs
+
+This path minimizes
+
+$$\sum_{e \in E} c_e x_e + \sum_{v \in V} c_v y_v$$
+
+over a connected tree meeting all group and mandatory-terminal requirements.
+Every selected node is charged exactly once, including terminal nodes. Missing
+node costs are zero; missing edge costs are one. `weight=` selects the edge-cost
+attribute. All costs must be finite and non-negative.
+
+For example, adding a cost to A changes which member of the first group wins:
+
+```python
+import networkx as nx
+from steinerpy import Problem
+
+graph = nx.Graph()
+graph.add_weighted_edges_from([("A", "C", 1), ("B", "C", 3)])
+groups = [["A", "B"], ["C"]]
+
+edge_only = Problem(graph, groups=groups).get_solution()
+with_nodes = Problem(graph, groups=groups, node_costs={"A": 10}).get_solution()
+
+assert edge_only.objective == 1       # A–C
+assert with_nodes.objective == 3      # B–C
+assert set(with_nodes.selected_nodes) == {"B", "C"}
+```
+
+Results are `NodeWeightedSolution` objects with original edges and
+`selected_nodes`, including singleton solutions with no edges. Inputs are
+snapshotted for this path; artificial nodes and arcs never appear in results.
+Infeasibility or termination without a valid incumbent raises `RuntimeError`.
+An interrupted solve with a valid incumbent returns `gap=inf`, without claiming
+optimality.
+
+HiGHS and Gurobi use their existing directed-cut solve loops. Preprocessing is
+automatically disabled; explicitly enabling it is rejected. This first
+composition requires a simple undirected graph without self-loops and does not
+yet support signed rewards, budgets, degree/hop limits, heuristic-only solving,
+optimum enumeration, or accelerator/reduction options.
+
+## Explicit variants and compatibility
+
+The following explicit calls remain available without migrating existing code:
 
 | `variant` | Data arguments besides `graph` | Existing implementation |
 |---|---|---|
@@ -42,14 +112,13 @@ supports them. `budget` is an edge-cost budget; `node_budget` is a vertex-cost
 budget. Solver arguments belong to `get_solution()`. `Problem.variants` lists
 the supported names.
 
-`Problem` composes the existing implementations, so their objective definitions,
-preprocessing restrictions, solver options and specialized solution types still
-apply. `get_optimal_solutions()` retains each variant's enumeration restrictions.
-This does not introduce arbitrary combinations of variants or new solvers.
-For advanced access, use `problem.implementation` (for example,
-`problem.implementation.cut_stats` or as input to a low-level model builder).
-All existing classes and imports remain supported; internal implementations
-still use their existing inheritance hierarchy.
+`get_optimal_solutions()` retains each legacy variant's enumeration restrictions.
+For advanced access, `problem.implementation` is the selected legacy object or
+the new private composition strategy. Low-level model builders accept the legacy
+objects; the composition strategy owns its compilation and exposes `cut_stats`.
+`problem.variant` is the resolved legacy name, or `None` for a composed problem;
+`Problem.variants` lists the explicit legacy names. No legacy interface is
+deprecated by this change.
 
 ## Variant definitions
 

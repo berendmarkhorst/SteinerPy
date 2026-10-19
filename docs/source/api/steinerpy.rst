@@ -6,7 +6,7 @@ package:
 
 .. code-block:: python
 
-   from steinerpy import SteinerProblem, PrizeCollectingProblem, ...
+   from steinerpy import Problem, SteinerProblem, PrizeCollectingProblem, ...
 
 Unified interface
 -----------------
