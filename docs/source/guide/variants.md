@@ -142,6 +142,58 @@ objects; the composition strategy owns its compilation and exposes `cut_stats`.
 `Problem.variants` lists the explicit legacy names. No legacy interface is
 deprecated by this change.
 
+## Objective conventions
+
+Edge costs, node costs, and rewards can share a linear minimization expression:
+
+$$L(x,y) = \sum_e c_e x_e + \sum_v c_v y_v.$$
+
+Selected nodes have positive coefficients for costs and negative coefficients
+for rewards. A variant can report a different value through a constant and a
+sign change: `reported = sign * L + offset`.
+
+| Solve path | Edge coefficients | Node coefficients | Reported value |
+|---|---|---|---|
+| Standard, directed, group, terminal-leaf | Original edge costs | Zero | `L` |
+| Node-weighted, or group plus node costs | Original edge costs | Original node costs | `L` |
+| Classic prize collecting (`pc_transform=True`), including directed prizes | Original edge costs | Negative prizes | `L + sum(all prizes)` |
+| Maximum-weight transform (`pc_transform=True`, also heuristic mode) | Zero | Negative signed node weights | `-L` |
+| Node-budgeted maximum weight | Zero | Negative signed node weights | `-L`; node costs enter the budget constraint |
+
+For classic prize collecting, the offset restores the prizes of omitted nodes:
+`edge costs - collected prizes + all prizes`. For example, collecting all prizes
+worth 10 with edge cost 2 gives `L = -8` and a reported cost of 2. Maximizing
+signed node weight instead minimizes its negation and reports the opposite sign.
+
+Some existing paths require additional variables:
+
+- The legacy prize-collecting default minimizes edge costs minus collected
+  prizes plus `penalty_cost` for each unconnected terminal requirement. Its
+  report has no prize offset. The default penalty is 1000.
+- The legacy maximum-weight default uses that penalty formulation with rewards
+  `max(node_weight, 0)` and penalty `max(positive rewards) + 1`. Its reported
+  value follows the minimized penalty objective. The transform path uses the
+  signed-weight objective in the table.
+- An edge-budgeted tree/forest minimizes the number of unconnected terminal
+  requirements and reports `total requirements - unconnected requirements`.
+  Repeated vertices in separate forest requirements count separately.
+
+These penalty variables and the existing connectivity restrictions remain
+explicit. Coefficient conversion alone does not make the legacy penalty model's
+feasible solutions identical to classic prize collecting. Solve-time
+`pc_transform` overrides select the corresponding convention.
+
+Transformation bookkeeping is also separate: SAP cost shifts, MWCS-to-PCSTP
+constants, terminal-leaf Big-M corrections, mandatory node-cost corrections,
+and preprocessing fixed costs map solver values back to the original graph.
+Rectilinear inputs need their Hanan grid before graph coefficients exist.
+Optimality gaps retain the existing solver-specific handling.
+
+This common representation describes existing objectives. General signed
+`node_costs` and additional feature combinations still require supported
+formulations and transformations. Missing edge costs retain their existing
+defaults: one for standard/composed costs, zero in legacy node splitting.
+
 ## Variant definitions
 
 The variants accepting `terminal_groups` can be solved as a **Steiner tree** (a single group of terminals that must all be connected) or as a **Steiner forest** (multiple independent groups, each connected within itself but not necessarily to other groups).

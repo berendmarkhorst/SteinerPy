@@ -92,6 +92,22 @@ and an optional explicit variant. Preprocessing and other constructor options
 remain separate. `supplied_features` distinguishes omitted arguments from explicit
 values (including `None`), preserving the legacy constructors' defaults.
 
+`ProblemSpec.objective(resolved_variant, pc_transform=...)` builds a private
+`ObjectiveSpec` in `_objective.py`: original edge/node coefficients, an optional
+per-requirement penalty, and the reporting sign/offset. Use `None` as the resolved
+variant for group composition; specify an active solve-time transform override
+when needed (heuristic prize/MWCS solves use the transform convention). Its
+evaluation assumes a feasible selection and does not validate constraints or
+convert solver gaps. Keep objective coefficients separate from budget costs.
+The composition decoder uses it to check original-space values. Legacy builders
+and transformation corrections retain their current behavior; migration of
+those builders is separate from describing their objectives. Check both the
+objective algebra and unchanged reported values against tiny independent
+oracles; the variant guide lists the reporting differences and special cases.
+Use `value(...)` on original selections for reporting: it cancels prize offsets
+before adding small edge costs. Converting an already rounded canonical scalar
+with `reported_value(...)` cannot recover precision lost before that conversion.
+
 For feature combinations, first extend the normalized specification and the
 central `validate_problem` entry point in `_problem_validation.py`. Dispatch
 calls it before constructing either a legacy class or the composition strategy;
