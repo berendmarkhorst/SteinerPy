@@ -1,61 +1,12 @@
 """Compile original-space node costs and group choices into directed cuts."""
 
 from dataclasses import dataclass
-from collections.abc import Mapping
 import math
 
 import networkx as nx
 
 from . import mathematical_model as mm
 from .objects import DirectedSteinerProblem, NodeWeightedSolution
-
-
-def validate_composition(spec):
-    """Reject features whose original-space meaning is not implemented yet."""
-    if spec.graph.is_directed() or spec.graph.is_multigraph():
-        raise ValueError(
-            "Group/node-cost composition requires a simple undirected graph."
-        )
-    if nx.number_of_selfloops(spec.graph):
-        raise ValueError("Group/node-cost composition does not support self-loops.")
-    if len(spec.terminal_groups) > 1:
-        raise ValueError(
-            "Forest terminals cannot yet be combined with groups/node_costs."
-        )
-    if not spec.groups:
-        raise ValueError("node_costs requires groups in the modular interface for now.")
-    options = spec.implementation_options()
-    options.pop("node_costs", None)
-    unknown = set(options) - {"weight", "preprocess"}
-    if unknown:
-        raise TypeError(
-            "Unsupported option(s) for group/node-cost composition: {}".format(
-                ", ".join(sorted(unknown))
-            )
-        )
-    if options.get("preprocess", False):
-        raise ValueError("Group/node-cost composition requires preprocess=False.")
-    if spec.node_costs is not None and not isinstance(spec.node_costs, Mapping):
-        raise TypeError("node_costs must map original nodes to non-negative costs.")
-    for node, cost in (spec.node_costs or {}).items():
-        if node not in spec.graph:
-            raise ValueError("Node cost vertex {!r} is not in the graph.".format(node))
-        _validate_cost(cost, "node {!r}".format(node))
-    for u, v, data in spec.graph.edges(data=True):
-        _validate_cost(data.get(spec.weight, 1), "edge {!r}".format((u, v)))
-
-
-def _validate_cost(cost, location):
-    try:
-        valid = math.isfinite(cost) and cost >= 0
-    except (TypeError, ValueError, OverflowError):
-        valid = False
-    if not valid:
-        raise ValueError(
-            "Costs must be finite and non-negative; invalid cost at {}.".format(
-                location
-            )
-        )
 
 
 def split_node_costs(spec):

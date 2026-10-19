@@ -134,5 +134,4 @@ def normalize_problem(graph, terminal_groups, terminals, variant, options, varia
         options=options,
         **features,
     )
-    spec.validate_nodes()
     return spec
