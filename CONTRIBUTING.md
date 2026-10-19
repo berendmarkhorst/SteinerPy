@@ -92,8 +92,13 @@ and an optional explicit variant. Preprocessing and other constructor options
 remain separate. `supplied_features` distinguishes omitted arguments from explicit
 values (including `None`), preserving the legacy constructors' defaults.
 
-For feature combinations, first extend the normalized specification and existing
-compatibility checks in `_problem_dispatch.py` / `_composition.py`. Normalization
+For feature combinations, first extend the normalized specification and the
+central `validate_problem` entry point in `_problem_validation.py`. Dispatch
+calls it before constructing either a legacy class or the composition strategy;
+it checks required arguments, compatible features, original-space costs, and
+preprocessing restrictions. Add a regression that forbids constructor calls to
+prove that unsupported combinations fail before transformations run. Keep the
+legacy classes' own checks for callers that use those classes directly. Normalization
 must not construct solver objects or reinterpret costs as a new objective. The private
 `steinerpy/_composition.py` compiles group choices and node costs into the
 existing directed-cut solver. Preserve original-space semantics and explicit
