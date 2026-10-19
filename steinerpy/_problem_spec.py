@@ -86,6 +86,12 @@ class ProblemSpec:
         options.update((name, getattr(self, name)) for name in self.supplied_features)
         return options
 
+    def objective(self, variant, *, pc_transform=None):
+        """Describe a supported strategy's original-space objective and reporting."""
+        from ._objective import objective_from_spec
+
+        return objective_from_spec(self, variant, pc_transform=pc_transform)
+
     def validate_nodes(self):
         """Check connectivity requirements and roots before any transformation."""
         if self.graph is None:

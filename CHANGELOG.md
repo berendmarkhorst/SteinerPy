@@ -146,6 +146,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- Existing objective conventions now have a private shared representation of
+  original edge/node coefficients, terminal penalties, and reporting signs and
+  offsets. Group/node-cost decoding uses it for cost checks; legacy solver
+  objectives, transformation corrections, gaps, and supported inputs retain
+  their current behavior. The variant guide explains differences between the
+  legacy penalty models and classic prize/maximum-weight transform paths.
 - `Problem` now checks compatibility through one validation entry point before
   constructing or transforming an instance. Unsupported terminal-leaf budgets,
   additional budgets on node-budgeted MWCS, and incompatible prize transforms
