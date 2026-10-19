@@ -19,6 +19,20 @@ solution = SteinerProblem(graph, terminal_groups).get_solution(solver="gurobi")
 Both solvers implement the same cut-based (DO-D) formulation from Markhorst et al. (2025) and produce identical optimal solutions.
 Gurobi may be faster on larger instances because callbacks avoid repeated re-solves from scratch.
 
+Edge-budget problems (`budget=...`) use the same optional-flow formulation
+and result validation with either solver. They maximize connected terminal
+requirements under the edge-cost budget, including overlapping forest groups
+and supported degree/hop limits. For this path, connectivity flows are added
+before solving instead of generating connectivity cuts in a callback.
+
+```python
+from steinerpy import Problem
+
+solution = Problem(
+    graph, terminals=[["A", "B"], ["A", "C"]], budget=10, preprocess=False
+).get_solution(solver="gurobi")
+```
+
 ## Input and certificate guarantees
 
 All edge-cost Steiner variants require non-negative values in the selected

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Edge-budgeted tree/forest solving now supports Gurobi through the same
+  optional-flow constraints and incumbent checks as HiGHS. Overlapping groups,
+  shared edges, zero budgets, degree limits, and directed arcs are supported.
 - **Feature-based `Problem` API**: flat `terminals` defines a tree; nested lists
   define forest requirements with edge sharing. Directed and group variants
   can be inferred from inputs; explicit variants, legacy classes, and the
@@ -202,6 +205,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- Directed hop limits now apply to HiGHS edge-budget solves as well as Gurobi,
+  with an independent limit check before accepting an incumbent.
 - Budgeted forests now build optional flows for each group's own requirements
   and share purchased edges across groups. Overlapping terminals no longer
   raise `KeyError`, and different roots can use an undirected edge in either

@@ -643,10 +643,12 @@ def add_flow_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProblem'
 
 
 def add_optional_flow_constraints(
-    model: hp.HighsModel,
+    model,
     steiner_problem: 'SteinerProblem',
     y2: Dict,
     connection_vars: Dict,
+    *,
+    add_variable=None,
 ) -> Tuple[hp.HighsModel, Dict]:
     """
     Flow constraints where terminal connectivity is optional.
@@ -657,14 +659,17 @@ def add_optional_flow_constraints(
     disconnected (penalised) terminals.
 
     :param y2: per-group arc capacities; budget forests use shared edge variables.
-    :param connection_vars: dict (group_id, terminal) -> HiGHS binary variable
+    :param connection_vars: dict (group_id, terminal) -> binary variable
+    :param add_variable: continuous variable factory; defaults to HiGHS.
     :return: model with added constraints and flow variable dict f.
     """
     # Continuous flow in [0, 1] — see add_flow_constraints: with integral y2 and
     # connection variables, a feasible continuous unit flow exists iff an
     # integral one does, and f never enters the objective.
+    if add_variable is None:
+        add_variable = model.addVariable
     f = {
-        (group_id, t, a): model.addVariable(0, 1, name=f"f_opt[{group_id},{a}]")
+        (group_id, t, a): add_variable(0, 1, name=f"f_opt[{group_id},{a}]")
         for group_id, t in connection_vars
         for a in steiner_problem.arcs
     }
@@ -1528,7 +1533,10 @@ def run_prize_collecting_model(
                 penalties, status)
 
 
-def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float = 300, logfile: str = "", threads=None) -> Tuple:
+def build_budget_model(
+    steiner_problem: 'BaseSteinerProblem', time_limit: float = 300,
+    logfile: str = "", threads=None, *, solver="highs",
+) -> Tuple:
     """
     Build a budget-constrained Steiner model.
     Objective: maximize connected terminals (minimize unconnected terminals).
@@ -1538,15 +1546,31 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
     :param time_limit: time limit in seconds.
     :param logfile: path to logfile.
     :param threads: HiGHS thread count (see :func:`make_model`).
-    :return: HiGHS model and decision variables.
+    :param solver: ``highs`` or ``gurobi``; both use the same optional flows.
+    :return: solver model and decision variables.
     """
-    model = make_model(time_limit, logfile, threads=threads)
+    if solver == "gurobi":
+        model, x, y1, y2, z = build_model_gurobi(
+            steiner_problem, time_limit, logfile, threads=threads
+        )
+        from gurobipy import GRB
+
+        add_binary = lambda name: model.addVar(vtype=GRB.BINARY, name=name)
+        add_flow = model.addVar
+    elif solver == "highs":
+        model = make_model(time_limit, logfile, threads=threads)
+        model, x, y1, y2, z = add_directed_constraints(model, steiner_problem)
+        if getattr(steiner_problem, 'max_degree', None) is not None:
+            add_degree_constraints(model, steiner_problem, x)
+        if getattr(steiner_problem, 'hop_limit', None) is not None:
+            add_hop_constraint(model, steiner_problem, y1)
+        add_binary = lambda name: model.addVariable(
+            0, 1, type=hp.HighsVarType.kInteger, name=name
+        )
+        add_flow = model.addVariable
+    else:
+        raise ValueError("Unknown solver {!r}; choose 'highs' or 'gurobi'.".format(solver))
     group_indices = range(len(steiner_problem.terminal_groups))
-
-    model, x, y1, y2, z = add_directed_constraints(model, steiner_problem)
-
-    if getattr(steiner_problem, 'max_degree', None) is not None:
-        add_degree_constraints(model, steiner_problem, x)
 
     # Terminal penalty variables (1 if terminal is NOT connected)
     # and connection variables (1 if terminal IS connected)
@@ -1558,11 +1582,11 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
             if terminal == group_root:
                 # Root is always connected; no penalty variable needed
                 continue
-            penalty_vars[(group_id, terminal)] = model.addVariable(
-                0, 1, type=hp.HighsVarType.kInteger, name=f"penalty[{group_id},{terminal}]"
+            penalty_vars[(group_id, terminal)] = add_binary(
+                f"penalty[{group_id},{terminal}]"
             )
-            connection_vars[(group_id, terminal)] = model.addVariable(
-                0, 1, type=hp.HighsVarType.kInteger, name=f"conn[{group_id},{terminal}]"
+            connection_vars[(group_id, terminal)] = add_binary(
+                f"conn[{group_id},{terminal}]"
             )
             # Exactly one of connected or penalised
             model.addConstr(connection_vars[(group_id, terminal)] + penalty_vars[(group_id, terminal)] == 1)
@@ -1575,7 +1599,7 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
         for arc in steiner_problem.arcs
     }
     model, f = add_optional_flow_constraints(
-        model, steiner_problem, capacities, connection_vars
+        model, steiner_problem, capacities, connection_vars, add_variable=add_flow
     )
 
     # Budget constraint: total edge cost <= budget. Skip when the graph has no
@@ -1597,16 +1621,17 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
     return model, x, y1, y2, z, f, penalty_vars
 
 
-def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem',
+def run_budget_model(model, steiner_problem: 'BaseSteinerProblem',
                      x: Dict, penalty_vars: Dict,
-                     return_status: bool = False) -> Tuple:
+                     return_status: bool = False, *, solver="highs") -> Tuple:
     """
     Solve budget-constrained model: minimize number of unconnected terminals.
 
-    :param model: HiGHS model.
+    :param model: HiGHS or Gurobi model.
     :param steiner_problem: SteinerProblem-object with a ``budget`` attribute.
     :param x: edge selection variables.
     :param penalty_vars: terminal penalty variables.
+    :param solver: backend used to build the model, default ``highs``.
     :return: gap, runtime, connected_count, selected_edges, penalties.
     """
     logging.info("Started running the budget-constrained model...")
@@ -1621,21 +1646,31 @@ def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem'
         total_terminals = sum(len(g) for g in steiner_problem.terminal_groups)
         return _ret(0.0, 0.0, total_terminals, [], {}, "optimal")
 
-    model.minimize(sum(penalty_vars.values()))
+    if solver == "gurobi":
+        from gurobipy import GRB
 
-    runtime = model.getRunTime()
+        model.setObjective(sum(penalty_vars.values()), GRB.MINIMIZE)
+        model.optimize()
+        runtime = model.Runtime
+        status, has_incumbent = _gurobi_outcome(model, GRB)
+        value = lambda var: var.X
+    elif solver == "highs":
+        model.minimize(sum(penalty_vars.values()))
+        runtime = model.getRunTime()
+        status, has_incumbent = _highs_outcome(model)
+        value = model.variableValue
+    else:
+        raise ValueError("Unknown solver {!r}; choose 'highs' or 'gurobi'.".format(solver))
     logging.info(f"Runtime: {runtime:.2f} seconds")
-
-    status, has_incumbent = _highs_outcome(model)
     if not has_incumbent:
         return _ret(float("inf"), runtime, 0, [], {}, status)
 
-    selected_edges = [e for e in steiner_problem.edges if model.variableValue(x[e]) > 0.5]
+    selected_edges = [e for e in steiner_problem.edges if value(x[e]) > 0.5]
 
     penalties = {}
     penalized_terminals = set()
     for (group_id, terminal), var in penalty_vars.items():
-        if model.variableValue(var) > 0.5:
+        if value(var) > 0.5:
             penalized_terminals.add((group_id, terminal))
             penalties[f"group_{group_id}_{terminal}"] = 1
 
@@ -1653,6 +1688,10 @@ def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem'
         )
     candidate_valid = edge_cost <= steiner_problem.budget + 1e-7
     candidate_valid = candidate_valid and degree_ok
+    if getattr(steiner_problem, "hop_limit", None) is not None:
+        candidate_valid = (
+            candidate_valid and len(selected_edges) <= steiner_problem.hop_limit
+        )
     candidate_valid = candidate_valid and _groups_reachable(
         steiner_problem, selected_edges, penalized_terminals
     )
@@ -1666,7 +1705,9 @@ def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem'
     total_terminals = sum(len(g) for g in steiner_problem.terminal_groups)
     connected_count = total_terminals - len(penalties)
 
-    gap = model.getInfo().mip_gap if status == "optimal" else float("inf")
+    gap = float("inf")
+    if status == "optimal":
+        gap = model.MIPGap if solver == "gurobi" else model.getInfo().mip_gap
 
     return _ret(gap, runtime, connected_count, selected_edges, penalties, status)
 

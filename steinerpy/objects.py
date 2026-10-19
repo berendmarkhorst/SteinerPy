@@ -746,19 +746,17 @@ class BaseSteinerProblem:
             return self._heuristic_solution(primal_local_search, implied_profit)
 
         if self.budget is not None:
-            # Budget-constrained path: only HiGHS is supported for this variant
-            if solver == "gurobi":
-                raise NotImplementedError(
-                    "The budget-constrained variant does not yet support solver='gurobi'. "
-                    "Use solver='highs' instead."
-                )
             # Budget-constrained: maximise connected terminals
             model, x, y1, y2, z, f, penalty_vars = build_budget_model(
-                self, time_limit=time_limit, logfile=log_file, threads=threads
+                self, time_limit=time_limit, logfile=log_file, threads=threads, solver=solver
             )
-            gap, runtime, connected_count, selected_edges, penalties, _status = run_budget_model(
-                model, self, x, penalty_vars, return_status=True
-            )
+            try:
+                gap, runtime, connected_count, selected_edges, penalties, _status = run_budget_model(
+                    model, self, x, penalty_vars, return_status=True, solver=solver
+                )
+            finally:
+                if solver == "gurobi":
+                    model.dispose()
             if _status != "optimal" and connected_count == 0:
                 reason = (
                     "was proved infeasible" if _status == "infeasible"
