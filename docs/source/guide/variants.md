@@ -262,6 +262,13 @@ Two side-constraints are available as **optional keyword arguments** that can be
 | `max_degree=k` | Every node in the solution has at most *k* incident edges. |
 | `budget=B` | Total edge cost may not exceed *B*; the solver maximises the number of connected terminals and returns a {class}`~steinerpy.BudgetSolution`. |
 
+For budgeted forests, terminal groups may overlap and share selected edges;
+each edge is charged once. Connected terminals are counted per group, so a
+vertex required by two groups counts twice when both requirements are met.
+Each group's first terminal is its root and counts as connected even when
+isolated. Edge-budget solving currently uses HiGHS; Gurobi is not supported
+for this path.
+
 ```python
 # Degree-constrained Steiner tree
 solution = SteinerProblem(graph, terminal_groups, max_degree=2).get_solution()
