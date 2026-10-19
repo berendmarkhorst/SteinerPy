@@ -109,6 +109,12 @@ composition requires a simple undirected graph without self-loops and does not
 yet support signed rewards, budgets, degree/hop limits, heuristic-only solving,
 optimum enumeration, or accelerator/reduction options.
 
+The node-splitting stage is shared with the legacy node-weighted solver. It
+retains explicit mappings to original nodes and edges; group sinks attach after
+each member's paid node traversal. Distinct original labels such as `1` and
+`"1"` retain separate identities. This refactor preserves the existing supported
+feature combinations and their original-space validation.
+
 ## Explicit variants and compatibility
 
 The following explicit calls remain available without migrating existing code:
