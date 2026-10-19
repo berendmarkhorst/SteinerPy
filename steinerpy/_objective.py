@@ -6,7 +6,7 @@ The reported value is ``report_sign * canonical_value + report_offset``.
 This describes objective values, not connectivity, constraints, or solver gaps.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict
 
 
@@ -25,6 +25,23 @@ class ObjectiveSpec:
     penalty_cost: float = 0
     report_sign: int = 1
     report_offset: float = 0
+
+    @classmethod
+    def from_graph(cls, graph, weight="weight", *, default_edge_cost=1):
+        """Describe edge costs on the supplied original or working graph."""
+        return cls(
+            edge_costs={
+                (u, v) if graph.is_directed() else frozenset((u, v)): data.get(
+                    weight, default_edge_cost
+                )
+                for u, v, data in graph.edges(data=True)
+            },
+            directed=graph.is_directed(),
+        )
+
+    def edge_cost(self, edge):
+        """Look up one edge, preserving arc direction for directed graphs."""
+        return self.edge_costs[tuple(edge) if self.directed else frozenset(edge)]
 
     def _selection_costs(self, edges, nodes):
         keys = dict.fromkeys(
@@ -132,16 +149,17 @@ def objective_from_spec(spec, variant, *, pc_transform=None):
             "No original-space objective for {!r}.".format(variant)
         )
 
-    edge_costs = {
-        (u, v) if graph.is_directed() else frozenset((u, v)): (
-            0 if topology_only else data.get(spec.weight, default_edge_cost)
-        )
-        for u, v, data in graph.edges(data=True)
-    }
-    return ObjectiveSpec(
-        edge_costs=edge_costs,
+    objective = ObjectiveSpec.from_graph(
+        graph, spec.weight, default_edge_cost=default_edge_cost
+    )
+    return replace(
+        objective,
+        edge_costs=(
+            dict.fromkeys(objective.edge_costs, 0)
+            if topology_only
+            else objective.edge_costs
+        ),
         node_costs=node_costs,
-        directed=graph.is_directed(),
         penalty_cost=penalty_cost,
         report_sign=sign,
         report_offset=offset,
