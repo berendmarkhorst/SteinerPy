@@ -6,7 +6,7 @@ import random
 import networkx as nx
 import pytest
 
-from steinerpy import Problem
+from steinerpy import Problem, PrizeCollectingProblem
 from steinerpy import mathematical_model as mm
 from steinerpy._objective import ObjectiveSpec
 from steinerpy._problem_spec import normalize_problem
@@ -162,6 +162,113 @@ def test_arc_orientation_and_isolated_nodes_are_preserved():
     )
     assert objective.value([("a", "b")], ["alone"]) == 7
     assert objective.value([("b", "a")]) == 9
+
+
+def test_native_prize_coefficients_snapshot_inputs_and_ignore_nonpositive_rewards():
+    graph = nx.DiGraph()
+    graph.add_edge("a", "b", cost=2)
+    graph.add_edge("b", "a", cost=9)
+    prizes = {"a": 4, "b": -3, "outside": 20}
+    objective = ObjectiveSpec.from_prizes(graph, prizes, "cost", penalty_cost=5)
+    graph.clear()
+    prizes.clear()
+    assert objective.node_costs == {"a": -4}
+    assert objective.value([("a", "b")], ["a", "b"], penalty_count=2) == 8
+    assert objective.value([("b", "a")], ["a"]) == 5
+    assert objective.report_sign == 1 and objective.report_offset == 0
+
+
+@pytest.mark.parametrize(
+    "mode", ["default", "zero_penalty", "sparse", "legacy_negative", "mwcs", "forest"]
+)
+def test_native_prize_model_coefficients_and_report_match_legacy_algebra(mode):
+    graph = nx.cycle_graph(4)
+    nx.set_edge_attributes(
+        graph, {edge: index + 1 for index, edge in enumerate(graph.edges)}, "cost"
+    )
+    prizes = {0: 2, 1: 3, 2: 5, 3: 0}
+    options = {"weight": "cost", "variant": "prize_collecting", "node_prizes": prizes}
+    options["terminals"] = [[0, 1], [2, 3]] if mode == "forest" else [0, 2]
+    if mode == "zero_penalty":
+        options["penalty_cost"] = 0
+    if mode == "sparse":
+        prizes.pop(1)
+    if mode == "legacy_negative":
+        prizes[1] = -7
+        unified = None
+        problem = PrizeCollectingProblem(graph, [[0, 2]], prizes, weight="cost")
+    else:
+        if mode == "mwcs":
+            options = {
+                "variant": "max_weight_connected",
+                "weight": "cost",
+                "root": 0,
+                "node_weights": {0: 2, 1: -7, 2: 5, 3: 0},
+            }
+        unified = Problem(graph, **options)
+        problem = unified.implementation
+
+    model, x, _, _, _, _, node_vars, penalty_vars = mm.build_prize_collecting_model(
+        problem
+    )
+    gap, _, value, edges, nodes, penalties, status = mm.run_prize_collecting_model(
+        model, problem, x, node_vars, penalty_vars, return_status=True
+    )
+    assert status == "optimal" and gap == 0
+    costs = model.getLp().col_cost_
+    for edge, variable in x.items():
+        assert costs[variable.index] == graph.edges[edge]["cost"]
+    for node, variable in node_vars.items():
+        assert costs[variable.index] == -max(problem.node_prizes.get(node, 0), 0)
+    for variable in penalty_vars.values():
+        assert costs[variable.index] == problem.penalty_cost
+    expected = sum(graph.edges[edge]["cost"] for edge in edges)
+    expected -= sum(max(problem.node_prizes.get(node, 0), 0) for node in nodes)
+    expected += sum(penalties.values())
+    assert value == pytest.approx(expected)
+    if unified is not None:
+        coefficients = unified._spec.objective(unified.variant, pc_transform=False)
+        assert coefficients.value(
+            edges, nodes, penalty_count=len(penalties)
+        ) == pytest.approx(value)
+        assert unified.get_solution().objective == pytest.approx(expected)
+
+
+def test_native_prizes_use_default_edge_cost_in_solving_and_reporting():
+    problem = Problem(
+        nx.path_graph(3),
+        variant="prize_collecting",
+        terminals=[0, 2],
+        node_prizes={0: 2, 1: 3, 2: 4},
+        penalty_cost=5,
+    )
+    solution = problem.get_solution()
+    assert solution.objective == -7
+    assert solution.edge_cost == 2
+    assert solution.gap == 0
+
+
+def test_native_solve_override_uses_penalty_units_without_classic_offset():
+    graph = nx.path_graph(3)
+    nx.set_edge_attributes(graph, 1, "weight")
+    problem = Problem(
+        graph,
+        variant="prize_collecting",
+        terminals=[0, 2],
+        node_prizes={0: 2, 1: 3, 2: 4},
+        penalty_cost=0,
+        pc_transform=True,
+    )
+    solution = problem.get_solution(pc_transform=False)
+    assert solution.objective == -7
+    assert (
+        problem._spec.objective(problem.variant, pc_transform=False).value(
+            solution.edges,
+            solution.selected_nodes,
+            penalty_count=len(solution.penalties),
+        )
+        == solution.objective
+    )
 
 
 @pytest.mark.parametrize("directed", [False, True])

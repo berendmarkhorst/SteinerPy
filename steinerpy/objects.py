@@ -1931,7 +1931,7 @@ class PrizeCollectingProblem(SteinerProblem):  # Inherit from SteinerProblem ins
         else:
             original_selected_edges = selected_edges
 
-        edge_cost = sum(self.graph.edges[e][self.weight] for e in selected_edges)
+        edge_cost = sum(self.graph.edges[e].get(self.weight, 1) for e in selected_edges)
 
         solution = PrizeCollectingSolution(
             gap=gap,
