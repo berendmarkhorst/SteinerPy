@@ -85,8 +85,16 @@ change adds or alters user-facing behaviour:
 
 ## Adding a new problem variant
 
-For feature combinations, first extend the normalized specification and central
-validation in `steinerpy/problem.py` / `steinerpy/_problem_spec.py`. The private
+The public `steinerpy/problem.py` normalizes input through `_problem_spec.py`,
+then delegates implementation selection and construction to `_problem_dispatch.py`.
+`ProblemSpec` records connectivity, roots, costs/prizes, constraints, geometry,
+and an optional explicit variant. Preprocessing and other constructor options
+remain separate. `supplied_features` distinguishes omitted arguments from explicit
+values (including `None`), preserving the legacy constructors' defaults.
+
+For feature combinations, first extend the normalized specification and existing
+compatibility checks in `_problem_dispatch.py` / `_composition.py`. Normalization
+must not construct solver objects or reinterpret costs as a new objective. The private
 `steinerpy/_composition.py` compiles group choices and node costs into the
 existing directed-cut solver. Preserve original-space semantics and explicit
 backmapping, and check new combinations against an independent tiny-instance
@@ -102,7 +110,7 @@ is no plugin system — variants are plain classes. The checklist:
    variant-specific arguments, and `get_solution()` returns a `Solution`
    object with `.objective`, `.selected_edges`/`.edges`, `.gap`, and
    `.runtime`.
-2. **Register it** in `steinerpy/problem.py` so it is available through the
+2. **Register it** in `steinerpy/_problem_dispatch.py` so it is available through the
    unified `Problem` interface, and add a case to `tests/test_problem.py`.
    **Export it** from `steinerpy/__init__.py` (both the import block and
    `__all__`).
