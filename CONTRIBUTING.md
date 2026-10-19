@@ -99,11 +99,14 @@ variant for group composition; specify an active solve-time transform override
 when needed (heuristic prize/MWCS solves use the transform convention). Its
 evaluation assumes a feasible selection and does not validate constraints or
 convert solver gaps. Keep objective coefficients separate from budget costs.
-The composition decoder uses it to check original-space values. Legacy builders
-and transformation corrections retain their current behavior; migration of
-those builders is separate from describing their objectives. Check both the
-objective algebra and unchanged reported values against tiny independent
-oracles; the variant guide lists the reporting differences and special cases.
+The composition decoder uses it to check original-space values. Standard HiGHS
+and Gurobi edge objectives use `ObjectiveSpec.from_graph` on the current working
+graph, so reduced and transformed costs are preserved. Use `edge_cost(edge)`
+to respect directed arc orientation. Do not substitute the original-space
+specification for working-graph coefficients. Prize, budget, and node-budgeted
+MWCS objective assembly and transformation corrections remain separate.
+Check both the objective algebra and unchanged reported values against tiny
+independent oracles; the variant guide lists the reporting differences and special cases.
 Use `value(...)` on original selections for reporting: it cancels prize offsets
 before adding small edge costs. Converting an already rounded canonical scalar
 with `reported_value(...)` cannot recover precision lost before that conversion.
