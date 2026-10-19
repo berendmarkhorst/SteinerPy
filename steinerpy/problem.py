@@ -6,6 +6,7 @@ import networkx as nx
 
 from . import objects
 from ._problem_spec import ProblemSpec, choice_sets, terminal_sets
+from ._composition import GroupComposition, validate_composition
 
 _IMPLEMENTATIONS = {
     "steiner": objects.SteinerProblem,
@@ -59,7 +60,7 @@ class Problem:
 
         Problem(graph, terminals=[0, 3], max_degree=2)
         Problem(digraph, root=0, terminals=[3])
-        Problem(graph, groups=[[0, 1], [3, 4]])
+        Problem(graph, groups=[[0, 1], [3, 4]], node_costs={1: 2})
         Problem(variant="rectilinear", points=[(0, 0), (1, 1)])
     """
 
@@ -128,6 +129,35 @@ class Problem:
                 )
         self._spec = spec
 
+        composed = (
+            "node_costs" in options and variant != "budgeted_max_weight_connected"
+        ) or bool(groups and normalized)
+        if composed:
+            if explicit and variant != "group":
+                raise TypeError(
+                    "groups/node_costs is incompatible with variant={!r}.".format(
+                        variant
+                    )
+                )
+            composition_options = {
+                key: value
+                for key, value in options.items()
+                if key not in {"groups", "node_costs"}
+            }
+            validate_composition(spec, composition_options)
+            # Snapshot original data so later caller mutations cannot change a solve.
+            spec = ProblemSpec(
+                graph.copy(),
+                normalized,
+                groups,
+                dict(spec.node_costs or {}),
+                spec.weight,
+            )
+            self._spec = spec
+            self._implementation = GroupComposition(spec)
+            self.variant = None
+            return
+
         implementation = _IMPLEMENTATIONS[variant]
         # SteinerProblem inherits its constructor; inspect.signature resolves it.
         parameters = inspect.signature(implementation).parameters
@@ -194,7 +224,7 @@ class Problem:
 
     @property
     def implementation(self):
-        """The selected legacy object for advanced model access.
+        """The selected legacy object or private composition strategy.
 
         Inspect or modify model attributes here, for example
         ``problem.implementation.cut_stats``. Keeping access explicit avoids
