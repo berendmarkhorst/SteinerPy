@@ -45,6 +45,28 @@ Existing explicit calls and legacy classes retain their solution types and
 solver restrictions. Group and legacy node-weighted transformations reject
 degree/hop limits and budgets rather than applying those to artificial nodes.
 
+`Problem(...)` validates combinations before constructing a solver strategy or
+transforming the graph. Invalid combinations raise `TypeError` or `ValueError`
+with the unsupported feature named. In particular:
+
+- Group/node-cost composition requires non-negative finite costs and no
+  preprocessing, degree/hop limits, or budgets.
+- Terminal-leaf variants cannot use edge budgets: their transformation changes
+  edge costs, so the existing budget would not describe the original network.
+- The legacy node-weighted variant requires an undirected graph; its node
+  splitting creates both directions for every edge.
+- `pc_transform=True` requires a compatible classic prize-collecting or
+  maximum-weight objective without degree limits or budgets. Directed prizes
+  use `variant="directed_prize_collecting"` and its directed transformation.
+- The node-budgeted maximum-weight variant uses `node_budget`; additional
+  edge/penalty budgets and prize-transform/reduction options are unsupported.
+
+Node costs and prizes must be finite and non-negative. Maximum-weight variants
+retain signed node weights; the node-budgeted variant's edge attributes remain
+topology-only. Existing automatic preprocessing disabling for directed and
+prize-collecting implementations is retained. Solver-time options and backend
+availability are checked when solving.
+
 ## Combining group choices and node costs
 
 This path minimizes

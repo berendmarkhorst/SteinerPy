@@ -146,6 +146,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- `Problem` now checks compatibility through one validation entry point before
+  constructing or transforming an instance. Unsupported terminal-leaf budgets,
+  additional budgets on node-budgeted MWCS, and incompatible prize transforms
+  fail early, as do invalid cost/prize mappings. Supported combinations and
+  legacy preprocessing defaults remain available.
 - `Problem` input normalization and implementation dispatch now have separate
   private modules. `ProblemSpec` records roots, objective data, constraints,
   and geometry alongside connectivity, preserving omitted versus explicit
