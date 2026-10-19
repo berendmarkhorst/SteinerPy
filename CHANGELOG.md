@@ -149,6 +149,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
+- Native prize-collecting and legacy maximum-weight penalty objectives now
+  consume shared edge/node coefficients and per-requirement penalties from
+  `ObjectiveSpec`. Existing constraints, penalty amounts, reporting units,
+  transform paths, and non-positive legacy prize handling are preserved.
 - Standard HiGHS and Gurobi edge objectives now consume shared objective
   coefficients from the current working graph, preserving reduced/transformed
   costs, directed arc orientation, and existing reporting corrections.
@@ -205,6 +209,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- Native prize-collecting solving and edge-cost reporting now consistently
+  default missing edge weights to one.
 - Directed hop limits now apply to HiGHS edge-budget solves as well as Gurobi,
   with an independent limit check before accepting an incumbent.
 - Budgeted forests now build optional flows for each group's own requirements

@@ -43,6 +43,17 @@ class ObjectiveSpec:
         """Look up one edge, preserving arc direction for directed graphs."""
         return self.edge_costs[tuple(edge) if self.directed else frozenset(edge)]
 
+    @classmethod
+    def from_prizes(cls, graph, prizes, weight="weight", *, penalty_cost=1000):
+        """Describe the native penalty objective; only positive prizes earn rewards."""
+        return replace(
+            cls.from_graph(graph, weight),
+            node_costs={
+                node: -prizes[node] for node in graph if prizes.get(node, 0) > 0
+            },
+            penalty_cost=penalty_cost,
+        )
+
     def _selection_costs(self, edges, nodes):
         keys = dict.fromkeys(
             tuple(edge) if self.directed else frozenset(edge) for edge in edges
@@ -112,18 +123,26 @@ def objective_from_spec(spec, variant, *, pc_transform=None):
         topology_only = True
         sign = -1
     elif variant in {"prize_collecting", "directed_prize_collecting"}:
-        node_costs = {node: -spec.node_prizes.get(node, 0) for node in graph}
         if transform:
+            node_costs = {node: -spec.node_prizes.get(node, 0) for node in graph}
             offset = sum(spec.node_prizes.get(node, 0) for node in graph)
         else:
-            penalty_cost = (
-                spec.penalty_cost if "penalty_cost" in spec.supplied_features else 1000
+            return ObjectiveSpec.from_prizes(
+                graph,
+                spec.node_prizes,
+                spec.weight,
+                penalty_cost=(
+                    spec.penalty_cost
+                    if "penalty_cost" in spec.supplied_features
+                    else 1000
+                ),
             )
     elif variant == "max_weight_connected":
         # Its legacy default is the penalty ILP, not the signed MWCS objective.
         prizes = {node: max(0, spec.node_weights.get(node, 0)) for node in graph}
-        node_costs = {node: -prize for node, prize in prizes.items()}
-        penalty_cost = max(prizes.values(), default=0) + 1
+        return ObjectiveSpec.from_prizes(
+            graph, prizes, spec.weight, penalty_cost=max(prizes.values(), default=0) + 1
+        )
     elif (
         variant in {"steiner", "directed", "hop_constrained"}
         and spec.budget is not None

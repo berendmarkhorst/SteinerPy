@@ -1464,18 +1464,21 @@ def run_prize_collecting_model(
     """
     logging.info("Started running the prize collecting model...")
     
-    # Build objective: edge costs - node prizes + penalties
-    objective_expr = sum(x[e] * steiner_problem.graph.edges[e][steiner_problem.weight] 
-                        for e in steiner_problem.edges)
-    
-    # Subtract node prizes
+    coefficients = ObjectiveSpec.from_prizes(
+        steiner_problem.graph, steiner_problem.node_prizes, steiner_problem.weight,
+        penalty_cost=getattr(steiner_problem, 'penalty_cost', 1000),
+    )
+    objective_expr = sum(
+        x[e] * coefficients.edge_cost(e) for e in steiner_problem.edges
+    )
+
     for node in steiner_problem.nodes:
-        prize = steiner_problem.node_prizes.get(node, 0)
-        if prize > 0:
-            objective_expr -= node_vars[node] * prize
+        cost = coefficients.node_costs.get(node, 0)
+        if cost:
+            objective_expr += node_vars[node] * cost
     
     # Add penalty costs
-    penalty_cost = getattr(steiner_problem, 'penalty_cost', 1000)
+    penalty_cost = coefficients.penalty_cost
     for penalty_var in penalty_vars.values():
         objective_expr += penalty_var * penalty_cost
     

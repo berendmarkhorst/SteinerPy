@@ -170,6 +170,9 @@ Some existing paths require additional variables:
 - The legacy prize-collecting default minimizes edge costs minus collected
   prizes plus `penalty_cost` for each unconnected terminal requirement. Its
   report has no prize offset. The default penalty is 1000.
+  Its solver and the normalized specification share the same coefficient
+  conversion. Native solving/reporting use an edge cost of one when the
+  selected weight attribute is missing.
 - The legacy maximum-weight default uses that penalty formulation with rewards
   `max(node_weight, 0)` and penalty `max(positive rewards) + 1`. Its reported
   value follows the minimized penalty objective. The transform path uses the
