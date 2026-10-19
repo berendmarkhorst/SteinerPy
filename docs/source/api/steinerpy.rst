@@ -6,7 +6,14 @@ package:
 
 .. code-block:: python
 
-   from steinerpy import SteinerProblem, PrizeCollectingProblem, ...
+   from steinerpy import Problem, SteinerProblem, PrizeCollectingProblem, ...
+
+Unified interface
+-----------------
+
+.. autoclass:: steinerpy.Problem
+   :members:
+   :special-members: __init__
 
 Core problems
 -------------

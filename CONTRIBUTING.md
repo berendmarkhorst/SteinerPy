@@ -85,6 +85,13 @@ change adds or alters user-facing behaviour:
 
 ## Adding a new problem variant
 
+For feature combinations, first extend the normalized specification and central
+validation in `steinerpy/problem.py` / `steinerpy/_problem_spec.py`. The private
+`steinerpy/_composition.py` compiles group choices and node costs into the
+existing directed-cut solver. Preserve original-space semantics and explicit
+backmapping, and check new combinations against an independent tiny-instance
+oracle. A new public subclass is not required for each combination.
+
 New problem variants are a common and very welcome type of contribution. There
 is no plugin system — variants are plain classes. The checklist:
 
@@ -95,7 +102,9 @@ is no plugin system — variants are plain classes. The checklist:
    variant-specific arguments, and `get_solution()` returns a `Solution`
    object with `.objective`, `.selected_edges`/`.edges`, `.gap`, and
    `.runtime`.
-2. **Export it** from `steinerpy/__init__.py` (both the import block and
+2. **Register it** in `steinerpy/problem.py` so it is available through the
+   unified `Problem` interface, and add a case to `tests/test_problem.py`.
+   **Export it** from `steinerpy/__init__.py` (both the import block and
    `__all__`).
 3. **Add tests** in a new `tests/test_<variant>.py`, ideally with a
    brute-force oracle on small instances.
@@ -110,10 +119,11 @@ is no plugin system — variants are plain classes. The checklist:
 - Write clear, concise commit messages: a subject line under 80 characters,
   with an explanatory body when the change needs context.
 - Open pull requests against `main`.
-- Note that **every merge to `main` automatically bumps the patch version and
-  publishes a release to PyPI**, so pull requests must be complete and
-  self-contained — no "part 1 of 3" merges that leave `main` in a broken
-  state.
+- Pull requests and pushes to `main` run tests automatically without publishing
+  a release. Keep pull requests complete and self-contained so `main` stays usable.
+- To publish a release, open **Actions → CI/CD Pipeline → Run workflow**, select
+  **main**, and run it. After all tests pass, the workflow bumps the patch version,
+  creates a tag, and publishes to PyPI. Manual runs on other branches only run tests.
 - If you used LLMs / generative AI to produce part of the contribution,
   please disclose this in the pull request description.
 

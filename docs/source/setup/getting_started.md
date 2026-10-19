@@ -1,11 +1,11 @@
 # Getting started
 
 A Steiner tree problem asks for a minimum-cost subgraph that connects a given set of *terminal* nodes, optionally passing through other nodes.
-In SteinerPy you build a NetworkX graph, list the terminals you want connected, and call {class}`~steinerpy.SteinerProblem`:
+In SteinerPy you build a NetworkX graph, list the terminals you want connected, and call {class}`~steinerpy.Problem`:
 
 ```python
 import networkx as nx
-from steinerpy import SteinerProblem
+from steinerpy import Problem
 
 # Create a graph
 G = nx.Graph()
@@ -13,11 +13,8 @@ G.add_edge("A", "B", weight=1)
 G.add_edge("B", "C", weight=2)
 G.add_edge("C", "D", weight=1)
 
-# Define terminal groups
-terminal_groups = [["A", "D"]]
-
 # Solve with HiGHS (default)
-problem = SteinerProblem(G, terminal_groups)
+problem = Problem(G, terminals=["A", "D"])
 solution = problem.get_solution()
 
 print(f"Optimal cost: {solution.objective}")
@@ -28,15 +25,22 @@ The returned {class}`~steinerpy.Solution` reports the objective value, the selec
 
 ## Trees and forests
 
-`terminal_groups` is a list of terminal lists.
-One list gives a Steiner **tree** (all terminals in the group are connected); multiple lists give a Steiner **forest** (each group is connected within itself, but different groups need not be connected to each other):
+Flat `terminals` gives a Steiner **tree**. Nested lists give a Steiner
+**forest**: each list must connect internally, while different lists need not
+connect to each other. Their paths may share edges if that reduces cost:
 
 ```python
 # Steiner forest: connect A–B and, independently, C–D
-solution = SteinerProblem(G, [["A", "B"], ["C", "D"]]).get_solution()
+solution = Problem(G, terminals=[["A", "B"], ["C", "D"]]).get_solution()
 ```
 
-This convention carries over to every problem variant in the package — see {doc}`../guide/variants`.
+For choices rather than mandatory terminals, use
+`groups=[["A", "B"], ["C", "D"]]`: one connected tree must contain at least
+one member of each group. Tuple-valued node labels remain atomic inside
+`terminals`; use lists for the nested forest syntax.
+
+Existing classes still accept their original `terminal_groups` arguments.
+See {doc}`../guide/variants` for supported feature combinations.
 
 ## Next steps
 
