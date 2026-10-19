@@ -103,8 +103,12 @@ The composition decoder uses it to check original-space values. Standard HiGHS
 and Gurobi edge objectives use `ObjectiveSpec.from_graph` on the current working
 graph, so reduced and transformed costs are preserved. Use `edge_cost(edge)`
 to respect directed arc orientation. Do not substitute the original-space
-specification for working-graph coefficients. Prize, budget, and node-budgeted
-MWCS objective assembly and transformation corrections remain separate.
+specification for working-graph coefficients. Native prize objectives and
+their normalized specifications use `ObjectiveSpec.from_prizes`, including
+the legacy maximum-weight penalty path. This conversion rewards positive
+prizes only and retains an explicit penalty per omitted terminal requirement.
+Classic prize offsets, signed maximum-weight transforms, budget objectives,
+and transformation corrections remain separate.
 Check both the objective algebra and unchanged reported values against tiny
 independent oracles; the variant guide lists the reporting differences and special cases.
 Use `value(...)` on original selections for reporting: it cancels prize offsets
