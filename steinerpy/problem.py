@@ -2,7 +2,10 @@
 
 import inspect
 
+import networkx as nx
+
 from . import objects
+from ._problem_spec import ProblemSpec, choice_sets, terminal_sets
 
 _IMPLEMENTATIONS = {
     "steiner": objects.SteinerProblem,
@@ -42,11 +45,11 @@ _COMMON_OPTIONS = {
 class Problem:
     """Configure any supported variant without choosing a problem subclass.
 
-    ``variant`` selects the mathematical problem; remaining keyword arguments
-    use the corresponding legacy constructor's names. ``terminal_groups`` means
-    sets whose members must all be connected, whereas ``groups`` means sets
-    from each of which at least one member must be selected. These arguments
-    are deliberately not interchangeable.
+    With no ``variant``, infer the implementation from the graph and features.
+    ``terminals=[a, b]`` requires a connected tree; nested lists specify forest
+    requirements, each connected internally, with sharing allowed. ``groups``
+    selects at least one member per group in one connected tree. Tuple node
+    labels remain atomic. ``terminal_groups`` is the legacy forest alias.
 
     Existing implementations serve as composed strategies, retaining their
     formulations, preprocessing restrictions and solution types. See the
@@ -54,28 +57,77 @@ class Problem:
 
     Examples::
 
-        Problem(graph, [[0, 3]], max_degree=2)
-        Problem(digraph, variant="directed", root=0, terminals=[3])
-        Problem(graph, variant="group", groups=[[0, 1], [3, 4]])
+        Problem(graph, terminals=[0, 3], max_degree=2)
+        Problem(digraph, root=0, terminals=[3])
+        Problem(graph, groups=[[0, 1], [3, 4]])
         Problem(variant="rectilinear", points=[(0, 0), (1, 1)])
     """
 
     variants = tuple(_IMPLEMENTATIONS)
 
     def __init__(
-        self, graph=None, terminal_groups=None, *, variant="steiner", **options
+        self,
+        graph=None,
+        terminal_groups=None,
+        *,
+        terminals=None,
+        variant=None,
+        **options,
     ):
         """Build a configured problem, rejecting unknown or misplaced options.
 
         A graph is required except for ``rectilinear``, which takes ``points``.
         Solver options such as ``time_limit`` belong to :meth:`get_solution`.
         """
-        if not isinstance(variant, str) or variant not in _IMPLEMENTATIONS:
+        if variant is not None and (
+            not isinstance(variant, str) or variant not in _IMPLEMENTATIONS
+        ):
             raise ValueError(
                 "Unknown variant {!r}; choose one of {}.".format(
                     variant, ", ".join(self.variants)
                 )
             )
+        if terminals is not None and terminal_groups is not None:
+            raise TypeError("Supply terminals or terminal_groups, not both.")
+        if graph is not None and not isinstance(graph, nx.Graph):
+            raise TypeError("graph must be a NetworkX graph.")
+        explicit = variant is not None
+        if variant is None:
+            if graph is None:
+                raise TypeError("Problem requires graph.")
+            if "groups" in options:
+                variant = "directed_group" if graph.is_directed() else "group"
+            elif graph.is_directed():
+                variant = "hop_constrained" if "hop_limit" in options else "directed"
+            else:
+                variant = "steiner"
+        if variant != "rectilinear" and graph is None:
+            raise TypeError("{} requires graph.".format(variant))
+
+        normalized = terminal_sets(terminals) if terminals is not None else ()
+        if terminal_groups is not None:
+            # Legacy forest syntax accepts any iterable of terminal iterables.
+            normalized = choice_sets(terminal_groups)
+        groups = choice_sets(options["groups"]) if "groups" in options else ()
+        spec = ProblemSpec(
+            graph,
+            normalized,
+            groups,
+            options.get("node_costs"),
+            options.get("weight", "weight"),
+        )
+        if graph is not None:
+            spec.validate_nodes()
+            if (
+                "root" in options
+                and options["root"] is not None
+                and options["root"] not in graph
+            ):
+                raise ValueError(
+                    "root {!r} is not in the graph.".format(options["root"])
+                )
+        self._spec = spec
+
         implementation = _IMPLEMENTATIONS[variant]
         # SteinerProblem inherits its constructor; inspect.signature resolves it.
         parameters = inspect.signature(implementation).parameters
@@ -88,8 +140,28 @@ class Problem:
             objects.BudgetedMaxWeightConnectedSubgraph,
         ):
             allowed.add("penalty_budget")
-        if terminal_groups is not None:
-            options["terminal_groups"] = terminal_groups
+        if groups:
+            options["groups"] = [list(group) for group in groups]
+        if normalized:
+            if variant in {"directed", "hop_constrained"}:
+                if len(normalized) != 1:
+                    raise ValueError(
+                        "Directed terminals must describe one connected tree."
+                    )
+                options["terminals"] = list(normalized[0])
+            else:
+                options["terminal_groups"] = [list(group) for group in normalized]
+        if variant in {"directed", "directed_group", "hop_constrained"}:
+            if options.get("root") is None:
+                raise TypeError("Directed problems require root=.")
+        if variant in {"group", "directed_group", "node_weighted"}:
+            if any(
+                options.get(key) is not None
+                for key in ("max_degree", "budget", "hop_limit")
+            ):
+                raise TypeError(
+                    "groups/node weights cannot yet be combined with degree/hop limits or budgets."
+                )
         if variant == "rectilinear":
             if graph is not None:
                 raise TypeError("rectilinear takes points=, not graph.")
@@ -122,7 +194,7 @@ class Problem:
 
     @property
     def implementation(self):
-        """The configured legacy implementation for advanced model access.
+        """The selected legacy object for advanced model access.
 
         Inspect or modify model attributes here, for example
         ``problem.implementation.cut_stats``. Keeping access explicit avoids
