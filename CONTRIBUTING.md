@@ -112,10 +112,11 @@ is no plugin system — variants are plain classes. The checklist:
 - Write clear, concise commit messages: a subject line under 80 characters,
   with an explanatory body when the change needs context.
 - Open pull requests against `main`.
-- Note that **every merge to `main` automatically bumps the patch version and
-  publishes a release to PyPI**, so pull requests must be complete and
-  self-contained — no "part 1 of 3" merges that leave `main` in a broken
-  state.
+- Pull requests and pushes to `main` run tests automatically without publishing
+  a release. Keep pull requests complete and self-contained so `main` stays usable.
+- To publish a release, open **Actions → CI/CD Pipeline → Run workflow**, select
+  **main**, and run it. After all tests pass, the workflow bumps the patch version,
+  creates a tag, and publishes to PyPI. Manual runs on other branches only run tests.
 - If you used LLMs / generative AI to produce part of the contribution,
   please disclose this in the pull request description.
 

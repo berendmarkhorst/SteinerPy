@@ -5,8 +5,9 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
-# Serialize release runs so two quick merges can't race on the version bump/push.
+# Serialize workflow runs so manual releases cannot race on the version bump/push.
 concurrency:
   group: ci-cd-${{ github.ref }}
   cancel-in-progress: false
@@ -52,12 +53,10 @@ jobs:
   release:
     name: Bump version & publish to PyPI
     needs: test
-    # Run only on a real merge/push to main. Skip PRs, and skip the bot's own
-    # bump commit (belt-and-suspenders: GITHUB_TOKEN pushes don't retrigger anyway).
-    if: >
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      !startsWith(github.event.head_commit.message, 'chore: bump version')
+    # Release only when manually triggered on main, after all tests pass.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     # Dedicated environment for publishing — register this name on PyPI's
