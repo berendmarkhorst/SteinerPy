@@ -206,7 +206,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and share purchased edges across groups. Overlapping terminals no longer
   raise `KeyError`, and different roots can use an undirected edge in either
   direction without paying for it twice. Reporting still counts requirements
-  per group, including repeated vertices.
+  per group, including repeated vertices. Missing edge costs default to one
+  in both budget constraints and incumbent validation.
 - NetworkX cut separation completes the maximum flow before extracting a
   source-side cut; an intermediate preflow can leave excess at internal nodes
   and produce a source partition that is not a minimum cut.

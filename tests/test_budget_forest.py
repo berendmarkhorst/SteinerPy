@@ -98,6 +98,18 @@ def test_budgeted_forest_with_isolated_shared_root():
     check_solution(graph, [[0, 1], [0, 2]], budget=1)
 
 
+def test_original_unweighted_overlapping_group_example():
+    solution = Problem(
+        nx.path_graph(3),
+        terminals=[[0, 1], [0, 2]],
+        budget=1,
+        preprocess=False,
+    ).get_solution()
+    assert solution.gap == 0
+    assert solution.objective == 3
+    assert solution.edges == [(0, 1)]
+
+
 @pytest.mark.parametrize("budget", [0, 1, 4, 8])
 def test_directed_budget_still_requires_forward_arcs(budget):
     graph = nx.DiGraph()

@@ -1588,7 +1588,7 @@ def build_budget_model(steiner_problem: 'BaseSteinerProblem', time_limit: float 
     if steiner_problem.edges:
         model.addConstr(
             sum(
-                x[e] * steiner_problem.graph.edges[e][steiner_problem.weight]
+                x[e] * steiner_problem.graph.edges[e].get(steiner_problem.weight, 1)
                 for e in steiner_problem.edges
             )
             <= steiner_problem.budget
@@ -1640,7 +1640,7 @@ def run_budget_model(model: hp.HighsModel, steiner_problem: 'BaseSteinerProblem'
             penalties[f"group_{group_id}_{terminal}"] = 1
 
     edge_cost = sum(
-        steiner_problem.graph.edges[e][steiner_problem.weight]
+        steiner_problem.graph.edges[e].get(steiner_problem.weight, 1)
         for e in selected_edges
     )
     degree_ok = True
