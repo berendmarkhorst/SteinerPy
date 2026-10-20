@@ -87,6 +87,10 @@ def decode_groups(spec, compiled, selected_arcs, objective):
         raise RuntimeError(
             "Composed solution does not form a connected original subgraph."
         )
+    if spec.max_degree is not None and any(
+        d > spec.max_degree for _, d in original.degree()
+    ):
+        raise RuntimeError("Composed solution exceeds the original-node degree limit.")
     if any(not set(group).intersection(nodes) for group in spec.groups):
         raise RuntimeError("Composed solution does not cover every group.")
     if any(t not in original for group in spec.terminal_groups for t in group):
@@ -124,9 +128,14 @@ class GroupComposition:
             compiled.terminals,
             weight=self.spec.weight,
             hop_limit=self.spec.hop_limit,
+            max_degree=self.spec.max_degree,
         )
         # Only cross-arcs represent original edges; paid and artificial arcs do not.
         view._hop_arcs = tuple(compiled.edge_arcs)
+        view._degree_arc_groups = {node: [] for node in self.spec.graph}
+        for arc, (u, v) in compiled.edge_arcs.items():
+            view._degree_arc_groups[u].append(arc)
+            view._degree_arc_groups[v].append(arc)
         builder = mm.build_model if solver == "highs" else mm.build_model_gurobi
         runner = mm.run_model if solver == "highs" else mm.run_model_gurobi
         model, x, y1, y2, z = builder(
