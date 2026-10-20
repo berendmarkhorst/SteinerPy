@@ -115,6 +115,11 @@ each member's paid node traversal. Distinct original labels such as `1` and
 `"1"` retain separate identities. This refactor preserves the existing supported
 feature combinations and their original-space validation.
 
+Group-terminal attachment is also shared with the legacy undirected and
+directed group solvers. The stage records which original group member each
+artificial connector represents. Directed group terminals are sinks, and
+composition connects them to output nodes after paid node traversal.
+
 ## Explicit variants and compatibility
 
 The following explicit calls remain available without migrating existing code:

@@ -144,6 +144,14 @@ and one in composition. Existing terminal-cost corrections remain in the legacy
 adapter. Hop, degree, and budget meanings must be defined on original objects
 before enabling them on a split graph; existing compatibility checks still apply.
 
+`attach_group_terminals` is the shared next stage for legacy undirected/directed
+group solvers and composition. It returns a copied working graph, artificial
+terminals, and connector provenance `(group index, original member)`. Directed
+connectors enter sinks. Supply original-member output ports when attaching
+groups after node splitting, so group membership cannot bypass node costs.
+Artificial connector costs stay zero; their presence must be accounted for
+explicitly when mapping future degree, hop, and budget constraints.
+
 New problem variants are a common and very welcome type of contribution. There
 is no plugin system — variants are plain classes. The checklist:
 

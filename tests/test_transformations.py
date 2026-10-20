@@ -5,9 +5,72 @@ import itertools
 import networkx as nx
 import pytest
 
-from steinerpy import Problem
-from steinerpy._transformations import split_node_costs
+from steinerpy import Problem, GroupSteinerProblem, DirectedGroupSteinerProblem
+from steinerpy._transformations import split_node_costs, attach_group_terminals
 from steinerpy.objects import node_split_graph
+
+
+@pytest.mark.parametrize("directed", [False, True])
+def test_group_terminals_preserve_inputs_identity_direction_and_provenance(directed):
+    labels = [1, "1", (2, 3), "__group_0__", "__group_0__0", "__group_0__1"]
+    graph = nx.path_graph(labels, create_using=nx.DiGraph if directed else nx.Graph)
+    nx.set_edge_attributes(graph, 3, "cost")
+    groups = [[1, "1"], [(2, 3)]]
+    original_edges = set(graph.edges)
+    compiled = attach_group_terminals(graph, groups, "cost")
+    assert compiled.graph.is_directed() == directed
+    assert compiled.terminals[0] == "__group_0__2"
+    assert set(compiled.terminals).isdisjoint(graph)
+    assert set(graph.edges) == original_edges and len(graph) == 6
+    for index, group in enumerate(groups):
+        terminal = compiled.terminals[index]
+        for member in group:
+            edge = (member, terminal) if directed else frozenset((member, terminal))
+            assert compiled.connector_edges[edge] == (index, member)
+            assert compiled.graph[member][terminal]["cost"] == 0
+        if directed:
+            assert compiled.graph.out_degree(terminal) == 0
+    groups.clear()
+    graph.clear()
+    assert len(compiled.graph) == 8 and len(compiled.connector_edges) == 3
+
+
+def test_group_attachment_after_splitting_uses_paid_output_ports():
+    graph = nx.path_graph([1, "1"])
+    split = split_node_costs(graph, {1: 3, "1": 7}, "cost")
+    ports = {node: pair[1] for node, pair in split.split.items()}
+    compiled = attach_group_terminals(split.graph, [[1, "1"]], "cost", ports=ports)
+    sink = compiled.terminals[0]
+    assert sink not in split.graph
+    for member in graph:
+        enter, leave = split.split[member]
+        assert compiled.graph.has_edge(leave, sink)
+        assert not compiled.graph.has_edge(enter, sink)
+        assert compiled.connector_edges[leave, sink] == (0, member)
+        assert (
+            nx.shortest_path_length(compiled.graph, enter, sink, weight="cost")
+            == {1: 3, "1": 7}[member]
+        )
+    ports.clear()
+    assert len(compiled.connector_edges) == 2
+
+
+@pytest.mark.parametrize("groups", [[], [[]], [[0], []]])
+def test_empty_group_attachment_is_rejected(groups):
+    with pytest.raises(ValueError, match="at least one vertex"):
+        attach_group_terminals(nx.path_graph(2), groups)
+
+
+def test_missing_group_member_is_rejected_without_input_mutation():
+    graph = nx.path_graph(2)
+    with pytest.raises(ValueError, match="group vertex"):
+        attach_group_terminals(graph, [[0], ["missing"]])
+    assert set(graph) == {0, 1} and list(graph.edges) == [(0, 1)]
+
+
+def test_group_port_must_exist_in_working_graph():
+    with pytest.raises(ValueError, match="Group port"):
+        attach_group_terminals(nx.path_graph(2), [["a"]], ports={"a": "missing"})
 
 
 @pytest.mark.parametrize("default", [0, 1])
@@ -87,6 +150,23 @@ def solver(request):
         except gp.GurobiError:
             pytest.skip("Gurobi license is not available")
     return request.param
+
+
+@pytest.mark.parametrize("directed", [False, True])
+def test_legacy_group_solvers_use_shared_attachment(directed, solver):
+    graph = nx.path_graph(4, create_using=nx.DiGraph if directed else nx.Graph)
+    nx.set_edge_attributes(graph, 1, "weight")
+    groups = [[1, 2], [3]]
+    problem = (
+        DirectedGroupSteinerProblem(graph, groups, root=0)
+        if directed
+        else GroupSteinerProblem(graph, groups)
+    )
+    solution = problem.get_solution(solver=solver)
+    assert solution.objective == (3 if directed else 1)
+    assert solution.gap == 0
+    assert all(graph.has_edge(*edge) for edge in solution.edges)
+    assert list(graph.edges) == [(0, 1), (1, 2), (2, 3)]
 
 
 @pytest.mark.parametrize("label", ["mixed", "tuple"])

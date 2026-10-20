@@ -6,7 +6,7 @@ import math
 import networkx as nx
 
 from . import mathematical_model as mm
-from ._transformations import split_node_costs
+from ._transformations import split_node_costs, attach_group_terminals
 from .objects import DirectedSteinerProblem, NodeWeightedSolution
 
 
@@ -48,17 +48,16 @@ def compile_groups(spec):
     ]
     for arc in source_arcs:
         graph.add_edge(*arc, **{spec.weight: 0})
-    terminals = []
-    for group in groups:
-        sink = len(graph)
-        terminals.append(sink)
-        graph.add_node(sink)
-        for node in group:
-            graph.add_edge(split_nodes.split[node][1], sink, **{spec.weight: 0})
-    return CompiledGroups(
+    group_terminals = attach_group_terminals(
         graph,
+        groups,
+        spec.weight,
+        ports={node: pair[1] for node, pair in split_nodes.split.items()},
+    )
+    return CompiledGroups(
+        group_terminals.graph,
         root,
-        terminals,
+        group_terminals.terminals,
         source_arcs,
         split_nodes.node_arcs,
         split_nodes.edge_arcs,
