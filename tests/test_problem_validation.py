@@ -71,9 +71,6 @@ def test_invalid_directed_group_budget_fails_before_construction(
         (True, {"terminals": [2], "root": 99}, "root.*not in the graph"),
         (False, {"variant": "directed", "terminals": [2], "root": 0}, "directed graph"),
         (True, {"variant": "group", "groups": [[2]]}, "undirected graph"),
-        (False, {"groups": [[0], [2]], "budget": 4}, "cannot yet be combined"),
-        (False, {"groups": [[2]], "max_degree": 3}, "cannot yet be combined"),
-        (False, {"groups": [[2]], "hop_limit": 2}, "cannot yet be combined"),
         (
             False,
             {"groups": [[0], [2]], "node_costs": {}, "node_budget": 2},

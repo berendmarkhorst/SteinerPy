@@ -1,6 +1,7 @@
 """Optional group coverage under original-edge budgets after node splitting."""
 
 import math
+from dataclasses import replace
 from time import perf_counter
 
 import networkx as nx
@@ -47,6 +48,14 @@ def decode_budget(spec, compiled, arcs, claimed):
 def solve_budget(strategy, time_limit, logfile, solver, threads):
     started = perf_counter()
     spec = strategy.spec
+    if not spec.groups:
+        # Match plain edge-budget semantics: first terminal required, others optional.
+        terminals = spec.terminal_groups[0]
+        spec = replace(
+            spec,
+            groups=tuple((t,) for t in terminals),
+            terminal_groups=((terminals[0],),),
+        )
     compiled = compile_groups(spec)
     view = make_view(spec, compiled)
     view.budget = spec.budget
@@ -122,7 +131,14 @@ def solve_budget(strategy, time_limit, logfile, solver, threads):
             original_selected_edges=edges,
             connected_terminals=covered,
             total_terminals=len(spec.groups),
-            penalties={f"group_{i}": 1 for i in missed},
+            penalties={
+                (
+                    f"group_{i}"
+                    if strategy.spec.groups
+                    else f"group_0_{spec.groups[i][0]}"
+                ): 1
+                for i in missed
+            },
         )
         result.selected_nodes = nodes
         result.total_cost = cost

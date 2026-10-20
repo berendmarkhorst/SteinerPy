@@ -302,8 +302,8 @@ def test_unsupported_graphs(graph):
 def test_unknown_cost_node_and_features():
     with pytest.raises(ValueError, match="not in the graph"):
         Problem(nx.path_graph(2), groups=[[0]], node_costs={3: 1})
-    with pytest.raises(ValueError, match="requires groups"):
-        Problem(nx.path_graph(2), terminals=[0, 1], node_costs={})
+    with pytest.raises(ValueError, match="requires groups or terminals"):
+        Problem(nx.path_graph(2), node_costs={})
     with pytest.raises(TypeError, match="NetworkX"):
         Problem("not a graph", terminals=[0])
     with pytest.raises(TypeError, match="node_costs must map"):
@@ -315,8 +315,6 @@ def test_unknown_cost_node_and_features():
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"variant": "group", "groups": [[0], [2]], "max_degree": 2},
-        {"groups": [[0], [2]], "budget": 4},
         {
             "variant": "node_weighted",
             "terminals": [0, 2],

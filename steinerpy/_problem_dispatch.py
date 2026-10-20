@@ -44,7 +44,18 @@ def build_problem(spec):
     composed = (
         "node_costs" in spec.supplied_features
         and variant != "budgeted_max_weight_connected"
-    ) or bool(spec.groups and spec.terminal_groups)
+    ) or bool(
+        spec.groups
+        and (
+            spec.terminal_groups
+            or (
+                not spec.graph.is_directed()
+                and spec.supplied_features.intersection(
+                    {"hop_limit", "max_degree", "budget"}
+                )
+            )
+        )
+    )
     if composed:
         validate_problem(spec, None)
         # Preserve the composition path's snapshot of original graph and costs.
