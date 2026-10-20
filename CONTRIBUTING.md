@@ -150,7 +150,12 @@ terminals, and connector provenance `(group index, original member)`. Directed
 connectors enter sinks. Supply original-member output ports when attaching
 groups after node splitting, so group membership cannot bypass node costs.
 Artificial connector costs stay zero; their presence must be accounted for
-explicitly when mapping future degree, hop, and budget constraints.
+explicitly when mapping constraints. Directed groups derive `_hop_arcs` by
+excluding connector provenance. Both HiGHS and Gurobi count
+these original arcs, including zero-cost ones; decoded results independently
+check the limit. Plain directed models count all their arcs. Degree/budget
+accounting and hop limits after node splitting still need original-space rules
+and oracle tests before their compatibility checks can be relaxed.
 
 New problem variants are a common and very welcome type of contribution. There
 is no plugin system — variants are plain classes. The checklist:

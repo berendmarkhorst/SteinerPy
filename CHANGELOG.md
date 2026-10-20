@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Directed group problems support `hop_limit` through `Problem` and the legacy
+  class on HiGHS and Gurobi. The limit counts selected original arcs, including
+  zero-cost arcs, and excludes artificial group connectors. Decoded solutions
+  independently check the limit; degree/budget and node-splitting combinations
+  remain restricted.
 - Edge-budgeted tree/forest solving now supports Gurobi through the same
   optional-flow constraints and incumbent checks as HiGHS. Overlapping groups,
   shared edges, zero budgets, degree limits, and directed arcs are supported.
