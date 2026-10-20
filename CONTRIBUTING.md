@@ -145,8 +145,10 @@ adapter. Group/node-cost composition sets `_hop_arcs` to the split stage's
 original-edge cross-arcs. Non-negative costs admit a tree whose orientation
 uses one cross-arc per original edge. Paid-node arcs, source arcs and group
 connectors do not consume hops. Decoding checks the original-edge count.
-Degree and budget meanings still need original-space rules before their
-compatibility checks can be relaxed on a split graph.
+Composition supplies `_degree_arc_groups`, mapping each original node to all
+incident original-edge cross-arcs across both split ports. Both backends and
+budget incumbent checks use this incidence mapping. Decoding independently
+checks original degrees. Budget accounting after splitting remains restricted.
 
 `attach_group_terminals` is the shared next stage for legacy undirected/directed
 group solvers and composition. It returns a copied working graph, artificial

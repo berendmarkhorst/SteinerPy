@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Group/node-cost composition supports original-node `max_degree`, alone or
+  with `hop_limit`, on both backends. Original-edge incidence combines split
+  ports and excludes paid/artificial arcs; decoding validates original degrees.
 - Group/node-cost composition supports `hop_limit` on HiGHS and Gurobi,
   bounding selected original edges after splitting. Paid-node arcs, artificial
   source arcs and group connectors consume no hops; original zero-cost edges
