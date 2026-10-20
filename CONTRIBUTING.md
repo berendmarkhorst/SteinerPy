@@ -176,6 +176,15 @@ use the same original degree/hop domains as the model. Plain undirected-group
 and legacy node-weighted modifiers remain guarded until they use safe original
 accounting. Composition provides the tested path for these combinations.
 
+The undirected `GroupSteinerProblem` delegates solves to shared composition,
+preserving its public `Solution` result and private augmentation helper. Never
+solve its undirected augmented graph directly: connector nodes can join group
+members for free. A three-group path regression checks that this cannot yield
+disconnected original edges. Legacy constructors reject unmapped modifiers
+before transformation, and modular validation rejects the same unsupported
+requests before constructing adapters. Keep legacy missing-cost conventions
+and explicit `preprocess=False` behavior when maintaining compatibility.
+
 New problem variants are a common and very welcome type of contribution. There
 is no plugin system — variants are plain classes. The checklist:
 

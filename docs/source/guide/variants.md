@@ -232,6 +232,31 @@ problem = Problem(graph, groups=groups, node_costs={"A": 10}, budget=3,
 solution = problem.get_solution(solver="highs")
 ```
 
+## Transformation compatibility
+
+| Entry point | Hop limits | Degree limits | Edge budgets | Preprocessing |
+|---|---|---|---|---|
+| `Problem(groups=..., node_costs=...)` or groups + mandatory terminals | Original edges | Original node incidence | Optional groups, then original-cost tie-break | Disabled; explicit true rejected |
+| `Problem(digraph, root=..., groups=...)` / `DirectedGroupSteinerProblem` | Original arcs | Incoming + outgoing original arcs | Optional groups | Disabled |
+| `Problem(graph, groups=...)` / `GroupSteinerProblem` | Rejected | Rejected | Rejected | Disabled; explicit true rejected |
+| `variant="node_weighted"` / `NodeWeightedSteinerProblem` | Rejected | Rejected | Rejected | Disabled; explicit true rejected |
+
+Use `node_costs={}` to select the shared composition path for undirected groups
+without node charges. Legacy node weighting retains its zero default for missing
+edge costs; standard/composed costs default to one. Migrating a legacy call
+therefore requires checking missing weights and forest semantics. Group
+composition uses a simple undirected graph without self-loops; parallel edges
+are rejected by all three legacy transformation adapters before edge identities
+can be lost.
+
+The old undirected group adapter now solves through sink-only shared
+composition and still returns `Solution`. This prevents an artificial group
+node from joining distinct members for free and yielding disconnected original
+edges. Its augmented-graph helper remains available, but unsafe preprocessing
+and unsupported solver/accelerator options are rejected. Constructors reject
+unmapped constraints before transformation; the legacy node-weighted adapter
+now accepts explicit `preprocess=False` consistently.
+
 ## Explicit variants and compatibility
 
 The following explicit calls remain available without migrating existing code:

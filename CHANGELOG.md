@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Legacy transformation constructors reject unmapped constraints before graph
+  transformation, reject parallel-edge identity loss, and consistently handle
+  explicit preprocessing options. The compatibility guide lists supported routes.
+
 - Group/node-cost composition supports original-edge budgets, including
   degree/hop limits and mandatory terminals. It maximizes reached groups, then
   minimizes original edge/node costs. Paid nodes do not consume an edge-only
@@ -250,6 +254,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
+- Undirected group solves use shared sink-only composition: artificial group
+  nodes can no longer create free shortcuts and disconnected original results.
 - Legacy node splitting keeps distinct original nodes whose string forms
   collide (such as `1` and `"1"`) separate, using collision-free labels when
   needed.
