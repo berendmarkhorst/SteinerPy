@@ -55,7 +55,7 @@ transforming the graph. Invalid combinations raise `TypeError` or `ValueError`
 with the unsupported feature named. In particular:
 
 - Group/node-cost composition requires non-negative finite costs and no
-  preprocessing or budgets. Original-edge hop and original-node degree limits are supported.
+  preprocessing. Original-edge budgets, hop limits and original-node degree limits are supported.
 - Terminal-leaf variants cannot use edge budgets: their transformation changes
   edge costs, so the existing budget would not describe the original network.
 - The legacy node-weighted variant requires an undirected graph; its node
@@ -192,7 +192,7 @@ optimality.
 HiGHS and Gurobi use their existing directed-cut solve loops. Preprocessing is
 automatically disabled; explicitly enabling it is rejected. This first
 composition requires a simple undirected graph without self-loops and does not
-yet support signed rewards, budgets, heuristic-only solving,
+yet support signed rewards, heuristic-only solving,
 optimum enumeration, or accelerator/reduction options.
 
 The node-splitting stage is shared with the legacy node-weighted solver. It
@@ -206,6 +206,31 @@ Group-terminal attachment is also shared with the legacy undirected and
 directed group solvers. The stage records which original group member each
 artificial connector represents. Directed group terminals are sinks, and
 composition connects them to output nodes after paid node traversal.
+
+### Edge budgets with node costs
+
+Add `budget=B` to this composition to maximize reached groups within a finite
+non-negative **original-edge** budget. Among maximum-coverage solutions, the
+solver minimizes original edge plus node costs in a second solve. Paid-node and
+artificial arcs do not consume the edge budget. Node costs therefore influence
+which equally good coverage solution is chosen, without using an edge-only
+allowance. Mandatory `terminals` remain required; optional groups may lie in
+different components. Overlapping groups count separately. Degree and hop limits
+may be combined with the budget.
+
+The result is a `BudgetSolution`: `objective`/`connected_terminals` count reached
+original groups, `total_terminals` counts all groups, `penalties` contains missed
+`group_i` indices, and `selected_nodes` lists original nodes. `total_cost` is
+original edge plus node cost. `gap=0` requires completion of both coverage and
+cost optimization; otherwise a valid incumbent has `gap=inf`. If the second
+solve has no incumbent, the first valid solution is retained. Both phases share
+the requested time allowance. Invalid or missing incumbents are rejected.
+
+```python
+problem = Problem(graph, groups=groups, node_costs={"A": 10}, budget=3,
+                  max_degree=2, hop_limit=2)
+solution = problem.get_solution(solver="highs")
+```
 
 ## Explicit variants and compatibility
 

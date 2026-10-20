@@ -148,7 +148,13 @@ connectors do not consume hops. Decoding checks the original-edge count.
 Composition supplies `_degree_arc_groups`, mapping each original node to all
 incident original-edge cross-arcs across both split ports. Both backends and
 budget incumbent checks use this incidence mapping. Decoding independently
-checks original degrees. Budget accounting after splitting remains restricted.
+checks original degrees. `_budget_edge_costs` contains only original-edge
+cross-arcs. Budget constraints and incumbent validation use these coefficients,
+so paid-node/source/group arcs consume no edge budget. Composition first proves
+maximum group coverage, fixes that count, then minimizes original edge/node
+costs within the remaining time. Mandatory sinks cannot be penalized. Source
+choices and component filtering must depend on mandatory requirements, not all
+optional groups. Decoding validates original constraints and both objectives.
 
 `attach_group_terminals` is the shared next stage for legacy undirected/directed
 group solvers and composition. It returns a copied working graph, artificial
@@ -166,9 +172,9 @@ budgets reuse the optional-flow budget model: original costs are charged once,
 connectors stay free, and the objective counts reached groups. Decoding removes
 the working model's extra root count, validates original costs and coverage,
 and reports missed original group indices. Budget incumbent validation must
-use the same original degree/hop domains as the model. Degree/budget constraints
-after node splitting and undirected-group budgets still need original-space rules and
-oracle tests before their compatibility checks can be relaxed.
+use the same original degree/hop domains as the model. Plain undirected-group
+and legacy node-weighted modifiers remain guarded until they use safe original
+accounting. Composition provides the tested path for these combinations.
 
 New problem variants are a common and very welcome type of contribution. There
 is no plugin system — variants are plain classes. The checklist:
