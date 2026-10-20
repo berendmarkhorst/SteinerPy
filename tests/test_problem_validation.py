@@ -42,10 +42,13 @@ def test_invalid_directed_group_limits_fail_before_construction(
         )
 
 
+@pytest.mark.parametrize("name", ["hop_limit", "max_degree"])
 @pytest.mark.parametrize("limit", [-1, True, 1.5, "3", math.inf, math.nan])
-def test_invalid_composed_hops_fail_before_construction(limit, forbid_construction):
-    with pytest.raises(ValueError, match="hop_limit.*non-negative integer"):
-        Problem(nx.path_graph(3), groups=[[0], [2]], node_costs={}, hop_limit=limit)
+def test_invalid_composed_hops_fail_before_construction(
+    name, limit, forbid_construction
+):
+    with pytest.raises(ValueError, match="non-negative integer"):
+        Problem(nx.path_graph(3), groups=[[0], [2]], node_costs={}, **{name: limit})
 
 
 @pytest.mark.parametrize("budget", [-1, True, "3", math.inf, math.nan])
@@ -71,11 +74,6 @@ def test_invalid_directed_group_budget_fails_before_construction(
         (False, {"groups": [[0], [2]], "budget": 4}, "cannot yet be combined"),
         (False, {"groups": [[2]], "max_degree": 3}, "cannot yet be combined"),
         (False, {"groups": [[2]], "hop_limit": 2}, "cannot yet be combined"),
-        (
-            False,
-            {"groups": [[0], [2]], "node_costs": {}, "max_degree": 2},
-            "composition",
-        ),
         (
             False,
             {"groups": [[0], [2]], "node_costs": {}, "node_budget": 2},

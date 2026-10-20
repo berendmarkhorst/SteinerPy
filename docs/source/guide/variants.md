@@ -55,7 +55,7 @@ transforming the graph. Invalid combinations raise `TypeError` or `ValueError`
 with the unsupported feature named. In particular:
 
 - Group/node-cost composition requires non-negative finite costs and no
-  preprocessing, degree limits, or budgets. Original-edge hop limits are supported.
+  preprocessing or budgets. Original-edge hop and original-node degree limits are supported.
 - Terminal-leaf variants cannot use edge budgets: their transformation changes
   edge costs, so the existing budget would not describe the original network.
 - The legacy node-weighted variant requires an undirected graph; its node
@@ -166,6 +166,10 @@ problem = Problem(graph, groups=groups, node_costs={"A": 10}, hop_limit=1)
 solution = problem.get_solution(solver="highs")  # Gurobi is also supported
 ```
 
+`max_degree` can also be supplied, alone or with `hop_limit`. It counts original
+edges incident to each original node, combining both split ports and excluding
+paid/source/group arcs. Decoding independently checks original-node degrees.
+
 The limit is a non-negative integer. Original zero-cost edges count. Paid-node
 traversals, the artificial source and group connectors consume no hops; node
 costs are still charged normally. All groups and mandatory terminals remain
@@ -188,7 +192,7 @@ optimality.
 HiGHS and Gurobi use their existing directed-cut solve loops. Preprocessing is
 automatically disabled; explicitly enabling it is rejected. This first
 composition requires a simple undirected graph without self-loops and does not
-yet support signed rewards, budgets, degree limits, heuristic-only solving,
+yet support signed rewards, budgets, heuristic-only solving,
 optimum enumeration, or accelerator/reduction options.
 
 The node-splitting stage is shared with the legacy node-weighted solver. It

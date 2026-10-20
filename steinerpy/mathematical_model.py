@@ -372,6 +372,12 @@ def _incident_edges(edges) -> Dict:
     return incident
 
 
+def _degree_incidence(steiner_problem):
+    if hasattr(steiner_problem, '_degree_arc_groups'):
+        return steiner_problem._degree_arc_groups
+    return _incident_edges(getattr(steiner_problem, '_degree_edges', steiner_problem.edges))
+
+
 def _selection_graph(steiner_problem, selected_edges):
     graph_type = (
         nx.DiGraph
@@ -1359,10 +1365,8 @@ def add_degree_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProble
     :param x: edge selection decision variables.
     """
     max_degree = steiner_problem.max_degree
-    counted_edges = getattr(steiner_problem, '_degree_edges', steiner_problem.edges)
-    incident_edges = _incident_edges(counted_edges)
-    for v in steiner_problem.nodes:
-        incident = [x[e] for e in incident_edges.get(v, ())]
+    for edges in _degree_incidence(steiner_problem).values():
+        incident = [x[e] for e in edges]
         if incident:
             model.addConstr(sum(incident) <= max_degree)
 
@@ -1687,12 +1691,10 @@ def run_budget_model(model, steiner_problem: 'BaseSteinerProblem',
     )
     degree_ok = True
     if getattr(steiner_problem, "max_degree", None) is not None:
-        counted_edges = set(getattr(steiner_problem, '_degree_edges', selected_edges))
+        selected = set(selected_edges)
         degree_ok = all(
-            degree <= steiner_problem.max_degree
-            for _node, degree in _selection_graph(
-                steiner_problem, [e for e in selected_edges if e in counted_edges]
-            ).degree()
+            sum(edge in selected for edge in edges) <= steiner_problem.max_degree
+            for edges in _degree_incidence(steiner_problem).values()
         )
     candidate_valid = edge_cost <= steiner_problem.budget + 1e-7
     candidate_valid = candidate_valid and degree_ok
@@ -1876,10 +1878,8 @@ def build_model_gurobi(
     # Optional degree constraints
     if getattr(steiner_problem, 'max_degree', None) is not None:
         max_degree = steiner_problem.max_degree
-        counted_edges = getattr(steiner_problem, '_degree_edges', steiner_problem.edges)
-        incident_edges = _incident_edges(counted_edges)
-        for v in steiner_problem.nodes:
-            incident = [x[e] for e in incident_edges.get(v, ())]
+        for edges in _degree_incidence(steiner_problem).values():
+            incident = [x[e] for e in edges]
             if incident:
                 model.addConstr(gp.quicksum(incident) <= max_degree)
 
