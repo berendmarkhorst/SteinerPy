@@ -35,7 +35,8 @@ def validate_problem(spec, variant, implementation=None):
     """
     spec.validate_nodes()
     if variant is None:
-        if spec.requested_variant not in (None, "group"):
+        compatible_variant = "group" if spec.groups else "steiner"
+        if spec.requested_variant not in (None, compatible_variant):
             raise TypeError(
                 "groups/node_costs is incompatible with variant={!r}.".format(
                     spec.requested_variant
@@ -110,8 +111,8 @@ def _validate_composition(spec):
         raise ValueError(
             "Forest terminals cannot yet be combined with groups/node_costs."
         )
-    if not spec.groups:
-        raise ValueError("node_costs requires groups in the modular interface for now.")
+    if not spec.groups and not spec.terminal_groups:
+        raise ValueError("Node-cost composition requires groups or terminals.")
     options = spec.implementation_options()
     options.pop("node_costs", None)
     unknown = set(options) - {
