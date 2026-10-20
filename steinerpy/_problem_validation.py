@@ -36,6 +36,8 @@ def validate_problem(spec, variant, implementation=None):
     spec.validate_nodes()
     if variant is None:
         compatible_variant = "group" if spec.groups else "steiner"
+        if spec.graph.is_directed():
+            compatible_variant = "directed_group" if spec.groups else "directed"
         if spec.requested_variant not in (None, compatible_variant):
             raise TypeError(
                 "groups/node_costs is incompatible with variant={!r}.".format(
@@ -101,20 +103,22 @@ def validate_problem(spec, variant, implementation=None):
 
 def _validate_composition(spec):
     """Reject features whose original-space meaning is not implemented yet."""
-    if spec.graph.is_directed() or spec.graph.is_multigraph():
-        raise ValueError(
-            "Group/node-cost composition requires a simple undirected graph."
-        )
+    if spec.graph.is_multigraph():
+        raise ValueError("Group/node-cost composition requires a simple graph.")
+    if spec.graph.is_directed() and spec.root is None:
+        raise TypeError("Directed problems require root=.")
     if nx.number_of_selfloops(spec.graph):
         raise ValueError("Group/node-cost composition does not support self-loops.")
     if len(spec.terminal_groups) > 1:
         raise ValueError(
             "Forest terminals cannot yet be combined with groups/node_costs."
         )
-    if not spec.groups and not spec.terminal_groups:
+    if not spec.groups and not spec.terminal_groups and spec.root is None:
         raise ValueError("Node-cost composition requires groups or terminals.")
     options = spec.implementation_options()
     options.pop("node_costs", None)
+    if spec.graph.is_directed():
+        options.pop("root", None)
     unknown = set(options) - {
         "weight",
         "preprocess",
@@ -159,6 +163,8 @@ def _validate_cost(cost, location, nonnegative=True):
 def _validate_legacy_features(spec, variant, implementation, options):
     """Reject unsupported feature interactions before legacy constructors run."""
     if variant == "group":
+        if spec.graph.is_directed():
+            raise ValueError("GroupSteinerProblem requires an undirected graph.")
         _validate_composition(spec)
     if variant in {"directed_group", "node_weighted"} and spec.graph.is_multigraph():
         raise ValueError(f"{variant} requires a simple graph.")

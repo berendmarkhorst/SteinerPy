@@ -292,10 +292,10 @@ def test_invalid_costs_rejected_before_compiling(cost):
 
 
 @pytest.mark.parametrize(
-    "graph", [nx.DiGraph([(0, 1)]), nx.MultiGraph([(0, 1)]), nx.Graph([(0, 0)])]
+    "graph", [nx.MultiGraph([(0, 1)]), nx.Graph([(0, 0)])]
 )
 def test_unsupported_graphs(graph):
-    with pytest.raises(ValueError, match="simple undirected|self-loops"):
+    with pytest.raises(ValueError, match="simple graph|self-loops"):
         Problem(graph, groups=[[0]], node_costs={})
 
 

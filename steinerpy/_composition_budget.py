@@ -33,7 +33,7 @@ def decode_budget(spec, compiled, arcs, claimed):
             spec, compiled, used, None, require_all_groups=False
         )
     else:
-        if spec.terminal_groups:
+        if spec.terminal_groups or spec.graph.is_directed():
             raise RuntimeError("Budget composition omits mandatory terminals.")
         edges, nodes, cost = [], [], 0
     if sum(spec.graph.edges[e].get(spec.weight, 1) for e in edges) > spec.budget + 1e-7:
@@ -49,12 +49,16 @@ def solve_budget(strategy, time_limit, logfile, solver, threads):
     started = perf_counter()
     spec = strategy.spec
     if not spec.groups:
-        # Match plain edge-budget semantics: first terminal required, others optional.
-        terminals = spec.terminal_groups[0]
+        # Plain budgets require the directed root or first undirected terminal.
+        terminals = spec.terminal_groups[0] if spec.terminal_groups else ()
+        if spec.graph.is_directed():
+            terminals = tuple(dict.fromkeys((spec.root,) + terminals))
         spec = replace(
             spec,
             groups=tuple((t,) for t in terminals),
-            terminal_groups=((terminals[0],),),
+            terminal_groups=(
+                (spec.root if spec.graph.is_directed() else terminals[0],),
+            ),
         )
     compiled = compile_groups(spec)
     view = make_view(spec, compiled)
