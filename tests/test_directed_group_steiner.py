@@ -13,7 +13,7 @@ import random
 import networkx as nx
 import pytest
 
-from steinerpy import DirectedGroupSteinerProblem
+from steinerpy import DirectedGroupSteinerProblem, Problem
 
 
 def _directed_path_graph():
@@ -68,7 +68,8 @@ def test_directed_group_steiner_infeasible_raises():
 # Brute-force oracle (small instances only)
 # ---------------------------------------------------------------------------
 
-def brute_directed_group_steiner(graph, groups, root, weight="weight"):
+
+def brute_directed_group_steiner(graph, groups, root, weight="weight", hop_limit=None):
     """Optimal cost via enumerating edge subsets: min cost subgraph such that
     ``root`` reaches at least one vertex of every group. ``math.inf`` if no
     subset works."""
@@ -76,6 +77,8 @@ def brute_directed_group_steiner(graph, groups, root, weight="weight"):
     n = len(edges)
     best = math.inf
     for mask in range(1 << n):
+        if hop_limit is not None and bin(mask).count("1") > hop_limit:
+            continue
         adj = {}
         cost = 0.0
         for i in range(n):
@@ -147,3 +150,112 @@ def test_directed_group_steiner_matches_oracle(seed):
                 stack.append(y)
     for grp in groups:
         assert any(v in reachable for v in grp)
+
+
+@pytest.fixture(scope="module", params=["highs", "gurobi"])
+def solver(request):
+    if request.param == "gurobi":
+        gp = pytest.importorskip("gurobipy")
+        try:
+            with gp.Env(params={"OutputFlag": 0}) as env:
+                with gp.Model(env=env):
+                    pass
+        except gp.GurobiError:
+            pytest.skip("Gurobi license is not available")
+    return request.param
+
+
+@pytest.mark.parametrize("api", ["legacy", "inferred", "explicit"])
+@pytest.mark.parametrize("limit, expected", [(1, 9), (2, 0)])
+def test_group_hops_count_original_zero_cost_arcs(api, limit, expected, solver):
+    graph = nx.DiGraph()
+    graph.add_weighted_edges_from(
+        [("r", "__group_0__", 0), ("__group_0__", "t", 0), ("r", "t", 9)]
+    )
+    original = graph.copy()
+    options = dict(groups=[["t"], ["r", "t"], ["t"]], root="r", hop_limit=limit)
+    if api == "legacy":
+        problem = DirectedGroupSteinerProblem(graph, **options)
+    else:
+        problem = Problem(
+            graph, variant="directed_group" if api == "explicit" else None, **options
+        )
+    solution = problem.get_solution(solver=solver)
+    assert solution.objective == expected and solution.gap == 0
+    assert len(solution.edges) == limit
+    assert all(graph.has_edge(*arc) for arc in solution.edges)
+    assert nx.utils.graphs_equal(graph, original)
+
+
+@pytest.mark.parametrize("covers_root", [True, False])
+def test_zero_group_hops(covers_root, solver):
+    graph = nx.DiGraph()
+    graph.add_edge("r", "t", weight=0)
+    groups = [["r", "t"], ["r"]] if covers_root else [["t"]]
+    problem = Problem(graph, groups=groups, root="r", hop_limit=0)
+    if covers_root:
+        solution = problem.get_solution(solver=solver)
+        assert solution.objective == 0 and solution.edges == []
+    else:
+        with pytest.raises(RuntimeError, match="infeasible"):
+            problem.get_solution(solver=solver)
+
+
+@pytest.mark.parametrize("seed", range(12))
+@pytest.mark.parametrize("limit", [0, 2, 4])
+def test_group_hops_match_original_graph_oracle(seed, limit, solver):
+    graph, groups, root = random_directed_group_instance(seed, n=5)
+    groups += [[root, groups[0][0]], [groups[0][0], groups[1][0]]]
+    expected = brute_directed_group_steiner(graph, groups, root, hop_limit=limit)
+    problem = Problem(graph, groups=groups, root=root, hop_limit=limit)
+    if math.isinf(expected):
+        with pytest.raises(RuntimeError, match="infeasible"):
+            problem.get_solution(solver=solver)
+        return
+    solution = problem.get_solution(solver=solver)
+    assert solution.objective == pytest.approx(expected) and solution.gap == 0
+    assert len(solution.edges) <= limit
+    selected = nx.DiGraph()
+    selected.add_node(root)
+    selected.add_edges_from(solution.edges)
+    reachable = {root} | nx.descendants(selected, root)
+    assert all(reachable.intersection(group) for group in groups)
+    assert all(graph.has_edge(*arc) for arc in solution.edges)
+    assert sum(graph[u][v]["weight"] for u, v in solution.edges) == expected
+
+
+def test_decoded_group_hop_limit_is_checked(monkeypatch):
+    from steinerpy.objects import SteinerProblem, Solution
+
+    graph = nx.path_graph(3, create_using=nx.DiGraph)
+    problem = DirectedGroupSteinerProblem(graph, [[2]], root=0, hop_limit=1)
+    monkeypatch.setattr(
+        SteinerProblem,
+        "get_solution",
+        lambda *a, **k: Solution(
+            objective=2,
+            gap=0,
+            runtime=0,
+            selected_edges=[(0, 1), (1, 2)],
+            original_selected_edges=[(0, 1), (1, 2)],
+        ),
+    )
+    with pytest.raises(RuntimeError, match="original-arc hop limit"):
+        problem.get_solution()
+
+
+@pytest.mark.parametrize("limit", [-1, 1.5, True, "2", math.inf, math.nan])
+def test_legacy_group_rejects_invalid_hop_limit(limit):
+    with pytest.raises(ValueError, match="non-negative integer"):
+        DirectedGroupSteinerProblem(
+            nx.path_graph(2, create_using=nx.DiGraph), [[1]], root=0, hop_limit=limit
+        )
+
+
+def test_group_hops_with_no_original_arcs(solver):
+    graph = nx.DiGraph()
+    graph.add_node("r")
+    solution = Problem(
+        graph, groups=[["r"], ["r"]], root="r", hop_limit=0
+    ).get_solution(solver=solver)
+    assert solution.objective == 0 and solution.edges == []

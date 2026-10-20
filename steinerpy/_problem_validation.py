@@ -69,10 +69,10 @@ def validate_problem(spec, variant, implementation=None):
         if options.get("root") is None:
             raise TypeError("Directed problems require root=.")
     if variant in {"group", "directed_group", "node_weighted"}:
-        if any(
-            options.get(key) is not None
-            for key in ("max_degree", "budget", "hop_limit")
-        ):
+        modifiers = ("max_degree", "budget")
+        if variant != "directed_group":
+            modifiers += ("hop_limit",)
+        if any(options.get(key) is not None for key in modifiers):
             raise TypeError(
                 "groups/node weights cannot yet be combined with degree/hop limits or budgets."
             )
@@ -149,6 +149,8 @@ def _validate_cost(cost, location, nonnegative=True):
 
 def _validate_legacy_features(spec, variant, implementation, options):
     """Reject unsupported feature interactions before legacy constructors run."""
+    if variant == "directed_group":
+        objects._validate_group_hop_limit(options.get("hop_limit"))
     if variant == "steiner" and options.get("preprocess", True):
         if spec.graph.is_directed():
             raise ValueError(

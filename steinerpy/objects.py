@@ -1457,9 +1457,18 @@ class GroupSteinerProblem(SteinerProblem):
             (u, v) for (u, v) in sol.original_selected_edges
             if u not in st and v not in st
         ]
+        if self.hop_limit is not None and len(real) > self.hop_limit:
+            raise RuntimeError("Decoded group solution exceeds the original-arc hop limit.")
         sol.original_selected_edges = real
         sol.selected_edges = real
         return sol
+
+
+def _validate_group_hop_limit(limit):
+    if limit is not None and (
+        isinstance(limit, bool) or not isinstance(limit, int) or limit < 0
+    ):
+        raise ValueError("hop_limit must be a non-negative integer or None.")
 
 
 class DirectedGroupSteinerProblem(GroupSteinerProblem):
@@ -1477,6 +1486,10 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
     directed-cut model used by :class:`DirectedSteinerProblem`, rooted at
     ``root`` with the super-terminals as its terminal set.
 
+    Optional ``hop_limit`` bounds the total selected original arcs, including
+    zero-cost arcs, excluding artificial connectors. It does not bound each
+    root-to-member path separately. Members may be internal path vertices.
+
     References:
 
     - S. Voß (1999), *The Steiner tree problem with hop constraints*, Annals of
@@ -1491,7 +1504,7 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
     """
 
     def __init__(self, graph: nx.DiGraph, groups: List[List], root,
-                 weight: str = "weight", **kwargs):
+                 weight: str = "weight", hop_limit: Optional[int] = None, **kwargs):
         if not isinstance(graph, nx.DiGraph):
             raise ValueError(
                 "DirectedGroupSteinerProblem requires a directed graph (nx.DiGraph)."
@@ -1499,15 +1512,21 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
         if root not in graph:
             raise ValueError(f"root {root!r} is not in the graph.")
 
-        augmented, super_terminals = self._build_augmented(
-            graph, groups, weight, directed=True)
+        _validate_group_hop_limit(hop_limit)
+        compiled = _attach_group_terminals(graph, groups, weight)
+        augmented, super_terminals = compiled.graph, compiled.terminals
+        # Hop limits count original arcs, including original zero-cost arcs.
+        self._hop_arcs = tuple(
+            arc for arc in augmented.edges if arc not in compiled.connector_edges
+        )
         self._gstp_super_terminals = set(super_terminals)
         kwargs['preprocess'] = False
         # Bypass GroupSteinerProblem.__init__ (which rejects DiGraph and wires
         # undirected connector edges); go straight to BaseSteinerProblem via
         # SteinerProblem, as DirectedSteinerProblem does.
         SteinerProblem.__init__(
-            self, augmented, [[root] + super_terminals], weight=weight, **kwargs)
+            self, augmented, [[root] + super_terminals], weight=weight,
+            hop_limit=hop_limit, **kwargs)
 
 
 # ---------------------------------------------------------------------------

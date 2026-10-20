@@ -38,12 +38,14 @@ the old nested syntax, including the positional second argument; supplying both
 | Directed graph + `root` + `terminals` + `hop_limit` | Existing hop-constrained problem |
 | Undirected graph + `groups` | Existing group Steiner problem |
 | Directed graph + `root` + `groups` | Existing directed group Steiner problem |
+| Directed graph + `root` + `groups` + `hop_limit` | Directed group problem with a limit on selected original arcs |
 | Undirected graph + `groups` + `node_costs` and/or mandatory `terminals` | New exact composition path, described below |
 
 Other named variants remain available through explicit `variant=` calls.
 Existing explicit calls and legacy classes retain their solution types and
 solver restrictions. Group and legacy node-weighted transformations reject
-degree/hop limits and budgets rather than applying those to artificial nodes.
+degree limits and budgets. Hop limits are supported for directed groups;
+undirected groups and node-cost splitting still reject them.
 
 `Problem(...)` validates combinations before constructing a solver strategy or
 transforming the graph. Invalid combinations raise `TypeError` or `ValueError`
@@ -66,6 +68,24 @@ retain signed node weights; the node-budgeted variant's edge attributes remain
 topology-only. Existing automatic preprocessing disabling for directed and
 prize-collecting implementations is retained. Solver-time options and backend
 availability are checked when solving.
+
+## Directed groups with a hop limit
+
+```python
+problem = Problem(digraph, root="r", groups=[["A", "B"], ["C"]], hop_limit=3)
+solution = problem.get_solution(solver="highs")  # Gurobi is also supported
+```
+
+`hop_limit` is a non-negative integer limiting the **total number of selected
+original arcs**, not the length of each root-to-member path. Original zero-cost
+arcs count; artificial group connectors do not. Groups may overlap and contain
+the root. A zero limit is feasible only if the root belongs to every group.
+Group members may be internal vertices on paths to other groups.
+
+The same option is available on `DirectedGroupSteinerProblem`. Decoded solutions
+are checked against the original-arc limit. Infeasibility raises `RuntimeError`.
+Additional mandatory terminals, node costs, degree limits and budgets remain
+unsupported with this combination.
 
 ## Combining group choices and node costs
 
@@ -275,7 +295,8 @@ BudgetedMaxWeightConnectedSubgraph(G, node_weights, node_costs, node_budget=5).g
 
 ## Optional constraint modifiers
 
-Two side-constraints are available as **optional keyword arguments** that can be combined freely with any problem class above:
+Two side-constraints are available as **optional keyword arguments** on compatible
+problem variants. Transformation restrictions are listed above:
 
 | Modifier kwarg | Effect |
 |----------------|--------|
