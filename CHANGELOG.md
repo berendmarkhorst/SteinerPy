@@ -8,15 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Directed group problems support finite non-negative edge budgets on HiGHS
+  and Gurobi, alone or with original-node degree and original-arc hop limits.
+  The objective counts reached groups, including overlapping groups, with no
+  extra root count. Original arcs are charged once and artificial connectors
+  remain free. Decoding validates original costs and coverage and reports
+  original group indices for missed requirements.
 - Directed group problems support `max_degree`, alone or with `hop_limit`, on
   HiGHS and Gurobi. Degree counts incoming plus outgoing selected original arcs
   at each original node, excluding artificial group connectors. Decoded results
-  independently check the degree limit. Budgets and constraints after node
+  independently check the degree limit. Constraints after node
   splitting remain restricted.
 - Directed group problems support `hop_limit` through `Problem` and the legacy
   class on HiGHS and Gurobi. The limit counts selected original arcs, including
   zero-cost arcs, and excludes artificial group connectors. Decoded solutions
-  independently check the limit; budget and node-splitting combinations
+  independently check the limit; node-splitting combinations
   remain restricted.
 - Edge-budgeted tree/forest solving now supports Gurobi through the same
   optional-flow constraints and incumbent checks as HiGHS. Overlapping groups,

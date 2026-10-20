@@ -40,13 +40,13 @@ the old nested syntax, including the positional second argument; supplying both
 | Directed graph + `root` + `groups` | Existing directed group Steiner problem |
 | Directed graph + `root` + `groups` + `hop_limit` | Directed group problem with a limit on selected original arcs |
 | Directed graph + `root` + `groups` + `max_degree` | Directed group problem with original-node total degree limits; may also use `hop_limit` |
+| Directed graph + `root` + `groups` + `budget` | Maximize reached groups within an original-edge cost budget; optional degree/hop limits apply |
 | Undirected graph + `groups` + `node_costs` and/or mandatory `terminals` | New exact composition path, described below |
 
 Other named variants remain available through explicit `variant=` calls.
 Existing explicit calls and legacy classes retain their solution types and
-solver restrictions. Group and legacy node-weighted transformations reject
-budgets. Degree and hop limits are supported for directed groups; undirected
-groups and node-cost splitting still reject them.
+solver restrictions. Budgets, degree and hop limits are supported for directed
+groups; undirected groups and node-cost splitting still reject them.
 
 `Problem(...)` validates combinations before constructing a solver strategy or
 transforming the graph. Invalid combinations raise `TypeError` or `ValueError`
@@ -82,21 +82,51 @@ solution = problem.get_solution(solver="highs")  # Gurobi is also supported
 `hop_limit` is a non-negative integer limiting the **total number of selected
 original arcs**, not the length of each root-to-member path. Original zero-cost
 arcs count; artificial group connectors do not. Groups may overlap and contain
-the root. A zero limit is feasible only if the root belongs to every group.
+the root. When all groups are required, a zero limit is feasible only if the
+root belongs to every group.
 Group members may be internal vertices on paths to other groups.
 
 `max_degree` is a non-negative integer limiting incoming plus outgoing selected
 original arcs at **each original node**, including the root and group members.
 Artificial connectors do not count. This is total degree, not just out-degree:
 an internal node with one incoming and two outgoing original arcs has degree
-three. Zero-cost original arcs still count. A zero degree limit is feasible
-only if the root belongs to every group.
+three. Zero-cost original arcs still count. When all groups are required, a
+zero degree limit is feasible only if the root belongs to every group.
 
 Both options are available on `DirectedGroupSteinerProblem`, separately or
 together. Decoded solutions are independently checked against the original-arc
 and original-node limits. Infeasibility raises `RuntimeError`. Additional
-mandatory terminals, node costs and budgets remain unsupported with this
-combination.
+mandatory terminals and node costs remain unsupported with this combination.
+
+### Directed groups with an edge budget
+
+```python
+problem = Problem(
+    digraph, root="r", groups=[["A", "B"], ["C"]], budget=5,
+    hop_limit=3, max_degree=2,
+)
+solution = problem.get_solution(solver="highs")  # Gurobi is also supported
+```
+
+As in the existing budget API, `budget` changes the goal: **maximize the number
+of reached groups** within the original-edge cost budget. It does not require
+every group. Each original arc is charged once; missing costs default to one,
+and `weight=` selects the cost attribute. Artificial connectors cost zero.
+The budget must be finite and non-negative.
+
+A group counts once if any member is reachable from the root. Overlapping or
+identical groups count separately, and groups containing the root count even
+with no selected arcs. The root itself adds no extra count. Zero reached
+groups is a valid optimum. Optional degree and hop limits retain their
+original-node/arc meanings, including on zero-cost original arcs.
+
+Results are `BudgetSolution` objects. `objective` and `connected_terminals`
+count reached groups; `total_terminals` is the number of groups. `penalties`
+contains `{"group_i": 1}` for each missed zero-based group index. Returned
+arcs belong to the original graph and are reachable from the root; decoding
+checks original costs and coverage. Incomplete solves with a valid incumbent
+retain `gap=inf`; solves without a valid incumbent raise `RuntimeError`.
+The same options work on `DirectedGroupSteinerProblem`.
 
 ## Combining group choices and node costs
 

@@ -155,8 +155,13 @@ excluding connector provenance, and use that same original-arc domain for
 `_degree_edges`. Both HiGHS and Gurobi count original arcs, including zero-cost
 ones. Degree is incoming plus outgoing selected original arcs at each original
 node. Decoded results independently check both limits; the two constraints may
-be combined. Plain models retain their full arc/edge domains. Budget accounting
-and degree/hop limits after node splitting still need original-space rules and
+be combined. Plain models retain their full arc/edge domains. Directed-group
+budgets reuse the optional-flow budget model: original costs are charged once,
+connectors stay free, and the objective counts reached groups. Decoding removes
+the working model's extra root count, validates original costs and coverage,
+and reports missed original group indices. Budget incumbent validation must
+use the same original degree/hop domains as the model. Constraints after node
+splitting and undirected-group budgets still need original-space rules and
 oracle tests before their compatibility checks can be relaxed.
 
 New problem variants are a common and very welcome type of contribution. There
