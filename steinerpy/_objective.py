@@ -155,14 +155,16 @@ def objective_from_spec(spec, variant, *, pc_transform=None):
             graph, prizes, spec.weight, penalty_cost=max(prizes.values(), default=0) + 1
         )
     elif (
-        variant in {"steiner", "directed", "hop_constrained"}
+        variant in {"steiner", "directed", "hop_constrained", "directed_group"}
         and spec.budget is not None
     ):
         # The edge budget is a constraint; the objective counts connected demands.
         topology_only = True
         penalty_cost = 1
         sign = -1
-        if variant in {"directed", "hop_constrained"}:
+        if variant == "directed_group":
+            offset = len(spec.groups)
+        elif variant in {"directed", "hop_constrained"}:
             offset = len({spec.root}.union(spec.terminal_groups[0]))
         else:
             offset = sum(map(len, spec.terminal_groups))
