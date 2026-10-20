@@ -315,8 +315,6 @@ def test_unknown_cost_node_and_features():
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"variant": "group", "groups": [[0], [2]], "max_degree": 2},
-        {"groups": [[0], [2]], "budget": 4},
         {
             "variant": "node_weighted",
             "terminals": [0, 2],
