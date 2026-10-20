@@ -1475,6 +1475,18 @@ def _validate_group_limit(limit, name):
         raise ValueError(f"{name} must be a non-negative integer or None.")
 
 
+def _validate_group_budget(budget):
+    import math
+    if budget is None:
+        return
+    try:
+        valid = not isinstance(budget, bool) and math.isfinite(budget) and budget >= 0
+    except (TypeError, ValueError, OverflowError):
+        valid = False
+    if not valid:
+        raise ValueError("budget must be finite and non-negative or None.")
+
+
 class DirectedGroupSteinerProblem(GroupSteinerProblem):
     """
     Directed Group Steiner Tree Problem — the rooted-arborescence variant of
@@ -1495,6 +1507,10 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
     root-to-member path separately. Members may be internal path vertices.
     Optional ``max_degree`` bounds incoming plus outgoing selected original
     arcs at each original node. Artificial connectors consume neither limit.
+    With ``budget``, maximize reached groups within the original-edge cost
+    budget instead of requiring every group. ``BudgetSolution`` counts groups,
+    excluding the working model's extra root; penalties use original group
+    indices. Degree and hop limits may still be supplied.
 
     References:
 
@@ -1511,7 +1527,8 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
 
     def __init__(self, graph: nx.DiGraph, groups: List[List], root,
                  weight: str = "weight", hop_limit: Optional[int] = None,
-                 max_degree: Optional[int] = None, **kwargs):
+                 max_degree: Optional[int] = None, budget: Optional[float] = None,
+                 **kwargs):
         if not isinstance(graph, nx.DiGraph):
             raise ValueError(
                 "DirectedGroupSteinerProblem requires a directed graph (nx.DiGraph)."
@@ -1521,7 +1538,9 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
 
         _validate_group_limit(hop_limit, "hop_limit")
         _validate_group_limit(max_degree, "max_degree")
-        compiled = _attach_group_terminals(graph, groups, weight)
+        _validate_group_budget(budget)
+        self._gstp_groups = tuple(tuple(group) for group in groups)
+        compiled = _attach_group_terminals(graph, self._gstp_groups, weight)
         augmented, super_terminals = compiled.graph, compiled.terminals
         # Constraints count original arcs, including original zero-cost arcs.
         self._hop_arcs = tuple(
@@ -1535,7 +1554,42 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
         # SteinerProblem, as DirectedSteinerProblem does.
         SteinerProblem.__init__(
             self, augmented, [[root] + super_terminals], weight=weight,
-            hop_limit=hop_limit, max_degree=max_degree, **kwargs)
+            hop_limit=hop_limit, max_degree=max_degree, budget=budget, **kwargs)
+
+    def get_solution(self, *args, **kwargs) -> 'Solution':
+        sol = super().get_solution(*args, **kwargs)
+        if self.budget is None:
+            return sol
+
+        real = sol.original_selected_edges
+        original_arcs = set(self._hop_arcs)
+        if any(edge not in original_arcs for edge in real):
+            raise RuntimeError("Decoded group solution contains a non-original arc.")
+        cost = sum(self.original_graph.edges[e].get(self.weight, 1) for e in real)
+        if cost > self.budget + 1e-7:
+            raise RuntimeError("Decoded group solution exceeds the original-edge budget.")
+
+        root = self.roots[0]
+        selected = nx.DiGraph()
+        selected.add_node(root)
+        selected.add_edges_from(real)
+        reachable = {root} | nx.descendants(selected, root)
+        missed = [i for i, group in enumerate(self._gstp_groups)
+                  if reachable.isdisjoint(group)]
+        covered = len(self._gstp_groups) - len(missed)
+        # The working model counts its root as an extra connected terminal.
+        claimed = sol.connected_terminals - 1
+        if claimed > covered:
+            raise RuntimeError("Decoded group solution overstates reached groups.")
+        if claimed != covered:
+            sol.gap = float('inf')
+        sol.objective = sol.connected_terminals = covered
+        sol.total_terminals = len(self._gstp_groups)
+        sol.penalties = {f"group_{i}": 1 for i in missed}
+        sol.selected_edges = sol.original_selected_edges = [
+            edge for edge in real if edge[0] in reachable
+        ]
+        return sol
 
 
 # ---------------------------------------------------------------------------

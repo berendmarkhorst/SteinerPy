@@ -68,14 +68,12 @@ def validate_problem(spec, variant, implementation=None):
     if variant in {"directed", "directed_group", "hop_constrained"}:
         if options.get("root") is None:
             raise TypeError("Directed problems require root=.")
-    if variant in {"group", "directed_group", "node_weighted"}:
-        modifiers = ("budget",)
-        if variant != "directed_group":
-            modifiers += ("max_degree", "hop_limit")
+    if variant in {"group", "node_weighted"}:
+        modifiers = ("budget", "max_degree", "hop_limit")
         if any(options.get(key) is not None for key in modifiers):
             raise TypeError(
                 "groups/node weights cannot yet be combined with these constraints: "
-                "budgets remain unsupported; degree/hop limits require directed groups."
+                "budget/degree/hop limits require directed groups."
             )
     if variant == "rectilinear":
         if spec.graph is not None:
@@ -153,6 +151,7 @@ def _validate_legacy_features(spec, variant, implementation, options):
     if variant == "directed_group":
         objects._validate_group_limit(options.get("hop_limit"), "hop_limit")
         objects._validate_group_limit(options.get("max_degree"), "max_degree")
+        objects._validate_group_budget(options.get("budget"))
     if variant == "steiner" and options.get("preprocess", True):
         if spec.graph.is_directed():
             raise ValueError(

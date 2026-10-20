@@ -42,6 +42,19 @@ def test_invalid_directed_group_limits_fail_before_construction(
         )
 
 
+@pytest.mark.parametrize("budget", [-1, True, "3", math.inf, math.nan])
+def test_invalid_directed_group_budget_fails_before_construction(
+    budget, forbid_construction
+):
+    with pytest.raises(ValueError, match="budget.*finite and non-negative"):
+        Problem(
+            nx.path_graph(3, create_using=nx.DiGraph),
+            groups=[[2]],
+            root=0,
+            budget=budget,
+        )
+
+
 @pytest.mark.parametrize(
     "directed, options, message",
     [
@@ -51,7 +64,6 @@ def test_invalid_directed_group_limits_fail_before_construction(
         (True, {"variant": "group", "groups": [[2]]}, "undirected graph"),
         (False, {"groups": [[0], [2]], "budget": 4}, "cannot yet be combined"),
         (False, {"groups": [[2]], "max_degree": 3}, "cannot yet be combined"),
-        (True, {"groups": [[2]], "root": 0, "budget": 3}, "cannot yet be combined"),
         (False, {"groups": [[2]], "hop_limit": 2}, "cannot yet be combined"),
         (
             False,
