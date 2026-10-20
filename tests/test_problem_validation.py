@@ -28,6 +28,19 @@ def forbid_construction(monkeypatch):
         monkeypatch.setattr(cls, "__init__", forbid(cls.__init__))
 
 
+@pytest.mark.parametrize("limit", [-1, 1.5, True, "2", math.inf, math.nan])
+def test_invalid_directed_group_hops_fail_before_construction(
+    limit, forbid_construction
+):
+    with pytest.raises(ValueError, match="non-negative integer"):
+        Problem(
+            nx.path_graph(3, create_using=nx.DiGraph),
+            groups=[[2]],
+            root=0,
+            hop_limit=limit,
+        )
+
+
 @pytest.mark.parametrize(
     "directed, options, message",
     [
@@ -37,6 +50,8 @@ def forbid_construction(monkeypatch):
         (True, {"variant": "group", "groups": [[2]]}, "undirected graph"),
         (False, {"groups": [[0], [2]], "budget": 4}, "cannot yet be combined"),
         (True, {"groups": [[2]], "root": 0, "max_degree": 3}, "cannot yet be combined"),
+        (True, {"groups": [[2]], "root": 0, "budget": 3}, "cannot yet be combined"),
+        (False, {"groups": [[2]], "hop_limit": 2}, "cannot yet be combined"),
         (
             False,
             {"groups": [[0], [2]], "node_costs": {}, "max_degree": 2},

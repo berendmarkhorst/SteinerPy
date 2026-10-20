@@ -1372,12 +1372,14 @@ def add_hop_constraint(model: hp.HighsModel, steiner_problem: 'SteinerProblem', 
     The number of arcs in the arborescence equals ``sum(y1[a])``; bounding it by
     ``hop_limit`` enforces ``|A(S)| <= H``.  Used by the hop-constrained directed
     Steiner tree problem (:class:`steinerpy.objects.HopConstrainedSteinerProblem`).
+    Transformations may supply ``_hop_arcs`` to count only original arcs.
 
     :param model: HiGHS model.
     :param steiner_problem: SteinerProblem-object with a ``hop_limit`` attribute.
     :param y1: global arc-selection decision variables.
     """
-    arcs = [y1[a] for a in steiner_problem.arcs if a in y1]
+    counted_arcs = getattr(steiner_problem, '_hop_arcs', steiner_problem.arcs)
+    arcs = [y1[a] for a in counted_arcs if a in y1]
     if arcs:
         model.addConstr(sum(arcs) <= steiner_problem.hop_limit)
 
@@ -1877,7 +1879,8 @@ def build_model_gurobi(
 
     # Optional hop constraint (directed problems, thesis Ch. 5.8)
     if getattr(steiner_problem, 'hop_limit', None) is not None:
-        hop_arcs = [y1[a] for a in steiner_problem.arcs if a in y1]
+        counted_arcs = getattr(steiner_problem, '_hop_arcs', steiner_problem.arcs)
+        hop_arcs = [y1[a] for a in counted_arcs if a in y1]
         if hop_arcs:
             model.addConstr(gp.quicksum(hop_arcs) <= steiner_problem.hop_limit)
 
