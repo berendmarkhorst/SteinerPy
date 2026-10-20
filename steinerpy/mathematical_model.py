@@ -1620,11 +1620,14 @@ def build_budget_model(
     # a bool instead of building a HighsExpr -- highspy's addConstr
     # unconditionally reads `expr.bounds`, raising
     # AttributeError: 'bool' object has no attribute 'bounds'.
-    if steiner_problem.edges:
+    budget_costs = getattr(steiner_problem, '_budget_edge_costs', None)
+    if budget_costs is None:
+        budget_costs = {e: steiner_problem.graph.edges[e].get(steiner_problem.weight, 1)
+                        for e in steiner_problem.edges}
+    if budget_costs:
         model.addConstr(
             sum(
-                x[e] * steiner_problem.graph.edges[e].get(steiner_problem.weight, 1)
-                for e in steiner_problem.edges
+                x[e] * cost for e, cost in budget_costs.items()
             )
             <= steiner_problem.budget
         )
@@ -1685,10 +1688,10 @@ def run_budget_model(model, steiner_problem: 'BaseSteinerProblem',
             penalized_terminals.add((group_id, terminal))
             penalties[f"group_{group_id}_{terminal}"] = 1
 
+    budget_costs = getattr(steiner_problem, '_budget_edge_costs', None)
     edge_cost = sum(
-        steiner_problem.graph.edges[e].get(steiner_problem.weight, 1)
-        for e in selected_edges
-    )
+        budget_costs.get(e, 0) if budget_costs is not None else
+        steiner_problem.graph.edges[e].get(steiner_problem.weight, 1) for e in selected_edges)
     degree_ok = True
     if getattr(steiner_problem, "max_degree", None) is not None:
         selected = set(selected_edges)

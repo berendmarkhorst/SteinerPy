@@ -125,6 +125,10 @@ def objective_from_spec(spec, variant, *, pc_transform=None):
 
     if variant is None:
         node_costs = dict(spec.node_costs or {})
+        if spec.budget is not None:
+            node_costs = {}
+            topology_only = True
+            penalty_cost, sign, offset = 1, -1, len(spec.groups)
     elif variant == "node_weighted":
         node_costs = dict(spec.node_weights)
         # The legacy node-splitting helper defaults missing original costs to 0.

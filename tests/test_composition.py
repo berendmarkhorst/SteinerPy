@@ -265,7 +265,6 @@ def test_custom_weight_default_costs_labels_and_snapshot():
     "kwargs",
     [
         {"preprocess": True},
-        {"budget": 4},
         {"node_budget": 4},
         {"node_prizes": {0: 2}},
         {"dual_ascent": True},

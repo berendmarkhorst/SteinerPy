@@ -1,6 +1,6 @@
 """Compile original-space node costs and group choices into directed cuts."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 
 import networkx as nx
@@ -31,9 +31,14 @@ def compile_groups(spec):
     split_nodes = split_node_costs(spec.graph, spec.node_costs, spec.weight)
     graph = split_nodes.graph
     groups = list(spec.groups) + [(t,) for group in spec.terminal_groups for t in group]
+    required = (
+        groups
+        if spec.budget is None
+        else [(t,) for g in spec.terminal_groups for t in g]
+    )
     feasible_nodes = set()
     for component in nx.connected_components(spec.graph):
-        if all(component.intersection(group) for group in groups):
+        if all(component.intersection(group) for group in required):
             feasible_nodes.update(component)
     if not feasible_nodes:
         raise RuntimeError(
@@ -41,10 +46,19 @@ def compile_groups(spec):
         )
     root = len(graph)
     graph.add_node(root)
+    root_choices = (
+        min(groups, key=len)
+        if spec.budget is None
+        else (
+            required[0]
+            if required
+            else {node for group in spec.groups for node in group}
+        )
+    )
     source_arcs = [
         (root, split_nodes.split[node][0])
-        for node in min(groups, key=len)
-        if node in feasible_nodes
+        for node in spec.graph
+        if node in root_choices and node in feasible_nodes
     ]
     for arc in source_arcs:
         graph.add_edge(*arc, **{spec.weight: 0})
@@ -64,7 +78,24 @@ def compile_groups(spec):
     )
 
 
-def decode_groups(spec, compiled, selected_arcs, objective):
+def make_view(spec, compiled):
+    view = DirectedSteinerProblem(
+        compiled.graph,
+        compiled.root,
+        compiled.terminals,
+        weight=spec.weight,
+        hop_limit=spec.hop_limit,
+        max_degree=spec.max_degree,
+    )
+    view._hop_arcs = tuple(compiled.edge_arcs)
+    view._degree_arc_groups = {node: [] for node in spec.graph}
+    for arc, (u, v) in compiled.edge_arcs.items():
+        view._degree_arc_groups[u].append(arc)
+        view._degree_arc_groups[v].append(arc)
+    return view
+
+
+def decode_groups(spec, compiled, selected_arcs, objective, *, require_all_groups=True):
     """Map and independently validate a candidate in the original graph."""
     selected = nx.DiGraph()
     selected.add_node(compiled.root)
@@ -91,12 +122,16 @@ def decode_groups(spec, compiled, selected_arcs, objective):
         d > spec.max_degree for _, d in original.degree()
     ):
         raise RuntimeError("Composed solution exceeds the original-node degree limit.")
-    if any(not set(group).intersection(nodes) for group in spec.groups):
+    if require_all_groups and any(
+        not set(group).intersection(nodes) for group in spec.groups
+    ):
         raise RuntimeError("Composed solution does not cover every group.")
     if any(t not in original for group in spec.terminal_groups for t in group):
         raise RuntimeError("Composed solution omits mandatory terminals.")
-    cost = spec.objective(None).value(edges, nodes)
-    if not math.isclose(cost, objective, rel_tol=1e-7, abs_tol=1e-7):
+    cost = replace(spec, budget=None).objective(None).value(edges, nodes)
+    if objective is not None and not math.isclose(
+        cost, objective, rel_tol=1e-7, abs_tol=1e-7
+    ):
         raise RuntimeError("Composed solution objective does not match original costs.")
     return edges, nodes, cost
 
@@ -121,21 +156,12 @@ class GroupComposition:
             raise ValueError(
                 "Unknown solver {!r}; choose 'highs' or 'gurobi'.".format(solver)
             )
+        if self.spec.budget is not None:
+            from ._composition_budget import solve_budget
+
+            return solve_budget(self, time_limit, log_file, solver, threads)
         compiled = compile_groups(self.spec)
-        view = DirectedSteinerProblem(
-            compiled.graph,
-            compiled.root,
-            compiled.terminals,
-            weight=self.spec.weight,
-            hop_limit=self.spec.hop_limit,
-            max_degree=self.spec.max_degree,
-        )
-        # Only cross-arcs represent original edges; paid and artificial arcs do not.
-        view._hop_arcs = tuple(compiled.edge_arcs)
-        view._degree_arc_groups = {node: [] for node in self.spec.graph}
-        for arc, (u, v) in compiled.edge_arcs.items():
-            view._degree_arc_groups[u].append(arc)
-            view._degree_arc_groups[v].append(arc)
+        view = make_view(self.spec, compiled)
         builder = mm.build_model if solver == "highs" else mm.build_model_gurobi
         runner = mm.run_model if solver == "highs" else mm.run_model_gurobi
         model, x, y1, y2, z = builder(

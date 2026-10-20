@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Group/node-cost composition supports original-edge budgets, including
+  degree/hop limits and mandatory terminals. It maximizes reached groups, then
+  minimizes original edge/node costs. Paid nodes do not consume an edge-only
+  budget; decoded costs and coverage are checked. Interrupted phases preserve
+  valid incumbents with unknown gaps.
 - Group/node-cost composition supports original-node `max_degree`, alone or
   with `hop_limit`, on both backends. Original-edge incidence combines split
   ports and excludes paid/artificial arcs; decoding validates original degrees.
@@ -25,8 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Directed group problems support `max_degree`, alone or with `hop_limit`, on
   HiGHS and Gurobi. Degree counts incoming plus outgoing selected original arcs
   at each original node, excluding artificial group connectors. Decoded results
-  independently check the degree limit. Degree/budget constraints after node
-  splitting remain restricted.
+  independently check the degree limit.
 - Directed group problems support `hop_limit` through `Problem` and the legacy
   class on HiGHS and Gurobi. The limit counts selected original arcs, including
   zero-cost arcs, and excludes artificial group connectors. Decoded solutions
