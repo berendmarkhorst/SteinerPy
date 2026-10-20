@@ -69,7 +69,9 @@ def test_directed_group_steiner_infeasible_raises():
 # ---------------------------------------------------------------------------
 
 
-def brute_directed_group_steiner(graph, groups, root, weight="weight", hop_limit=None):
+def brute_directed_group_steiner(
+    graph, groups, root, weight="weight", hop_limit=None, max_degree=None
+):
     """Optimal cost via enumerating edge subsets: min cost subgraph such that
     ``root`` reaches at least one vertex of every group. ``math.inf`` if no
     subset works."""
@@ -80,12 +82,17 @@ def brute_directed_group_steiner(graph, groups, root, weight="weight", hop_limit
         if hop_limit is not None and bin(mask).count("1") > hop_limit:
             continue
         adj = {}
+        degrees = {node: 0 for node in graph}
         cost = 0.0
         for i in range(n):
             if mask & (1 << i):
                 u, v, d = edges[i]
                 adj.setdefault(u, []).append(v)
+                degrees[u] += 1
+                degrees[v] += 1
                 cost += d.get(weight, 1)
+        if max_degree is not None and any(d > max_degree for d in degrees.values()):
+            continue
         if cost >= best:
             continue
         reachable = {root}
@@ -252,10 +259,124 @@ def test_legacy_group_rejects_invalid_hop_limit(limit):
         )
 
 
-def test_group_hops_with_no_original_arcs(solver):
+def test_group_limits_with_no_original_arcs(solver):
     graph = nx.DiGraph()
     graph.add_node("r")
     solution = Problem(
-        graph, groups=[["r"], ["r"]], root="r", hop_limit=0
+        graph, groups=[["r"], ["r"]], root="r", hop_limit=0, max_degree=0
     ).get_solution(solver=solver)
     assert solution.objective == 0 and solution.edges == []
+
+
+@pytest.mark.parametrize("api", ["legacy", "inferred", "explicit"])
+@pytest.mark.parametrize("degree, expected", [(1, math.inf), (2, 10), (3, 3)])
+def test_group_degrees_count_incoming_and_outgoing_original_arcs(
+    api, degree, expected, solver
+):
+    graph = nx.DiGraph()
+    graph.add_weighted_edges_from(
+        [
+            ("r", "__group_0__", 1),
+            ("__group_0__", "b", 1),
+            ("__group_0__", "c", 1),
+            ("b", "c", 8),
+        ],
+        weight="cost",
+    )
+    original = graph.copy()
+    options = dict(
+        groups=[["__group_0__"], ["__group_0__"], ["b"], ["c"], ["r"]],
+        root="r",
+        max_degree=degree,
+        weight="cost",
+    )
+    if api == "legacy":
+        problem = DirectedGroupSteinerProblem(graph, **options)
+    else:
+        problem = Problem(
+            graph, variant="directed_group" if api == "explicit" else None, **options
+        )
+    if math.isinf(expected):
+        with pytest.raises(RuntimeError, match="infeasible"):
+            problem.get_solution(solver=solver)
+    else:
+        solution = problem.get_solution(solver=solver)
+        assert solution.objective == expected and solution.gap == 0
+        assert max(dict(nx.DiGraph(solution.edges).degree()).values()) <= degree
+        assert all(graph.has_edge(*arc) for arc in solution.edges)
+    assert nx.utils.graphs_equal(graph, original)
+
+
+@pytest.mark.parametrize("covers_root", [True, False])
+def test_zero_group_degree(covers_root, solver):
+    graph = nx.DiGraph()
+    graph.add_edge("r", "t", weight=0)
+    groups = [["r", "t"], ["r"]] if covers_root else [["t"]]
+    problem = Problem(graph, groups=groups, root="r", max_degree=0)
+    if covers_root:
+        solution = problem.get_solution(solver=solver)
+        assert solution.objective == 0 and solution.edges == []
+    else:
+        with pytest.raises(RuntimeError, match="infeasible"):
+            problem.get_solution(solver=solver)
+
+
+@pytest.mark.parametrize("seed", range(12))
+@pytest.mark.parametrize("degree", [1, 2, 3])
+@pytest.mark.parametrize("hop_limit", [None, 3])
+def test_group_degrees_and_hops_match_original_graph_oracle(
+    seed, degree, hop_limit, solver
+):
+    graph, groups, root = random_directed_group_instance(seed, n=5)
+    groups += [[root, groups[0][0]], [groups[0][0], groups[1][0]]]
+    # Zero-cost original arcs must still consume degree and hop allowances.
+    graph.edges[next(iter(graph.edges))]["weight"] = 0
+    expected = brute_directed_group_steiner(
+        graph, groups, root, hop_limit=hop_limit, max_degree=degree
+    )
+    problem = Problem(
+        graph, groups=groups, root=root, hop_limit=hop_limit, max_degree=degree
+    )
+    if math.isinf(expected):
+        with pytest.raises(RuntimeError, match="infeasible"):
+            problem.get_solution(solver=solver)
+        return
+    solution = problem.get_solution(solver=solver)
+    assert solution.objective == pytest.approx(expected) and solution.gap == 0
+    selected = nx.DiGraph()
+    selected.add_node(root)
+    selected.add_edges_from(solution.edges)
+    assert all(d <= degree for _, d in selected.degree())
+    assert hop_limit is None or len(solution.edges) <= hop_limit
+    reachable = {root} | nx.descendants(selected, root)
+    assert all(reachable.intersection(group) for group in groups)
+    assert all(graph.has_edge(*arc) for arc in solution.edges)
+    assert sum(graph[u][v]["weight"] for u, v in solution.edges) == expected
+
+
+def test_decoded_group_degree_limit_is_checked(monkeypatch):
+    from steinerpy.objects import SteinerProblem, Solution
+
+    graph = nx.path_graph(3, create_using=nx.DiGraph)
+    problem = DirectedGroupSteinerProblem(graph, [[2]], root=0, max_degree=1)
+    monkeypatch.setattr(
+        SteinerProblem,
+        "get_solution",
+        lambda *a, **k: Solution(
+            objective=2,
+            gap=0,
+            runtime=0,
+            selected_edges=[(0, 1), (1, 2)],
+            original_selected_edges=[(0, 1), (1, 2)],
+        ),
+    )
+    with pytest.raises(RuntimeError, match="original-node degree limit"):
+        problem.get_solution()
+
+
+@pytest.mark.parametrize("limit", [-1, 1.5, True, "2", math.inf, math.nan])
+def test_legacy_group_rejects_invalid_degree_limit(limit):
+    with pytest.raises(ValueError, match="max_degree.*non-negative integer"):
+        DirectedGroupSteinerProblem(
+            nx.path_graph(2, create_using=nx.DiGraph), [[1]], root=0, max_degree=limit
+        )

@@ -1459,16 +1459,20 @@ class GroupSteinerProblem(SteinerProblem):
         ]
         if self.hop_limit is not None and len(real) > self.hop_limit:
             raise RuntimeError("Decoded group solution exceeds the original-arc hop limit.")
+        if self.max_degree is not None and any(
+            degree > self.max_degree for _, degree in nx.DiGraph(real).degree()
+        ):
+            raise RuntimeError("Decoded group solution exceeds the original-node degree limit.")
         sol.original_selected_edges = real
         sol.selected_edges = real
         return sol
 
 
-def _validate_group_hop_limit(limit):
+def _validate_group_limit(limit, name):
     if limit is not None and (
         isinstance(limit, bool) or not isinstance(limit, int) or limit < 0
     ):
-        raise ValueError("hop_limit must be a non-negative integer or None.")
+        raise ValueError(f"{name} must be a non-negative integer or None.")
 
 
 class DirectedGroupSteinerProblem(GroupSteinerProblem):
@@ -1489,6 +1493,8 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
     Optional ``hop_limit`` bounds the total selected original arcs, including
     zero-cost arcs, excluding artificial connectors. It does not bound each
     root-to-member path separately. Members may be internal path vertices.
+    Optional ``max_degree`` bounds incoming plus outgoing selected original
+    arcs at each original node. Artificial connectors consume neither limit.
 
     References:
 
@@ -1504,7 +1510,8 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
     """
 
     def __init__(self, graph: nx.DiGraph, groups: List[List], root,
-                 weight: str = "weight", hop_limit: Optional[int] = None, **kwargs):
+                 weight: str = "weight", hop_limit: Optional[int] = None,
+                 max_degree: Optional[int] = None, **kwargs):
         if not isinstance(graph, nx.DiGraph):
             raise ValueError(
                 "DirectedGroupSteinerProblem requires a directed graph (nx.DiGraph)."
@@ -1512,13 +1519,15 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
         if root not in graph:
             raise ValueError(f"root {root!r} is not in the graph.")
 
-        _validate_group_hop_limit(hop_limit)
+        _validate_group_limit(hop_limit, "hop_limit")
+        _validate_group_limit(max_degree, "max_degree")
         compiled = _attach_group_terminals(graph, groups, weight)
         augmented, super_terminals = compiled.graph, compiled.terminals
-        # Hop limits count original arcs, including original zero-cost arcs.
+        # Constraints count original arcs, including original zero-cost arcs.
         self._hop_arcs = tuple(
             arc for arc in augmented.edges if arc not in compiled.connector_edges
         )
+        self._degree_edges = self._hop_arcs
         self._gstp_super_terminals = set(super_terminals)
         kwargs['preprocess'] = False
         # Bypass GroupSteinerProblem.__init__ (which rejects DiGraph and wires
@@ -1526,7 +1535,7 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
         # SteinerProblem, as DirectedSteinerProblem does.
         SteinerProblem.__init__(
             self, augmented, [[root] + super_terminals], weight=weight,
-            hop_limit=hop_limit, **kwargs)
+            hop_limit=hop_limit, max_degree=max_degree, **kwargs)
 
 
 # ---------------------------------------------------------------------------

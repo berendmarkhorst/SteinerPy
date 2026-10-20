@@ -1352,13 +1352,15 @@ def add_degree_constraints(model: hp.HighsModel, steiner_problem: 'SteinerProble
     """
     Add maximum degree constraints to the model.
     For each node v: sum of x[e] for all edges e incident to v <= max_degree.
+    Transformations may supply ``_degree_edges`` to exclude artificial edges.
 
     :param model: HiGHS model.
     :param steiner_problem: SteinerProblem-object with max_degree attribute.
     :param x: edge selection decision variables.
     """
     max_degree = steiner_problem.max_degree
-    incident_edges = _incident_edges(steiner_problem.edges)
+    counted_edges = getattr(steiner_problem, '_degree_edges', steiner_problem.edges)
+    incident_edges = _incident_edges(counted_edges)
     for v in steiner_problem.nodes:
         incident = [x[e] for e in incident_edges.get(v, ())]
         if incident:
@@ -1871,7 +1873,8 @@ def build_model_gurobi(
     # Optional degree constraints
     if getattr(steiner_problem, 'max_degree', None) is not None:
         max_degree = steiner_problem.max_degree
-        incident_edges = _incident_edges(steiner_problem.edges)
+        counted_edges = getattr(steiner_problem, '_degree_edges', steiner_problem.edges)
+        incident_edges = _incident_edges(counted_edges)
         for v in steiner_problem.nodes:
             incident = [x[e] for e in incident_edges.get(v, ())]
             if incident:

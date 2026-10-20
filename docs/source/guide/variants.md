@@ -39,13 +39,14 @@ the old nested syntax, including the positional second argument; supplying both
 | Undirected graph + `groups` | Existing group Steiner problem |
 | Directed graph + `root` + `groups` | Existing directed group Steiner problem |
 | Directed graph + `root` + `groups` + `hop_limit` | Directed group problem with a limit on selected original arcs |
+| Directed graph + `root` + `groups` + `max_degree` | Directed group problem with original-node total degree limits; may also use `hop_limit` |
 | Undirected graph + `groups` + `node_costs` and/or mandatory `terminals` | New exact composition path, described below |
 
 Other named variants remain available through explicit `variant=` calls.
 Existing explicit calls and legacy classes retain their solution types and
 solver restrictions. Group and legacy node-weighted transformations reject
-degree limits and budgets. Hop limits are supported for directed groups;
-undirected groups and node-cost splitting still reject them.
+budgets. Degree and hop limits are supported for directed groups; undirected
+groups and node-cost splitting still reject them.
 
 `Problem(...)` validates combinations before constructing a solver strategy or
 transforming the graph. Invalid combinations raise `TypeError` or `ValueError`
@@ -69,10 +70,12 @@ topology-only. Existing automatic preprocessing disabling for directed and
 prize-collecting implementations is retained. Solver-time options and backend
 availability are checked when solving.
 
-## Directed groups with a hop limit
+## Directed groups with hop and degree limits
 
 ```python
-problem = Problem(digraph, root="r", groups=[["A", "B"], ["C"]], hop_limit=3)
+problem = Problem(
+    digraph, root="r", groups=[["A", "B"], ["C"]], hop_limit=3, max_degree=2
+)
 solution = problem.get_solution(solver="highs")  # Gurobi is also supported
 ```
 
@@ -82,10 +85,18 @@ arcs count; artificial group connectors do not. Groups may overlap and contain
 the root. A zero limit is feasible only if the root belongs to every group.
 Group members may be internal vertices on paths to other groups.
 
-The same option is available on `DirectedGroupSteinerProblem`. Decoded solutions
-are checked against the original-arc limit. Infeasibility raises `RuntimeError`.
-Additional mandatory terminals, node costs, degree limits and budgets remain
-unsupported with this combination.
+`max_degree` is a non-negative integer limiting incoming plus outgoing selected
+original arcs at **each original node**, including the root and group members.
+Artificial connectors do not count. This is total degree, not just out-degree:
+an internal node with one incoming and two outgoing original arcs has degree
+three. Zero-cost original arcs still count. A zero degree limit is feasible
+only if the root belongs to every group.
+
+Both options are available on `DirectedGroupSteinerProblem`, separately or
+together. Decoded solutions are independently checked against the original-arc
+and original-node limits. Infeasibility raises `RuntimeError`. Additional
+mandatory terminals, node costs and budgets remain unsupported with this
+combination.
 
 ## Combining group choices and node costs
 
