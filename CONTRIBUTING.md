@@ -141,8 +141,12 @@ cost. Preserve these mappings when composing stages; never recover original
 identities by parsing artificial labels. Source graphs/cost mappings stay owned
 by their callers. Missing edge costs default to zero in legacy node weighting
 and one in composition. Existing terminal-cost corrections remain in the legacy
-adapter. Hop, degree, and budget meanings must be defined on original objects
-before enabling them on a split graph; existing compatibility checks still apply.
+adapter. Group/node-cost composition sets `_hop_arcs` to the split stage's
+original-edge cross-arcs. Non-negative costs admit a tree whose orientation
+uses one cross-arc per original edge. Paid-node arcs, source arcs and group
+connectors do not consume hops. Decoding checks the original-edge count.
+Degree and budget meanings still need original-space rules before their
+compatibility checks can be relaxed on a split graph.
 
 `attach_group_terminals` is the shared next stage for legacy undirected/directed
 group solvers and composition. It returns a copied working graph, artificial
@@ -160,8 +164,8 @@ budgets reuse the optional-flow budget model: original costs are charged once,
 connectors stay free, and the objective counts reached groups. Decoding removes
 the working model's extra root count, validates original costs and coverage,
 and reports missed original group indices. Budget incumbent validation must
-use the same original degree/hop domains as the model. Constraints after node
-splitting and undirected-group budgets still need original-space rules and
+use the same original degree/hop domains as the model. Degree/budget constraints
+after node splitting and undirected-group budgets still need original-space rules and
 oracle tests before their compatibility checks can be relaxed.
 
 New problem variants are a common and very welcome type of contribution. There

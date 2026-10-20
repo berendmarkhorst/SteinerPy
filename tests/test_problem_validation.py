@@ -42,6 +42,12 @@ def test_invalid_directed_group_limits_fail_before_construction(
         )
 
 
+@pytest.mark.parametrize("limit", [-1, True, 1.5, "3", math.inf, math.nan])
+def test_invalid_composed_hops_fail_before_construction(limit, forbid_construction):
+    with pytest.raises(ValueError, match="hop_limit.*non-negative integer"):
+        Problem(nx.path_graph(3), groups=[[0], [2]], node_costs={}, hop_limit=limit)
+
+
 @pytest.mark.parametrize("budget", [-1, True, "3", math.inf, math.nan])
 def test_invalid_directed_group_budget_fails_before_construction(
     budget, forbid_construction

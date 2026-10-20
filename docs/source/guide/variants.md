@@ -42,18 +42,20 @@ the old nested syntax, including the positional second argument; supplying both
 | Directed graph + `root` + `groups` + `max_degree` | Directed group problem with original-node total degree limits; may also use `hop_limit` |
 | Directed graph + `root` + `groups` + `budget` | Maximize reached groups within an original-edge cost budget; optional degree/hop limits apply |
 | Undirected graph + `groups` + `node_costs` and/or mandatory `terminals` | New exact composition path, described below |
+| Same composition + `hop_limit` | Limit total selected original edges after node splitting |
 
 Other named variants remain available through explicit `variant=` calls.
 Existing explicit calls and legacy classes retain their solution types and
-solver restrictions. Budgets, degree and hop limits are supported for directed
-groups; undirected groups and node-cost splitting still reject them.
+solver restrictions. Directed groups support budgets, degree and hop limits.
+The group/node-cost composition supports original-edge hop limits. Other
+undirected-group and legacy node-weighted modifier combinations remain restricted.
 
 `Problem(...)` validates combinations before constructing a solver strategy or
 transforming the graph. Invalid combinations raise `TypeError` or `ValueError`
 with the unsupported feature named. In particular:
 
 - Group/node-cost composition requires non-negative finite costs and no
-  preprocessing, degree/hop limits, or budgets.
+  preprocessing, degree limits, or budgets. Original-edge hop limits are supported.
 - Terminal-leaf variants cannot use edge budgets: their transformation changes
   edge costs, so the existing budget would not describe the original network.
 - The legacy node-weighted variant requires an undirected graph; its node
@@ -157,6 +159,25 @@ assert with_nodes.objective == 3      # B–C
 assert set(with_nodes.selected_nodes) == {"B", "C"}
 ```
 
+Add `hop_limit` to limit the **total number of selected original edges**:
+
+```python
+problem = Problem(graph, groups=groups, node_costs={"A": 10}, hop_limit=1)
+solution = problem.get_solution(solver="highs")  # Gurobi is also supported
+```
+
+The limit is a non-negative integer. Original zero-cost edges count. Paid-node
+traversals, the artificial source and group connectors consume no hops; node
+costs are still charged normally. All groups and mandatory terminals remain
+required. A zero limit allows a single original node only when it meets every
+requirement, and that node's cost is still paid. Decoding independently checks
+the selected original-edge count.
+
+Hop limits also work with mandatory `terminals` on this composition path. Use
+`node_costs={}` to select it when no node charges are needed. The legacy
+`node_weighted` variant and plain undirected group adapter retain their existing
+modifier restrictions.
+
 Results are `NodeWeightedSolution` objects with original edges and
 `selected_nodes`, including singleton solutions with no edges. Inputs are
 snapshotted for this path; artificial nodes and arcs never appear in results.
@@ -167,14 +188,15 @@ optimality.
 HiGHS and Gurobi use their existing directed-cut solve loops. Preprocessing is
 automatically disabled; explicitly enabling it is rejected. This first
 composition requires a simple undirected graph without self-loops and does not
-yet support signed rewards, budgets, degree/hop limits, heuristic-only solving,
+yet support signed rewards, budgets, degree limits, heuristic-only solving,
 optimum enumeration, or accelerator/reduction options.
 
 The node-splitting stage is shared with the legacy node-weighted solver. It
 retains explicit mappings to original nodes and edges; group sinks attach after
 each member's paid node traversal. Distinct original labels such as `1` and
-`"1"` retain separate identities. This refactor preserves the existing supported
-feature combinations and their original-space validation.
+`"1"` retain separate identities. Hop limits count only cross-arcs representing
+original edges, using the same provenance-aware hop constraints as directed
+groups. Paid and artificial arcs are excluded.
 
 Group-terminal attachment is also shared with the legacy undirected and
 directed group solvers. The stage records which original group member each
