@@ -78,6 +78,8 @@ def decode_groups(spec, compiled, selected_arcs, objective):
     nodes = [node for arc, node in compiled.node_arcs.items() if arc in used]
     edge_set = {compiled.edge_arcs[arc] for arc in used if arc in compiled.edge_arcs}
     edges = [edge for edge in spec.graph.edges if edge in edge_set]
+    if spec.hop_limit is not None and len(edges) > spec.hop_limit:
+        raise RuntimeError("Composed solution exceeds the original-edge hop limit.")
     original = nx.Graph()
     original.add_nodes_from(nodes)
     original.add_edges_from(edges)
@@ -117,8 +119,14 @@ class GroupComposition:
             )
         compiled = compile_groups(self.spec)
         view = DirectedSteinerProblem(
-            compiled.graph, compiled.root, compiled.terminals, weight=self.spec.weight
+            compiled.graph,
+            compiled.root,
+            compiled.terminals,
+            weight=self.spec.weight,
+            hop_limit=self.spec.hop_limit,
         )
+        # Only cross-arcs represent original edges; paid and artificial arcs do not.
+        view._hop_arcs = tuple(compiled.edge_arcs)
         builder = mm.build_model if solver == "highs" else mm.build_model_gurobi
         runner = mm.run_model if solver == "highs" else mm.run_model_gurobi
         model, x, y1, y2, z = builder(
@@ -132,7 +140,7 @@ class GroupComposition:
             self.cut_stats = view.cut_stats
             if status == "infeasible":
                 raise RuntimeError(
-                    "Group/node-cost instance is infeasible: groups cannot be connected."
+                    "Group/node-cost instance is infeasible: no solution meets all requirements."
                 )
             if not math.isfinite(objective):
                 raise RuntimeError(

@@ -19,11 +19,15 @@ from steinerpy import (
 from steinerpy import _composition as composition
 
 
-def exhaustive_cost(graph, groups, costs, terminals=(), weight="weight"):
+def exhaustive_cost(
+    graph, groups, costs, terminals=(), weight="weight", hop_limit=None
+):
     """Enumerate vertex sets and spanning trees, independently of compilation."""
     best = math.inf
     nodes = list(graph)
     for count in range(1, len(nodes) + 1):
+        if hop_limit is not None and count - 1 > hop_limit:
+            continue
         for subset in itertools.combinations(nodes, count):
             chosen = set(subset)
             if not set(terminals) <= chosen or any(
@@ -243,7 +247,9 @@ def test_custom_weight_default_costs_labels_and_snapshot():
     before = graph.copy()
     costs = {labels[1]: 4}
     groups = [[labels[0]], [labels[3]]]
-    problem = Problem(graph, groups=groups, node_costs=costs, weight="cost")
+    problem = Problem(
+        graph, groups=groups, node_costs=costs, weight="cost", hop_limit=3
+    )
     assert nx.utils.graphs_equal(graph, before)
     costs[labels[1]] = 100
     groups.clear()
@@ -260,7 +266,6 @@ def test_custom_weight_default_costs_labels_and_snapshot():
     [
         {"preprocess": True},
         {"max_degree": 3},
-        {"hop_limit": 4},
         {"budget": 4},
         {"node_budget": 4},
         {"node_prizes": {0: 2}},

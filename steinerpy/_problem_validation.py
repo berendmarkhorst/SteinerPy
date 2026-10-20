@@ -114,7 +114,7 @@ def _validate_composition(spec):
         raise ValueError("node_costs requires groups in the modular interface for now.")
     options = spec.implementation_options()
     options.pop("node_costs", None)
-    unknown = set(options) - {"weight", "preprocess"}
+    unknown = set(options) - {"weight", "preprocess", "hop_limit"}
     if unknown:
         raise TypeError(
             "Unsupported option(s) for group/node-cost composition: {}".format(
@@ -123,6 +123,7 @@ def _validate_composition(spec):
         )
     if options.get("preprocess", False):
         raise ValueError("Group/node-cost composition requires preprocess=False.")
+    objects._validate_group_limit(spec.hop_limit, "hop_limit")
     if spec.node_costs is not None and not isinstance(spec.node_costs, Mapping):
         raise TypeError("node_costs must map original nodes to non-negative costs.")
     for node, cost in (spec.node_costs or {}).items():
