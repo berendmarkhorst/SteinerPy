@@ -157,6 +157,10 @@ def _validate_cost(cost, location, nonnegative=True):
 
 def _validate_legacy_features(spec, variant, implementation, options):
     """Reject unsupported feature interactions before legacy constructors run."""
+    if variant == "group":
+        _validate_composition(spec)
+    if variant in {"directed_group", "node_weighted"} and spec.graph.is_multigraph():
+        raise ValueError(f"{variant} requires a simple graph.")
     if variant == "directed_group":
         objects._validate_group_limit(options.get("hop_limit"), "hop_limit")
         objects._validate_group_limit(options.get("max_degree"), "max_degree")

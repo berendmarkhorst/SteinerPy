@@ -19,6 +19,15 @@ from ._transformations import (
 logger = logging.getLogger(__name__)
 
 
+def _reject_legacy_modifiers(options, problem):
+    for name in ('max_degree', 'hop_limit', 'budget'):
+        if options.get(name) is not None:
+            raise TypeError(
+                f"{problem} cannot yet be combined with {name}. "
+                "Use Problem with groups and node_costs for original-space constraints."
+            )
+
+
 def _validate_nonnegative_edge_costs(graph: nx.Graph, weight: str, problem: str) -> None:
     """Reject costs that invalidate shortest-path and exact-model assumptions."""
     negative = [
@@ -1384,11 +1393,11 @@ class GroupSteinerProblem(SteinerProblem):
     Group Steiner Tree Problem (GSTP), Rehfeldt (2021), Ch. 5.7.
 
     Given vertex *groups*, find a minimum-cost tree that contains at least one vertex
-    from each group.  Solved by the Voss (1999) transformation to a plain Steiner tree
-    problem: add one artificial super-terminal per group, connected by zero-cost edges
-    to every vertex of that group, then solve the Steiner tree problem whose terminals
-    are the super-terminals.  The zero-cost connector edges are stripped from the
-    reported solution (they contribute nothing to the objective).
+    from each group. Uses the shared composition solver with sink-only group
+    terminals, preventing artificial connectors from creating free shortcuts.
+    Results contain original edges and retain the legacy Solution interface.
+    Preprocessing and unmapped modifiers are rejected; use Problem with groups
+    and node_costs for supported original-space constraints.
 
     For directed graphs, see :class:`DirectedGroupSteinerProblem`.
 
@@ -1408,10 +1417,16 @@ class GroupSteinerProblem(SteinerProblem):
                 "GroupSteinerProblem requires an undirected graph; "
                 "use DirectedGroupSteinerProblem for directed graphs."
             )
+        _reject_legacy_modifiers(kwargs, type(self).__name__)
+        from .problem import Problem
+        groups = tuple(tuple(group) for group in groups)
+        self._group_strategy = Problem(
+            graph, groups=groups, node_costs={}, weight=weight, **kwargs
+        ).implementation
         augmented, super_terminals = self._build_augmented(
             graph, groups, weight, directed=False)
         self._gstp_super_terminals = set(super_terminals)
-        super().__init__(augmented, [super_terminals], weight=weight, **kwargs)
+        super().__init__(augmented, [super_terminals], weight=weight, preprocess=False)
 
     _fresh_label = staticmethod(_fresh_group_label)
 
@@ -1445,6 +1460,14 @@ class GroupSteinerProblem(SteinerProblem):
 
     def get_solution(self, *args, **kwargs) -> 'Solution':
         import math as _math
+        if hasattr(self, '_group_strategy'):
+            # Sink-only shared composition prevents undirected connector shortcuts.
+            result = self._group_strategy.get_solution(*args, **kwargs)
+            self.cut_stats = self._group_strategy.cut_stats
+            return Solution(
+                gap=result.gap, runtime=result.runtime, objective=result.objective,
+                selected_edges=result.edges, original_selected_edges=result.edges,
+            )
         sol = super().get_solution(*args, **kwargs)
         if sol.objective is None or _math.isinf(sol.objective):
             raise RuntimeError(
@@ -1535,6 +1558,9 @@ class DirectedGroupSteinerProblem(GroupSteinerProblem):
             )
         if root not in graph:
             raise ValueError(f"root {root!r} is not in the graph.")
+
+        if graph.is_multigraph():
+            raise ValueError('DirectedGroupSteinerProblem requires a simple directed graph.')
 
         _validate_group_limit(hop_limit, "hop_limit")
         _validate_group_limit(max_degree, "max_degree")
@@ -2250,6 +2276,11 @@ class NodeWeightedSteinerProblem(BaseSteinerProblem):
         Note: graph preprocessing is not supported for node-weighted problems because
         the node-splitting transformation produces a directed graph internally.
         """
+        _reject_legacy_modifiers(kwargs, type(self).__name__)
+        if kwargs.pop('preprocess', False):
+            raise ValueError('NodeWeightedSteinerProblem requires preprocess=False.')
+        if graph.is_multigraph():
+            raise ValueError('NodeWeightedSteinerProblem requires a simple graph.')
         negative_nodes = [(v, cost) for v, cost in node_weights.items() if cost < 0]
         if negative_nodes:
             raise ValueError(
