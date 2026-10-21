@@ -249,7 +249,7 @@ def export(rows, output, comparison=None):
         "as an optimum unless its value matches a published optimum or the solver proves it. "
         "Timeouts produce no scored solution when the public solve call has not returned by the deadline.",
         "",
-        "| Track | Configuration | Finished / expected | Valid trees | Proven/reference optima | Timeouts | Errors / memory exits | Median wall, valid (s) |",
+        "| Track | Configuration | Finished / expected | Valid trees | Proven/reference optima | Timeouts | Errors / resource exits | Median wall, valid (s) |",
         "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for (track, config), group in sorted(grouped.items()):
@@ -400,6 +400,9 @@ def export(rows, output, comparison=None):
         "memory and phase timings. Raw JSON and original-edge solution certificates remain in the HPC "
         "run directory. The runner and Slurm script live in `benchmarks/pace2018.py` and "
         "`benchmarks/slurm_pace2018.sh`.",
+        "",
+        "[Findings and proposed follow-up work](findings.md) connect these measurements to "
+        "the package's modularity and performance goals.",
         "",
     ]
     (output / "README.md").write_text("\n".join(lines), encoding="utf-8")
