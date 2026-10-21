@@ -223,7 +223,6 @@ def test_zero_cost_edges_and_repeated_terminals_with_all_limits(budget, solver):
         ({"terminals": [0, 2], "node_costs": {1: -1}}, "non-negative"),
         ({"terminals": [0, 2], "node_costs": []}, "must map"),
         ({"terminals": [0, 2], "node_costs": {9: 1}}, "not in the graph"),
-        ({"terminals": [0, 2], "root": 0}, "Unsupported option"),
         ({"terminals": [0, 2], "preprocess": True}, "preprocess=False"),
         ({"terminals": [0, 2], "variant": "prize_collecting"}, "incompatible"),
     ],

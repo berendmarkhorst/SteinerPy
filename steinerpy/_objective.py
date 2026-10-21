@@ -125,17 +125,32 @@ def objective_from_spec(spec, variant, *, pc_transform=None):
 
     if variant is None:
         node_costs = dict(spec.node_costs or {})
-        if spec.budget is not None:
+        penalty_cost = spec.penalty_cost or 0
+        if spec.node_weights is not None:
+            return replace(
+                ObjectiveSpec.from_node_weights(graph, spec.node_weights),
+                penalty_cost=penalty_cost,
+            )
+        if spec.node_prizes is not None:
+            node_costs = {
+                n: node_costs.get(n, 0) - spec.node_prizes.get(n, 0) for n in graph
+            }
+            offset = sum(spec.node_prizes.values())
+        elif spec.budget is not None and spec.penalty_cost is None:
             node_costs = {}
             topology_only = True
             penalty_cost, sign = 1, -1
             offset = (
                 len(spec.groups) if spec.groups else sum(map(len, spec.terminal_groups))
             )
-            if not spec.groups and graph.is_directed():
+            if not spec.groups:
                 offset = sum(
                     len(set(group) | ({spec.root} if spec.root is not None else set()))
-                    for group in spec.terminal_groups
+                    for group in (
+                        spec.terminal_groups or ((spec.root,),)
+                        if spec.root is not None
+                        else spec.terminal_groups
+                    )
                 )
     elif variant == "node_weighted":
         node_costs = dict(spec.node_weights)

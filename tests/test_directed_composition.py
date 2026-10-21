@@ -276,7 +276,6 @@ def test_decoder_rejects_wrong_original_root_and_unpaid_budget_root():
         ({"root": 0, "hop_limit": True}, ValueError, "non-negative integer"),
         ({"root": 0, "budget": math.inf}, ValueError, "finite and non-negative"),
         ({"root": 0, "preprocess": True}, ValueError, "preprocess=False"),
-        ({"root": 0, "node_prizes": {1: 2}}, TypeError, "Unsupported option"),
         ({"root": 0, "variant": "steiner"}, TypeError, "incompatible"),
     ],
 )
