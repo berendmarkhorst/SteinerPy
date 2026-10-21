@@ -156,9 +156,7 @@ def worker(request_path):
         else:
             # Default classic solver, with one model per process. Decomposition and
             # DA fallback can create additional environments and are not used here.
-            problem = SteinerProblem(
-                graph, groups, preprocess=True, dual_ascent=False, decompose=False
-            )
+            problem = SteinerProblem(graph, groups, preprocess=True, dual_ascent=False)
         row.update(preprocess_seconds=time.monotonic() - prep, phase="solve")
         if hasattr(problem, "graph"):
             row.update(
@@ -173,6 +171,8 @@ def worker(request_path):
             threads=1,
             solver="gurobi" if config.endswith("gurobi") else "highs",
         )
+        if not config.startswith("composition-"):
+            kwargs["decompose"] = False
         if config == "heuristic":
             kwargs["exact"] = False
         if config.startswith("composition-"):
@@ -190,6 +190,7 @@ def worker(request_path):
             phase="validate",
         )
         edges = list(solution.original_selected_edges)
+        row["solution_edges"] = edges
         row.update(
             validate_solution(
                 graph,
@@ -201,7 +202,6 @@ def worker(request_path):
                 row["reference_upper"],
             )
         )
-        row["solution_edges"] = edges
         row["phase"] = "complete"
     except MemoryError:
         row.update(status="memory_limit", error="MemoryError")
@@ -331,6 +331,7 @@ def execute_case(case, args, identity, directory, result_path, name):
         MKL_NUM_THREADS="1",
         NUMEXPR_NUM_THREADS="1",
         STEINERPY_THREADS="1",
+        STEINERPY_DW_MAX_TERMINALS="10",
     )
     command = [
         sys.executable,

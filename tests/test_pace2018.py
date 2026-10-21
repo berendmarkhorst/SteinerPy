@@ -51,7 +51,13 @@ def test_feasible_timeout_incumbent_is_not_claimed_optimal():
 
 
 @pytest.mark.parametrize(
-    "edges,objective", [([(1, 2)], 2), ([(1, 3)], 4), ([(1, 4)], 3)]
+    "edges,objective",
+    [
+        ([(1, 2)], 2),
+        ([(1, 3)], 4),
+        ([(1, 4)], 3),
+        ([(1, 2), (2, 3), (1, 3)], 7),
+    ],
 )
 def test_invalid_original_solution_is_rejected(edges, objective):
     graph = nx.Graph()
