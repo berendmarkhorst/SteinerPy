@@ -6,6 +6,15 @@ from time import perf_counter
 import highspy as hp
 
 from . import mathematical_model as mm
+from ._feature_preprocessing import feasible_edges
+
+
+class NoIncumbent(RuntimeError):
+    def __init__(self, status):
+        super().__init__(
+            "Feature composition is infeasible or stopped without a feasible incumbent."
+        )
+        self.status = status
 
 
 class SelectionModel:
@@ -35,7 +44,12 @@ class SelectionModel:
             )
         self.zero = self.variable(upper=0)
         self.nodes = {n: self.variable(binary=True) for n in spec.graph}
-        self.edges = {e: self.variable(binary=True) for e in spec.graph.edges}
+        edges = (
+            feasible_edges(spec)
+            if spec.options.get("preprocess", False)
+            else spec.graph.edges
+        )
+        self.edges = {e: self.variable(binary=True) for e in edges}
         self.arcs = dict(self.edges)
         if not spec.graph.is_directed():
             self.arcs.update({(v, u): x for (u, v), x in self.edges.items()})
@@ -159,9 +173,7 @@ def solve_selection(model, coverage, decode, time_limit):
         -model.sum(coverage) if coverage else model.cost, deadline
     )
     if not incumbent:
-        raise RuntimeError(
-            "Feature composition is infeasible or stopped without a feasible incumbent."
-        )
+        raise NoIncumbent(status)
     result = decode(*model.selection())
     if (
         not coverage

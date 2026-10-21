@@ -21,6 +21,9 @@ class Problem:
     them optional; ``penalty_budget`` limits missed requirements. Without rewards
     or penalties, an edge budget maximizes coverage, then minimizes cost.
     ``partial_terminals`` limits listed terminals/group members to degree one.
+    Composed ``preprocess=True`` removes only edges forbidden by resource bounds,
+    preserving all optima. Enumeration returns distinct inclusion-minimal original
+    node/edge selections; its time limit applies per solve, as in the legacy API.
 
     Existing implementations serve as composed strategies, retaining their
     formulations, preprocessing restrictions and solution types. See the
@@ -61,6 +64,13 @@ class Problem:
 
     def get_optimal_solutions(self, *args, **kwargs):
         """Enumerate optima, retaining the selected variant's restrictions."""
+        if self.variant in {"group", "directed_group"} or (
+            self._spec.budget is not None
+            and self.variant in {"steiner", "directed", "hop_constrained"}
+        ):
+            from ._feature_composition import FeatureComposition
+
+            return FeatureComposition(self._spec).get_optimal_solutions(*args, **kwargs)
         return self._implementation.get_optimal_solutions(*args, **kwargs)
 
     @property

@@ -3,6 +3,7 @@
 import networkx as nx
 
 from ._selection_model import SelectionModel, solve_selection
+from ._problem_spec import terminal_penalty_keys
 from .objects import BudgetSolution, NodeWeightedSolution
 
 
@@ -28,6 +29,7 @@ class FeatureComposition:
         if not self.roots and spec.root is not None:
             self.roots = [spec.root]
             self.demands = [(spec.root,)]
+        self.penalty_keys = terminal_penalty_keys(self.demands)
 
     @property
     def choice_root(self):
@@ -68,7 +70,15 @@ class FeatureComposition:
             else:
                 condensed = nx.condensation(selected)
                 sources = [n for n, d in condensed.in_degree() if d == 0]
-                candidates = [chosen] if len(sources) == 1 else []
+                if self.roots:
+                    candidates = [
+                        self.reached(
+                            selected, next(iter(condensed.nodes[n]["members"]))
+                        )
+                        for n in sources
+                    ]
+                else:
+                    candidates = [chosen] if len(sources) == 1 else []
             if not chosen and not spec.groups:
                 candidates = [set()]
             candidates = [c for c in candidates if attached | c == chosen]
@@ -86,7 +96,7 @@ class FeatureComposition:
                 "Forest solution contains nodes disconnected from all roots."
             )
         missed = {
-            f"group_{i}_terminal_{j}": 1
+            self.penalty_keys[i][j]: 1
             for i, group in enumerate(self.demands)
             for j, t in enumerate(group)
             if t not in reachable[i]
@@ -149,96 +159,100 @@ class FeatureComposition:
             len(self.spec.groups) if self.spec.groups else sum(map(len, self.demands))
         )
 
+    def configure(self, model):
+        spec = self.spec
+        coverage = []
+        for root, group in zip(self.roots, self.demands):
+            model.add(model.nodes[root] == 1)
+            for terminal in group:
+                connected = model.variable(binary=True)
+                coverage.append(connected)
+                model.add(connected <= model.nodes[terminal])
+                if not self.optional or spec.groups or terminal == root:
+                    model.add(connected == 1)
+                if terminal != root:
+                    model.flow({root: connected}, {terminal: connected})
+        roots = dict.fromkeys(self.roots, 1)
+        if spec.groups or not self.roots:
+            if self.choice_root is not None:
+                group_roots = {self.choice_root: 1}
+            else:
+                group_roots = {n: model.variable(binary=True) for n in model.nodes}
+                if spec.groups:
+                    model.add(model.sum(group_roots.values()) == 1)
+                else:
+                    model.add(model.sum(group_roots.values()) <= 1)
+                for n, root in group_roots.items():
+                    model.add(root <= model.nodes[n])
+            coverage = model.choices(spec.groups, group_roots, self.optional)
+            for n, root in group_roots.items():
+                roots.setdefault(n, root)
+        model.attach_selected_nodes(roots)
+        if spec.penalty_budget is not None:
+            model.add(len(coverage) - model.sum(coverage) <= spec.penalty_budget)
+        if not self.coverage_mode:
+            model.cost = (
+                model.sum(
+                    self.objective.edge_cost(e) * x for e, x in model.edges.items()
+                )
+                + model.sum(
+                    self.objective.node_costs.get(n, 0) * x
+                    for n, x in model.nodes.items()
+                )
+                + self.objective.penalty_cost * (len(coverage) - model.sum(coverage))
+            )
+        return coverage
+
+    def solution(self, result, gap, runtime):
+        spec = self.spec
+        edges, nodes, cost, covered, missed = result
+        common = dict(
+            gap=gap,
+            runtime=runtime,
+            selected_edges=edges,
+            original_selected_edges=edges,
+        )
+        if not self.coverage_mode:
+            solution = NodeWeightedSolution(
+                objective=self.objective.value(edges, nodes, penalty_count=len(missed)),
+                selected_nodes=nodes,
+                **common,
+            )
+            solution.penalties = missed
+        else:
+            solution = BudgetSolution(
+                objective=covered,
+                connected_terminals=covered,
+                total_terminals=self.total_requirements,
+                penalties=missed,
+                **common,
+            )
+        solution.selected_nodes = nodes
+        solution.total_cost = sum(
+            spec.graph.edges[e].get(spec.weight, 1) for e in edges
+        ) + sum((spec.node_costs or {}).get(n, 0) for n in nodes)
+        return solution
+
     def get_solution(
         self, time_limit=300, log_file="", solver="highs", threads=None, exact=True
     ):
         if not exact:
             raise NotImplementedError(
-                "Forest composition does not support heuristic-only solving."
+                "Feature composition does not support heuristic-only solving."
             )
-        spec = self.spec
-        model = SelectionModel(spec, solver, time_limit, log_file, threads)
+        model = SelectionModel(self.spec, solver, time_limit, log_file, threads)
         try:
-            coverage = []
-            for root, group in zip(self.roots, self.demands):
-                model.add(model.nodes[root] == 1)
-                for terminal in group:
-                    connected = model.variable(binary=True)
-                    coverage.append(connected)
-                    model.add(connected <= model.nodes[terminal])
-                    if not self.optional or spec.groups or terminal == root:
-                        model.add(connected == 1)
-                    if terminal != root:
-                        model.flow({root: connected}, {terminal: connected})
-            roots = dict.fromkeys(self.roots, 1)
-            if spec.groups or not self.roots:
-                if self.choice_root is not None:
-                    group_roots = {self.choice_root: 1}
-                else:
-                    group_roots = {n: model.variable(binary=True) for n in model.nodes}
-                    if spec.groups:
-                        model.add(model.sum(group_roots.values()) == 1)
-                    else:
-                        model.add(model.sum(group_roots.values()) <= 1)
-                    for n, root in group_roots.items():
-                        model.add(root <= model.nodes[n])
-                coverage = model.choices(spec.groups, group_roots, self.optional)
-                for n, root in group_roots.items():
-                    roots.setdefault(n, root)
-            model.attach_selected_nodes(roots)
-            if spec.penalty_budget is not None:
-                model.add(len(coverage) - model.sum(coverage) <= spec.penalty_budget)
-            if not self.coverage_mode:
-                model.cost = (
-                    model.sum(
-                        self.objective.edge_cost(e) * x for e, x in model.edges.items()
-                    )
-                    + model.sum(
-                        self.objective.node_costs.get(n, 0) * x
-                        for n, x in model.nodes.items()
-                    )
-                    + self.objective.penalty_cost
-                    * (len(coverage) - model.sum(coverage))
-                )
+            coverage = self.configure(model)
             result, gap, runtime = solve_selection(
-                model,
-                coverage if self.coverage_mode else [],
-                self.decode,
-                time_limit,
+                model, coverage if self.coverage_mode else [], self.decode, time_limit
             )
-            edges, nodes, cost, covered, missed = result
-            common = dict(
-                gap=gap,
-                runtime=runtime,
-                selected_edges=edges,
-                original_selected_edges=edges,
-            )
-            if not self.coverage_mode:
-                solution = NodeWeightedSolution(
-                    objective=self.objective.value(
-                        edges, nodes, penalty_count=len(missed)
-                    ),
-                    selected_nodes=nodes,
-                    **common,
-                )
-                solution.penalties = missed
-            else:
-                solution = BudgetSolution(
-                    objective=covered,
-                    connected_terminals=covered,
-                    total_terminals=self.total_requirements,
-                    penalties=missed,
-                    **common,
-                )
-            solution.selected_nodes = nodes
-            solution.total_cost = sum(
-                spec.graph.edges[e].get(spec.weight, 1) for e in edges
-            ) + sum((spec.node_costs or {}).get(n, 0) for n in nodes)
-            return solution
+            return self.solution(result, gap, runtime)
         finally:
             model.close()
 
-    def get_optimal_solutions(self, *args, **kwargs):
-        raise NotImplementedError(
-            "Forest composition does not support optimum enumeration."
-        )
+    def get_optimal_solutions(
+        self, limit=10, time_limit=300, log_file="", solver="highs", threads=None
+    ):
+        from ._feature_enumeration import enumerate_selections
+
+        return enumerate_selections(self, limit, time_limit, log_file, solver, threads)

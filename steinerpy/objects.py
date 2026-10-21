@@ -1396,8 +1396,8 @@ class GroupSteinerProblem(SteinerProblem):
     from each group. Uses the shared composition solver with sink-only group
     terminals, preventing artificial connectors from creating free shortcuts.
     Results contain original edges and retain the legacy Solution interface.
-    Preprocessing and unmapped modifiers are rejected; use Problem with groups
-    and node_costs for supported original-space constraints.
+    Preprocessing uses safe original-space resource bounds. Unmapped modifiers
+    are rejected; use Problem with groups for composed constraints.
 
     For directed graphs, see :class:`DirectedGroupSteinerProblem`.
 

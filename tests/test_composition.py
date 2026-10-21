@@ -263,7 +263,6 @@ def test_custom_weight_default_costs_labels_and_snapshot():
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"preprocess": True},
         {"dual_ascent": True},
         {"heavy": True},
         {"variant": "steiner"},
@@ -330,8 +329,7 @@ def test_new_path_restrictions_and_repeated_solves():
     assert problem.get_solution().objective == problem.get_solution().objective == 1
     with pytest.raises(NotImplementedError, match="heuristic-only"):
         problem.get_solution(exact=False)
-    with pytest.raises(NotImplementedError, match="enumeration"):
-        problem.get_optimal_solutions()
+    assert problem.get_optimal_solutions().exhausted
     with pytest.raises(ValueError, match="Unknown solver"):
         problem.get_solution(solver="typo")
     with pytest.raises(RuntimeError, match="incumbent"):
