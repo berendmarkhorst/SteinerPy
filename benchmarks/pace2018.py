@@ -336,7 +336,7 @@ def execute_case(case, args, identity, directory, result_path, name):
     command = [
         sys.executable,
         "-m",
-        "benchmarks.pace2018",
+        getattr(args, "worker_module", "benchmarks.pace2018"),
         "--worker",
         str(request_path.resolve()),
     ]
