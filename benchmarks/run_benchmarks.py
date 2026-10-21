@@ -130,7 +130,7 @@ def _already_done(out_path):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="SteinerPy benchmark runner")
-    ap.add_argument("--instances", required=True, help="directory of .stp files")
+    ap.add_argument("--instances", required=True, help="one .stp file or a directory")
     ap.add_argument("--optima", default=None, help="optional instance,optimum CSV")
     ap.add_argument("--time-limit", type=float, default=300.0)
     ap.add_argument("--solver", default="highs", choices=["highs", "gurobi"])
@@ -147,7 +147,10 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     optima = load_optima(args.optima)
-    paths = sorted(glob.glob(os.path.join(args.instances, "*.stp")))
+    paths = ([args.instances] if os.path.isfile(args.instances)
+             else sorted(glob.glob(os.path.join(args.instances, "*.stp"))))
+    if not paths:
+        ap.error("--instances matched no instance files")
     done = _already_done(args.out)
     paths = [p for p in paths if os.path.splitext(os.path.basename(p))[0] not in done]
     if not args.full:

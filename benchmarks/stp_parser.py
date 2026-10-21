@@ -39,6 +39,7 @@ def read_stp(path: str, weight: str = "weight") -> Tuple[nx.Graph, List[List]]:
     edges: List[Tuple[int, int, float]] = []
     terminals: List[int] = []
     section = None
+    node_count = 0
 
     with open(path, "r", errors="ignore") as fh:
         for raw in fh:
@@ -57,7 +58,9 @@ def read_stp(path: str, weight: str = "weight") -> Tuple[nx.Graph, List[List]]:
                 break
 
             if section == "graph":
-                if head == "E":  # undirected edge
+                if head == "NODES":
+                    node_count = int(line.split()[1])
+                elif head == "E":  # undirected edge
                     _, u, v, *rest = line.split()
                     w = float(rest[0]) if rest else 1.0
                     edges.append((int(u), int(v), w))
@@ -78,6 +81,7 @@ def read_stp(path: str, weight: str = "weight") -> Tuple[nx.Graph, List[List]]:
                     terminals.insert(0, r)
 
     graph = nx.DiGraph() if directed else nx.Graph()
+    graph.add_nodes_from(range(1, node_count + 1))
     for u, v, w in edges:
         graph.add_edge(u, v, **{weight: w})
 
