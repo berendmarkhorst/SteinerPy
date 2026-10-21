@@ -270,7 +270,6 @@ def test_custom_weight_default_costs_labels_and_snapshot():
         {"dual_ascent": True},
         {"heavy": True},
         {"root": 0},
-        {"terminals": [[0], [1]]},
         {"variant": "steiner"},
     ],
 )

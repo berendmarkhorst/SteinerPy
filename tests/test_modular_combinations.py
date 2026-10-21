@@ -220,7 +220,6 @@ def test_zero_cost_edges_and_repeated_terminals_with_all_limits(budget, solver):
 @pytest.mark.parametrize(
     "options,match",
     [
-        ({"terminals": [[0], [2]]}, "Forest"),
         ({"terminals": [0, 2], "node_costs": {1: -1}}, "non-negative"),
         ({"terminals": [0, 2], "node_costs": []}, "must map"),
         ({"terminals": [0, 2], "node_costs": {9: 1}}, "not in the graph"),

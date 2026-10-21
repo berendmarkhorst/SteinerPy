@@ -105,14 +105,14 @@ def _validate_composition(spec):
     """Reject features whose original-space meaning is not implemented yet."""
     if spec.graph.is_multigraph():
         raise ValueError("Group/node-cost composition requires a simple graph.")
-    if spec.graph.is_directed() and spec.root is None:
+    if (
+        spec.graph.is_directed()
+        and spec.root is None
+        and (spec.groups or len(spec.terminal_groups) <= 1)
+    ):
         raise TypeError("Directed problems require root=.")
     if nx.number_of_selfloops(spec.graph):
         raise ValueError("Group/node-cost composition does not support self-loops.")
-    if len(spec.terminal_groups) > 1:
-        raise ValueError(
-            "Forest terminals cannot yet be combined with groups/node_costs."
-        )
     if not spec.groups and not spec.terminal_groups and spec.root is None:
         raise ValueError("Node-cost composition requires groups or terminals.")
     options = spec.implementation_options()

@@ -271,7 +271,6 @@ def test_decoder_rejects_wrong_original_root_and_unpaid_budget_root():
     [
         ({}, TypeError, "require root"),
         ({"root": 9}, ValueError, "not in the graph"),
-        ({"root": 0, "terminals": [[0], [1]]}, ValueError, "Forest"),
         ({"root": 0, "node_costs": {1: -1}}, ValueError, "non-negative"),
         ({"root": 0, "max_degree": -1}, ValueError, "non-negative integer"),
         ({"root": 0, "hop_limit": True}, ValueError, "non-negative integer"),
