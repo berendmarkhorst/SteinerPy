@@ -133,7 +133,10 @@ def objective_from_spec(spec, variant, *, pc_transform=None):
                 len(spec.groups) if spec.groups else sum(map(len, spec.terminal_groups))
             )
             if not spec.groups and graph.is_directed():
-                offset = len({spec.root}.union(*spec.terminal_groups))
+                offset = sum(
+                    len(set(group) | ({spec.root} if spec.root is not None else set()))
+                    for group in spec.terminal_groups
+                )
     elif variant == "node_weighted":
         node_costs = dict(spec.node_weights)
         # The legacy node-splitting helper defaults missing original costs to 0.

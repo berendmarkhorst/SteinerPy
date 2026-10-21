@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from . import objects
 from ._composition import GroupComposition
+from ._forest_composition import ForestComposition
 from ._problem_validation import validate_problem
 
 _IMPLEMENTATIONS = {
@@ -56,13 +57,17 @@ def build_problem(spec):
             )
         )
     )
+    composed |= len(spec.terminal_groups) > 1 and spec.hop_limit is not None
     if composed:
         validate_problem(spec, None)
         # Preserve the composition path's snapshot of original graph and costs.
         spec = replace(
             spec, graph=spec.graph.copy(), node_costs=dict(spec.node_costs or {})
         )
-        return spec, None, GroupComposition(spec)
+        strategy = (
+            ForestComposition if len(spec.terminal_groups) > 1 else GroupComposition
+        )
+        return spec, None, strategy(spec)
 
     implementation = _IMPLEMENTATIONS[variant]
     options = validate_problem(spec, variant, implementation)
