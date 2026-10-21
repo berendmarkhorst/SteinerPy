@@ -49,6 +49,20 @@ def choice_sets(value):
     return groups
 
 
+def terminal_penalty_keys(groups):
+    """Preserve legacy labels, using indices when distinct nodes print alike."""
+    result = []
+    for i, group in enumerate(groups):
+        unique = len({str(n) for n in group}) == len(group)
+        result.append(
+            tuple(
+                f"group_{i}_{n}" if unique else f"group_{i}_terminal_{j}"
+                for j, n in enumerate(group)
+            )
+        )
+    return tuple(result)
+
+
 @dataclass(frozen=True)
 class ProblemSpec:
     """Original-space features, independent of a solver class or formulation.

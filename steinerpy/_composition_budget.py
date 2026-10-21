@@ -8,6 +8,7 @@ import networkx as nx
 
 from . import mathematical_model as mm
 from ._composition import compile_groups, make_view, decode_groups
+from ._problem_spec import terminal_penalty_keys
 from .objects import BudgetSolution
 
 
@@ -127,6 +128,9 @@ def solve_budget(strategy, time_limit, logfile, solver, threads):
                     gap = 0
         else:
             gap = math.inf
+        plain_keys = terminal_penalty_keys([tuple(group[0] for group in spec.groups)])[
+            0
+        ]
         result = BudgetSolution(
             gap=gap,
             runtime=perf_counter() - started,
@@ -136,11 +140,7 @@ def solve_budget(strategy, time_limit, logfile, solver, threads):
             connected_terminals=covered,
             total_terminals=len(spec.groups),
             penalties={
-                (
-                    f"group_{i}"
-                    if strategy.spec.groups
-                    else f"group_0_{spec.groups[i][0]}"
-                ): 1
+                (f"group_{i}" if strategy.spec.groups else plain_keys[i]): 1
                 for i in missed
             },
         )
