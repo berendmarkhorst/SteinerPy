@@ -37,11 +37,10 @@ def test_modular_parallel_edges_fail_before_adapter_construction(
         Problem(graph, **options)
 
 
-def test_modular_group_preprocessing_fails_before_adapter_construction(
-    forbid_construction,
-):
-    with pytest.raises(ValueError, match="preprocess=False"):
-        Problem(nx.path_graph(2), groups=[[0], [1]], preprocess=True)
+def test_modular_group_preprocessing_uses_original_selection_model(solver):
+    p = Problem(nx.path_graph(2), groups=[[0], [1]], preprocess=True)
+    assert p.get_solution(solver=solver).objective == 1
+    assert p.get_optimal_solutions(solver=solver).exhausted
 
 
 @pytest.mark.parametrize("adapter", ["group", "node_weighted"])
@@ -114,10 +113,11 @@ def test_parallel_edges_are_rejected_before_identity_is_lost(adapter):
             NodeWeightedSteinerProblem(g, [[0, 1]], {})
 
 
-@pytest.mark.parametrize("adapter", ["group", "node_weighted"])
-def test_explicit_preprocessing_is_rejected(adapter):
+def test_node_weighted_legacy_preprocessing_is_rejected():
     with pytest.raises(ValueError, match="preprocess=False"):
-        if adapter == "group":
-            GroupSteinerProblem(nx.path_graph(2), [[0], [1]], preprocess=True)
-        else:
-            NodeWeightedSteinerProblem(nx.path_graph(2), [[0, 1]], {}, preprocess=True)
+        NodeWeightedSteinerProblem(nx.path_graph(2), [[0, 1]], {}, preprocess=True)
+
+
+def test_legacy_group_preprocessing_uses_safe_shared_strategy(solver):
+    p = GroupSteinerProblem(nx.path_graph(2), [[0], [1]], preprocess=True)
+    assert p.get_solution(solver=solver).objective == 1

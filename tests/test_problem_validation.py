@@ -74,12 +74,6 @@ def test_invalid_directed_group_budget_fails_before_construction(
         (True, {"variant": "group", "groups": [[2]]}, "undirected graph"),
         (
             False,
-            {"groups": [[0], [2]], "node_costs": {}, "preprocess": True},
-            "preprocess=False",
-        ),
-        (False, {"groups": [[0], [2]], "enumeration_safe": True}, "enumeration_safe"),
-        (
-            False,
             {
                 "variant": "node_weighted",
                 "terminals": [0, 2],

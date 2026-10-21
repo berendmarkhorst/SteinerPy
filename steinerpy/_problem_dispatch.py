@@ -42,6 +42,10 @@ def _select_variant(spec):
 def build_problem(spec):
     """Adapt a normalized specification to a legacy or composed implementation."""
     variant = _select_variant(spec)
+    if variant == "rectilinear":
+        implementation = _IMPLEMENTATIONS[variant]
+        options = validate_problem(spec, variant, implementation)
+        return spec, variant, implementation(**options)
     feature_mode = spec.requested_variant in {
         None,
         "steiner",
@@ -76,6 +80,7 @@ def build_problem(spec):
     )
     if spec.requested_variant in {"partial_terminal", "full_terminal"} and (
         spec.groups
+        or "node_costs" in spec.supplied_features
         or any(
             getattr(spec, name) is not None
             for name in (
@@ -125,7 +130,18 @@ def build_problem(spec):
         spec.hop_limit is not None or spec.graph.is_directed()
     )
     composed |= feature_mode
+    composed |= bool(
+        spec.groups
+        and (
+            spec.options.get("preprocess", False)
+            or spec.options.get("enumeration_safe", False)
+        )
+    )
     if composed:
+        feature_mode |= bool(
+            spec.options.get("preprocess", False)
+            or spec.options.get("enumeration_safe", False)
+        )
         if spec.partial_terminals is not None:
             spec = replace(spec, partial_terminals=tuple(spec.partial_terminals))
         validate_problem(spec, None)
@@ -151,4 +167,10 @@ def build_problem(spec):
 
     implementation = _IMPLEMENTATIONS[variant]
     options = validate_problem(spec, variant, implementation)
-    return spec, variant, implementation(**options)
+    instance = implementation(**options)
+    if variant in {"group", "directed_group"} or (
+        spec.budget is not None
+        and variant in {"steiner", "directed", "hop_constrained"}
+    ):
+        spec = replace(spec, graph=spec.graph.copy())
+    return spec, variant, instance

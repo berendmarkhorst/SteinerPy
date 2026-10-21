@@ -59,7 +59,7 @@ def validate_problem(spec, variant, implementation=None):
                     spec.requested_variant
                 )
             )
-        _validate_composition(spec)
+        _validate_composition(spec, allow_preprocess=True)
         return {}
 
     options = spec.implementation_options()
@@ -116,14 +116,14 @@ def validate_problem(spec, variant, implementation=None):
     return options
 
 
-def _validate_composition(spec):
+def _validate_composition(spec, *, allow_preprocess=False):
     """Reject features whose original-space meaning is not implemented yet."""
     if spec.graph.is_multigraph():
         raise ValueError("Group/node-cost composition requires a simple graph.")
     if (
         spec.graph.is_directed()
         and spec.root is None
-        and (spec.groups or len(spec.terminal_groups) <= 1)
+        and len(spec.terminal_groups) <= 1
         and (
             spec.groups
             or spec.terminal_groups
@@ -156,6 +156,7 @@ def _validate_composition(spec):
         "partial_terminals",
         "penalty_cost",
         "penalty_budget",
+        "enumeration_safe",
     }
     if unknown:
         raise TypeError(
@@ -163,8 +164,8 @@ def _validate_composition(spec):
                 ", ".join(sorted(unknown))
             )
         )
-    if options.get("preprocess", False):
-        raise ValueError("Group/node-cost composition requires preprocess=False.")
+    if options.get("preprocess", False) and not allow_preprocess:
+        raise ValueError("Legacy group composition requires preprocess=False.")
     objects._validate_group_limit(spec.hop_limit, "hop_limit")
     objects._validate_group_limit(spec.max_degree, "max_degree")
     objects._validate_group_budget(spec.budget)

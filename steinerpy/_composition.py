@@ -212,7 +212,7 @@ class GroupComposition:
                 model.dispose()
 
     def get_optimal_solutions(self, *args, **kwargs):
-        """Enumeration needs no-good cuts on decoded original selections."""
-        raise NotImplementedError(
-            "Group/node-cost composition does not support optimum enumeration."
-        )
+        """Enumerate using original selections, avoiding auxiliary-arc duplicates."""
+        from ._feature_composition import FeatureComposition
+
+        return FeatureComposition(self.spec).get_optimal_solutions(*args, **kwargs)

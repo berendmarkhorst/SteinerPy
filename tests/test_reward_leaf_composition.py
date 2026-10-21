@@ -25,8 +25,10 @@ def optimum(
     hops,
     penalty,
     penalty_budget=None,
+    all_optima=False,
 ):
     best = None
+    selections = set()
     coverage_mode = (
         budget is not None and prizes is None and weights is None and penalty is None
     )
@@ -93,8 +95,15 @@ def optimum(
             objective = cost
         objective += (penalty or 0) * missed
         key = (-(total - missed), cost) if coverage_mode else objective
-        best = key if best is None else min(best, key)
-    return best
+        if best is None or key < best:
+            best, selections = key, set()
+        if key == best:
+            edges = frozenset(
+                tuple(e) if graph.is_directed() else frozenset(e)
+                for e in selected.edges
+            )
+            selections.add((edges, frozenset(selected)))
+    return (best, selections) if all_optima else best
 
 
 @pytest.mark.parametrize("directed", [False, True])
