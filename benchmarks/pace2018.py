@@ -106,7 +106,7 @@ def worker(request_path):
 
         bound = int(request["memory_gb"] * 1024**3)
         resource.setrlimit(resource.RLIMIT_AS, (bound, bound))
-    row.update(status="running", phase="imports", feasible=False)
+    row.update(status="running", phase="imports", feasible=False, gurobi_started=False)
     write_json(progress, row)
     try:
         import logging
@@ -116,6 +116,27 @@ def worker(request_path):
         random.seed(0)
         from benchmarks.stp_parser import read_stp
         from steinerpy import Problem, SteinerProblem
+        from steinerpy import objects
+
+        def timed_builder(original, uses_gurobi):
+            def build(*args, **kwargs):
+                row.update(phase="model_build", gurobi_started=uses_gurobi)
+                write_json(progress, row)
+                began = time.monotonic()
+                try:
+                    model = original(*args, **kwargs)
+                finally:
+                    row["model_build_seconds"] += time.monotonic() - began
+                    write_json(progress, row)
+                row["phase"] = "solve"
+                write_json(progress, row)
+                return model
+
+            return build
+
+        row["model_build_seconds"] = 0.0
+        objects.build_model = timed_builder(objects.build_model, False)
+        objects.build_model_gurobi = timed_builder(objects.build_model_gurobi, True)
 
         row["phase"] = "parse"
         write_json(progress, row)
@@ -154,6 +175,12 @@ def worker(request_path):
         )
         if config == "heuristic":
             kwargs["exact"] = False
+        if config.startswith("composition-"):
+            # Composition builds its constraints inside get_solution; that build
+            # cannot be separated using the classic model-builder hooks above.
+            row["model_build_seconds"] = None
+            row["gurobi_started"] = config.endswith("gurobi")
+            write_json(progress, row)
         solution = problem.get_solution(**kwargs)
         row.update(
             solve_seconds=time.monotonic() - solve,
@@ -223,10 +250,11 @@ def wls_slot(directory, time_limit):
                 os.fsync(stream.fileno())
 
             reserve(time.time() + time_limit + WLS_COOLDOWN + 60)
+            lease = {"used": True}
             try:
-                yield
+                yield lease
             finally:
-                reserve(time.time() + WLS_COOLDOWN)
+                reserve(time.time() + WLS_COOLDOWN if lease["used"] else 0)
                 stream.close()
             return
         time.sleep(1)
@@ -268,8 +296,12 @@ def run_case(case, args, provenance):
             raise RuntimeError(
                 "The WLS concurrency guard requires Linux; run Gurobi sweeps on the HPC."
             )
-        with wls_slot(args.license_slots, args.time_limit):
-            return execute_case(case, args, identity, directory, result_path, name)
+        with wls_slot(args.license_slots, args.time_limit) as lease:
+            result = execute_case(case, args, identity, directory, result_path, name)
+            # The child checkpoints this flag before any environment can start.
+            # Preprocessing/DP-only runs therefore need no token cooldown.
+            lease["used"] = result.get("gurobi_started", True)
+            return result
     return execute_case(case, args, identity, directory, result_path, name)
 
 
@@ -331,14 +363,17 @@ def execute_case(case, args, identity, directory, result_path, name):
                             if line.startswith("VmHWM:")
                         ),
                     )
-                except (FileNotFoundError, ProcessLookupError, StopIteration):
+                except (OSError, StopIteration):
                     pass
             if time.monotonic() - started >= args.time_limit:
                 timed_out = True
                 if os.name == "nt":
                     process.kill()
                 else:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
                 process.wait()
                 break
             time.sleep(0.1)

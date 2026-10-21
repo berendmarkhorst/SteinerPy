@@ -141,3 +141,10 @@ def test_wls_waits_when_all_24_slots_are_reserved(tmp_path, monkeypatch):
     with pytest.raises(TimeoutError, match="all slots"):
         with wls_slot(tmp_path, 10):
             pytest.fail("must not acquire a 25th token")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HPC uses POSIX locks")
+def test_preprocessing_only_result_does_not_occupy_a_wls_token(tmp_path):
+    with wls_slot(tmp_path, 10) as lease:
+        lease["used"] = False
+    assert float((tmp_path / "slot-0.lock").read_text()) == 0
