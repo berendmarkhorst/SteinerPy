@@ -136,8 +136,7 @@ def test_infer_directed_and_hop_and_group():
         assert problem.get_solution().objective == 2
     with pytest.raises(TypeError, match="root"):
         Problem(graph, terminals=[1])
-    with pytest.raises(ValueError, match="one connected tree"):
-        Problem(graph, root=0, terminals=[[0], [1]])
+    assert Problem(graph, root=0, terminals=[[0], [1]]).get_solution().objective == 2
 
 
 def test_node_cost_changes_group_representatives():
@@ -265,11 +264,8 @@ def test_custom_weight_default_costs_labels_and_snapshot():
     "kwargs",
     [
         {"preprocess": True},
-        {"node_budget": 4},
-        {"node_prizes": {0: 2}},
         {"dual_ascent": True},
         {"heavy": True},
-        {"root": 0},
         {"variant": "steiner"},
     ],
 )

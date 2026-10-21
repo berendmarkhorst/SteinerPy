@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from . import objects
 from ._composition import GroupComposition
-from ._forest_composition import ForestComposition
+from ._feature_composition import FeatureComposition
 from ._problem_validation import validate_problem
 
 _IMPLEMENTATIONS = {
@@ -42,6 +42,70 @@ def _select_variant(spec):
 def build_problem(spec):
     """Adapt a normalized specification to a legacy or composed implementation."""
     variant = _select_variant(spec)
+    feature_mode = spec.requested_variant in {
+        None,
+        "steiner",
+        "directed",
+        "group",
+        "directed_group",
+        "hop_constrained",
+    } and (
+        bool(
+            spec.supplied_features.intersection(
+                {
+                    "node_prizes",
+                    "node_weights",
+                    "node_budget",
+                    "partial_terminals",
+                    "penalty_cost",
+                    "penalty_budget",
+                }
+            )
+        )
+        or (
+            not spec.graph.is_directed()
+            and (
+                spec.root is not None
+                or (
+                    spec.hop_limit is not None
+                    and not spec.groups
+                    and "node_costs" not in spec.supplied_features
+                )
+            )
+        )
+    )
+    if spec.requested_variant in {"partial_terminal", "full_terminal"} and (
+        spec.groups
+        or any(
+            getattr(spec, name) is not None
+            for name in (
+                "budget",
+                "node_budget",
+                "hop_limit",
+                "node_costs",
+                "node_prizes",
+                "node_weights",
+                "penalty_cost",
+                "penalty_budget",
+                "max_degree",
+            )
+        )
+    ):
+        feature_mode = True
+        if (
+            spec.requested_variant == "partial_terminal"
+            and spec.partial_terminals is None
+        ):
+            raise TypeError("partial_terminal requires partial_terminals=.")
+        if spec.requested_variant == "full_terminal":
+            spec = replace(
+                spec,
+                partial_terminals=tuple(
+                    dict.fromkeys(
+                        n for g in spec.terminal_groups + spec.groups for n in g
+                    )
+                ),
+            )
     composed = (
         "node_costs" in spec.supplied_features
         and variant != "budgeted_max_weight_connected"
@@ -57,15 +121,31 @@ def build_problem(spec):
             )
         )
     )
-    composed |= len(spec.terminal_groups) > 1 and spec.hop_limit is not None
+    composed |= len(spec.terminal_groups) > 1 and (
+        spec.hop_limit is not None or spec.graph.is_directed()
+    )
+    composed |= feature_mode
     if composed:
+        if spec.partial_terminals is not None:
+            spec = replace(spec, partial_terminals=tuple(spec.partial_terminals))
         validate_problem(spec, None)
         # Preserve the composition path's snapshot of original graph and costs.
         spec = replace(
-            spec, graph=spec.graph.copy(), node_costs=dict(spec.node_costs or {})
+            spec,
+            graph=spec.graph.copy(),
+            node_costs=dict(spec.node_costs or {}),
+            node_prizes=(
+                dict(spec.node_prizes) if spec.node_prizes is not None else None
+            ),
+            node_weights=(
+                dict(spec.node_weights) if spec.node_weights is not None else None
+            ),
+            partial_terminals=tuple(spec.partial_terminals or ()),
         )
         strategy = (
-            ForestComposition if len(spec.terminal_groups) > 1 else GroupComposition
+            FeatureComposition
+            if feature_mode or len(spec.terminal_groups) > 1
+            else GroupComposition
         )
         return spec, None, strategy(spec)
 

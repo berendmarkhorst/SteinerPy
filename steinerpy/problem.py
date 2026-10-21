@@ -13,6 +13,15 @@ class Problem:
     selects at least one member per group in one connected tree. Tuple node
     labels remain atomic. ``terminal_groups`` is the legacy forest alias.
 
+    Feature combinations accept ``node_prizes`` (minimize edge/node costs plus
+    omitted prizes) or signed ``node_weights`` (maximize selected node weights;
+    edge/node costs then serve only as budget resources). ``node_budget`` limits
+    ``node_costs`` separately from the edge ``budget``. With a reward objective,
+    terminal/group requirements stay mandatory unless ``penalty_cost`` makes
+    them optional; ``penalty_budget`` limits missed requirements. Without rewards
+    or penalties, an edge budget maximizes coverage, then minimizes cost.
+    ``partial_terminals`` limits listed terminals/group members to degree one.
+
     Existing implementations serve as composed strategies, retaining their
     formulations, preprocessing restrictions and solution types. See the
     variant guide and legacy class docstrings for definitions and references.

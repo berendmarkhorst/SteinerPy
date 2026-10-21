@@ -8,6 +8,7 @@ import pytest
 
 from steinerpy import Problem, objects
 from steinerpy._composition import GroupComposition
+from steinerpy._feature_composition import FeatureComposition
 from steinerpy._problem_dispatch import _IMPLEMENTATIONS
 from steinerpy._problem_spec import normalize_problem
 from steinerpy._problem_validation import validate_problem
@@ -24,7 +25,7 @@ def forbid_construction(monkeypatch):
 
         return fail
 
-    for cls in set(_IMPLEMENTATIONS.values()) | {GroupComposition}:
+    for cls in set(_IMPLEMENTATIONS.values()) | {GroupComposition, FeatureComposition}:
         monkeypatch.setattr(cls, "__init__", forbid(cls.__init__))
 
 
@@ -71,11 +72,6 @@ def test_invalid_directed_group_budget_fails_before_construction(
         (True, {"terminals": [2], "root": 99}, "root.*not in the graph"),
         (False, {"variant": "directed", "terminals": [2], "root": 0}, "directed graph"),
         (True, {"variant": "group", "groups": [[2]]}, "undirected graph"),
-        (
-            False,
-            {"groups": [[0], [2]], "node_costs": {}, "node_budget": 2},
-            "composition",
-        ),
         (
             False,
             {"groups": [[0], [2]], "node_costs": {}, "preprocess": True},
@@ -202,21 +198,6 @@ def test_invalid_directed_group_budget_fails_before_construction(
         (
             False,
             {
-                "variant": "partial_terminal",
-                "terminals": [0, 2],
-                "partial_terminals": [2],
-                "budget": 4,
-            },
-            "original budget",
-        ),
-        (
-            False,
-            {"variant": "full_terminal", "terminals": [0, 2], "budget": 4},
-            "original budget",
-        ),
-        (
-            False,
-            {
                 "variant": "max_weight_connected",
                 "node_weights": {0: 2},
                 "pc_transform": True,
@@ -278,11 +259,10 @@ def test_invalid_directed_group_budget_fails_before_construction(
             },
             "non-negative",
         ),
-        (False, {"terminals": [0, 2], "hop_limit": 2}, "Unsupported option.*hop_limit"),
         (
             False,
             {"terminals": [0, 2], "node_budget": 2},
-            "Unsupported option.*node_budget",
+            "node_budget requires node_costs",
         ),
     ],
 )

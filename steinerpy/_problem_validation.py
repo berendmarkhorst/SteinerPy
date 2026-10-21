@@ -35,10 +35,25 @@ def validate_problem(spec, variant, implementation=None):
     """
     spec.validate_nodes()
     if variant is None:
+        if (
+            spec.requested_variant in {"directed", "directed_group", "hop_constrained"}
+            and not spec.graph.is_directed()
+        ):
+            raise ValueError(
+                "{} requires a directed graph.".format(spec.requested_variant)
+            )
         compatible_variant = "group" if spec.groups else "steiner"
         if spec.graph.is_directed():
             compatible_variant = "directed_group" if spec.groups else "directed"
-        if spec.requested_variant not in (None, compatible_variant):
+        if spec.requested_variant not in (
+            None,
+            compatible_variant,
+            "partial_terminal",
+            "full_terminal",
+        ) and not (
+            compatible_variant == "directed"
+            and spec.requested_variant == "hop_constrained"
+        ):
             raise TypeError(
                 "groups/node_costs is incompatible with variant={!r}.".format(
                     spec.requested_variant
@@ -109,22 +124,38 @@ def _validate_composition(spec):
         spec.graph.is_directed()
         and spec.root is None
         and (spec.groups or len(spec.terminal_groups) <= 1)
+        and (
+            spec.groups
+            or spec.terminal_groups
+            or (spec.node_prizes is None and spec.node_weights is None)
+        )
     ):
         raise TypeError("Directed problems require root=.")
     if nx.number_of_selfloops(spec.graph):
         raise ValueError("Group/node-cost composition does not support self-loops.")
-    if not spec.groups and not spec.terminal_groups and spec.root is None:
+    if (
+        not spec.groups
+        and not spec.terminal_groups
+        and spec.root is None
+        and spec.node_prizes is None
+        and spec.node_weights is None
+    ):
         raise ValueError("Node-cost composition requires groups or terminals.")
     options = spec.implementation_options()
     options.pop("node_costs", None)
-    if spec.graph.is_directed():
-        options.pop("root", None)
+    options.pop("root", None)
     unknown = set(options) - {
         "weight",
         "preprocess",
         "hop_limit",
         "max_degree",
         "budget",
+        "node_budget",
+        "node_prizes",
+        "node_weights",
+        "partial_terminals",
+        "penalty_cost",
+        "penalty_budget",
     }
     if unknown:
         raise TypeError(
@@ -137,6 +168,36 @@ def _validate_composition(spec):
     objects._validate_group_limit(spec.hop_limit, "hop_limit")
     objects._validate_group_limit(spec.max_degree, "max_degree")
     objects._validate_group_budget(spec.budget)
+    for name in ("node_budget", "penalty_cost", "penalty_budget"):
+        try:
+            objects._validate_group_budget(getattr(spec, name))
+        except ValueError as error:
+            raise ValueError(str(error).replace("budget", name)) from error
+    if spec.node_budget is not None and spec.node_costs is None:
+        raise TypeError("node_budget requires node_costs= in feature composition.")
+    if spec.node_weights is not None and spec.node_prizes is not None:
+        raise TypeError(
+            "Choose node_weights or node_prizes as the reward objective, not both."
+        )
+    for name in ("node_prizes", "node_weights"):
+        values = getattr(spec, name)
+        if name in spec.supplied_features and not isinstance(values, Mapping):
+            raise TypeError("{} must map original nodes to finite values.".format(name))
+        for node, value in (values or {}).items():
+            if node not in spec.graph:
+                raise ValueError(
+                    "{} vertex {!r} is not in the graph.".format(name, node)
+                )
+            _validate_cost(
+                value,
+                "{} node {!r}".format(name, node),
+                nonnegative=name != "node_weights",
+            )
+    allowed_leaves = set().union(*spec.terminal_groups, *spec.groups)
+    if spec.root is not None:
+        allowed_leaves.add(spec.root)
+    if not set(spec.partial_terminals or ()) <= allowed_leaves:
+        raise ValueError("partial_terminals must be terminals or group members.")
     if spec.node_costs is not None and not isinstance(spec.node_costs, Mapping):
         raise TypeError("node_costs must map original nodes to non-negative costs.")
     for node, cost in (spec.node_costs or {}).items():

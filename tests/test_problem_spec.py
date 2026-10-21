@@ -55,9 +55,7 @@ def test_normalization_retains_constraints_before_compatibility_validation():
     assert spec.options == {"preprocess": False}
     assert options["groups"] == [[0], [2]]
     assert options["root"] == 0
-    with pytest.raises(
-        TypeError, match="Unsupported option.*node_budget, penalty_budget, root"
-    ):
+    with pytest.raises(TypeError, match="node_budget requires node_costs"):
         build_problem(spec)
 
 
