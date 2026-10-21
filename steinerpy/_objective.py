@@ -130,10 +130,10 @@ def objective_from_spec(spec, variant, *, pc_transform=None):
             topology_only = True
             penalty_cost, sign = 1, -1
             offset = (
-                len(spec.groups)
-                if spec.groups
-                else sum(map(len, spec.terminal_groups))
+                len(spec.groups) if spec.groups else sum(map(len, spec.terminal_groups))
             )
+            if not spec.groups and graph.is_directed():
+                offset = len({spec.root}.union(*spec.terminal_groups))
     elif variant == "node_weighted":
         node_costs = dict(spec.node_weights)
         # The legacy node-splitting helper defaults missing original costs to 0.

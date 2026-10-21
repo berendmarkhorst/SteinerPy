@@ -123,11 +123,17 @@ def test_invalid_split_labels_are_rejected(labels, message):
         split_node_costs(nx.path_graph(2), {}, split=labels)
 
 
-def test_split_rejects_directed_input_before_changing_it():
-    graph = nx.path_graph(2, create_using=nx.DiGraph)
-    with pytest.raises(ValueError, match="undirected"):
-        split_node_costs(graph, {})
-    assert list(graph.edges) == [(0, 1)]
+def test_split_preserves_directed_arc_identity_and_asymmetric_costs():
+    graph = nx.DiGraph()
+    graph.add_weighted_edges_from([(0, 1, 2), (1, 0, 7), (1, 2, 3)])
+    compiled = split_node_costs(graph, {0: 4, 1: 5, 2: 6})
+    for u, v, data in graph.edges(data=True):
+        arc = (compiled.split[u][1], compiled.split[v][0])
+        assert compiled.edge_arcs[arc] == (u, v)
+        assert compiled.graph.edges[arc]["weight"] == data["weight"]
+    assert len(compiled.edge_arcs) == 3
+    assert not compiled.graph.has_edge(compiled.split[2][1], compiled.split[1][0])
+    assert list(graph.edges) == [(0, 1), (1, 0), (1, 2)]
 
 
 def test_legacy_adapter_preserves_labels_and_missing_edge_cost_default():

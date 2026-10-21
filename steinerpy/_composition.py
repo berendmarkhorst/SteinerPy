@@ -23,23 +23,27 @@ class CompiledGroups:
 def compile_groups(spec):
     """Compose paid-node traversal with terminal sinks and one chosen root.
 
-    Non-negative costs admit an optimal tree, rooted at a selected member of
-    any group. Exactly one source arc chooses that root; sink-only connectors
-    cannot create original-space shortcuts. Every path to a group sink leaves
-    a member's output node, so its node-cost arc must have been traversed.
+    Non-negative costs admit an optimal tree, rooted at the directed root or
+    a selected group member. Exactly one source arc chooses that root; sink-only
+    connectors cannot create original-space shortcuts. Every path to a group
+    sink leaves a member's output node, so its node-cost arc must be traversed.
     """
     split_nodes = split_node_costs(spec.graph, spec.node_costs, spec.weight)
     graph = split_nodes.graph
-    groups = list(spec.groups) + [(t,) for group in spec.terminal_groups for t in group]
-    required = (
-        groups
-        if spec.budget is None
-        else [(t,) for g in spec.terminal_groups for t in g]
-    )
-    feasible_nodes = set()
-    for component in nx.connected_components(spec.graph):
-        if all(component.intersection(group) for group in required):
-            feasible_nodes.update(component)
+    mandatory = [t for group in spec.terminal_groups for t in group]
+    if spec.graph.is_directed() and spec.root not in mandatory:
+        mandatory.append(spec.root)
+    groups = list(spec.groups) + [(t,) for t in mandatory]
+    required = groups if spec.budget is None else [(t,) for t in mandatory]
+    if spec.graph.is_directed():
+        feasible_nodes = nx.descendants(spec.graph, spec.root) | {spec.root}
+        if any(feasible_nodes.isdisjoint(group) for group in required):
+            feasible_nodes = set()
+    else:
+        feasible_nodes = set()
+        for component in nx.connected_components(spec.graph):
+            if all(component.intersection(group) for group in required):
+                feasible_nodes.update(component)
     if not feasible_nodes:
         raise RuntimeError(
             "Group/node-cost instance is infeasible: groups cannot be connected."
@@ -55,6 +59,8 @@ def compile_groups(spec):
             else {node for group in spec.groups for node in group}
         )
     )
+    if spec.graph.is_directed():
+        root_choices = {spec.root}
     source_arcs = [
         (root, split_nodes.split[node][0])
         for node in spec.graph
@@ -111,10 +117,16 @@ def decode_groups(spec, compiled, selected_arcs, objective, *, require_all_group
     edges = [edge for edge in spec.graph.edges if edge in edge_set]
     if spec.hop_limit is not None and len(edges) > spec.hop_limit:
         raise RuntimeError("Composed solution exceeds the original-edge hop limit.")
-    original = nx.Graph()
+    original = nx.DiGraph() if spec.graph.is_directed() else nx.Graph()
     original.add_nodes_from(nodes)
     original.add_edges_from(edges)
-    if not nodes or set(original) != set(nodes) or not nx.is_connected(original):
+    if spec.graph.is_directed():
+        connected = spec.root in original and (
+            nx.descendants(original, spec.root) | {spec.root}
+        ) == set(nodes)
+    else:
+        connected = bool(nodes) and nx.is_connected(original)
+    if not connected or set(original) != set(nodes):
         raise RuntimeError(
             "Composed solution does not form a connected original subgraph."
         )

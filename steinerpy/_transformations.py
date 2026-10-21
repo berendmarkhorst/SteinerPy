@@ -79,15 +79,14 @@ class SplitNodes:
 def split_node_costs(
     original, node_costs, weight="weight", *, default_edge_cost=1, split=None
 ):
-    """Split an undirected graph without modifying its nodes or cost mappings.
+    """Split a graph without modifying its nodes or cost mappings.
 
     Every node has an input/output pair; its traversal arc charges the node cost.
-    Cross-arcs retain original edge identities in both directions. Integer labels
-    are collision-free by default; a legacy adapter may supply explicit pairs.
+    Cross-arcs preserve directed arcs or represent both undirected orientations.
+    Integer labels are collision-free by default; a legacy adapter may supply
+    explicit pairs.
     Cost/connectivity validation belongs to the caller before transformation.
     """
-    if original.is_directed():
-        raise ValueError("Node-cost splitting requires an undirected graph.")
     split = (
         {node: (2 * i, 2 * i + 1) for i, node in enumerate(original)}
         if split is None
@@ -107,7 +106,8 @@ def split_node_costs(
         graph.add_edge(enter, leave, **{weight: node_costs.get(node, 0)})
         node_arcs[enter, leave] = node
     for u, v, data in original.edges(data=True):
-        for a, b in ((u, v), (v, u)):
+        directions = ((u, v),) if original.is_directed() else ((u, v), (v, u))
+        for a, b in directions:
             arc = (split[a][1], split[b][0])
             graph.add_edge(*arc, **{weight: data.get(weight, default_edge_cost)})
             edge_arcs[arc] = (u, v)
