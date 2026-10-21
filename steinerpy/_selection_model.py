@@ -50,14 +50,19 @@ class SelectionModel:
                     self.sum(self.edges[e] for e in incidence.get(n, ()))
                     <= spec.max_degree
                 )
+        for n in spec.partial_terminals or ():
+            self.add(self.sum(self.edges[e] for e in incidence.get(n, ())) <= 1)
         if spec.hop_limit is not None:
             self.add(self.sum(self.edges.values()) <= spec.hop_limit)
         self.edge_cost = self.sum(
             x * spec.graph.edges[e].get(spec.weight, 1) for e, x in self.edges.items()
         )
-        self.cost = self.edge_cost + self.sum(
+        node_cost = self.sum(
             x * (spec.node_costs or {}).get(n, 0) for n, x in self.nodes.items()
         )
+        self.cost = self.edge_cost + node_cost
+        if spec.node_budget is not None:
+            self.add(node_cost <= spec.node_budget)
         if spec.budget is not None:
             self.add(self.edge_cost <= spec.budget)
 
@@ -133,6 +138,13 @@ class SelectionModel:
             [n for n, x in self.nodes.items() if self.value(x) > 0.5],
         )
 
+    def objective_value(self):
+        return (
+            self.model.getObjectiveValue()
+            if self.solver == "highs"
+            else self.model.ObjVal
+        )
+
     def close(self):
         if self.env is not None:
             self.model.dispose()
@@ -151,6 +163,16 @@ def solve_selection(model, coverage, decode, time_limit):
             "Feature composition is infeasible or stopped without a feasible incumbent."
         )
     result = decode(*model.selection())
+    if (
+        not coverage
+        and status == "optimal"
+        and not math.isclose(
+            result[2], model.objective_value(), rel_tol=1e-8, abs_tol=1e-7
+        )
+    ):
+        raise RuntimeError(
+            "Feature composition objective disagrees with original selections."
+        )
     gap = 0 if status == "optimal" else math.inf
     if coverage:
         claimed = round(sum(model.value(x) for x in coverage))
@@ -162,6 +184,12 @@ def solve_selection(model, coverage, decode, time_limit):
             cost_status, cost_incumbent = model.solve(model.cost, deadline)
             if cost_incumbent:
                 candidate = decode(*model.selection())
+                if cost_status == "optimal" and not math.isclose(
+                    candidate[2], model.objective_value(), rel_tol=1e-8, abs_tol=1e-7
+                ):
+                    raise RuntimeError(
+                        "Feature composition objective disagrees with original selections."
+                    )
                 if candidate[3] < claimed:
                     raise RuntimeError(
                         "Feature composition overstates connected requirements."
