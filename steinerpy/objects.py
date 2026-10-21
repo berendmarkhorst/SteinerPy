@@ -101,6 +101,7 @@ class BaseSteinerProblem:
                 graph, weight, type(self).__name__
             )
         self.original_graph = graph
+        self.original_terminal_groups = [list(group) for group in terminal_groups]
         self.preprocess = preprocess
         # Opt-in dual-ascent bound reduction (removes provably non-optimal edges
         # then cascades the degree reductions). Requires preprocessing, an
@@ -472,26 +473,27 @@ class BaseSteinerProblem:
         if not da.is_directed:
             from .dual_ascent import refine_primal_mst, _edges_cost
             graph = self.original_graph
-            all_terminals = [t for g in self.terminal_groups for t in g]
+            original_groups = self.original_terminal_groups
+            all_terminals = [t for g in original_groups for t in g]
             da_primal = (map_solution_to_original(
                             da.primal_edges, self.reduction_tracker, self.graph)
                          if self.preprocess else list(da.primal_edges))
             candidates: List[List[Tuple]] = [da_primal]
-            if len(self.terminal_groups) == 1:
-                candidates.extend(self._sph_candidates(graph, self.terminal_groups[0]))
+            if len(original_groups) == 1:
+                candidates.extend(self._sph_candidates(graph, original_groups[0]))
                 if use_implied:
                     from .primal_heuristics import implied_profit_candidates
                     candidates.extend(implied_profit_candidates(
-                        graph, self.terminal_groups[0], self.weight))
+                        graph, original_groups[0], self.weight))
             best_edges: List[Tuple] = da_primal
             best_cost = _edges_cost(graph, da_primal, self.weight)
             for cand in candidates:
                 refined = refine_primal_mst(graph, cand, all_terminals, self.weight)
                 if refined:
-                    if use_local and len(self.terminal_groups) == 1:
+                    if use_local and len(original_groups) == 1:
                         from .primal_heuristics import improve_steiner_tree
                         refined = improve_steiner_tree(
-                            graph, refined, self.terminal_groups[0],
+                            graph, refined, original_groups[0],
                             self.weight).edges
                     rcost = _edges_cost(graph, refined, self.weight)
                     if rcost < best_cost:
