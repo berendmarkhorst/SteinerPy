@@ -23,6 +23,10 @@ CASES = (
     "paid-degree-hop",
     "groups-budget",
     "reward-forest",
+    "terminal-costs",
+    "terminal-costs-unreduced",
+    "terminal-costs-medium",
+    "terminal-costs-medium-unreduced",
 )
 
 
@@ -75,6 +79,9 @@ def worker(args):
     logging.disable(logging.CRITICAL)
     graph = nx.cycle_graph(12)
     graph.add_edges_from([(0, 4), (1, 7), (2, 9), (3, 8), (5, 10), (6, 11)])
+    if "medium" in args.case:
+        graph = nx.gnm_random_graph(48, 96, seed=42)
+        graph.add_edges_from(nx.cycle_graph(48).edges)
     rng = random.Random(42)
     for u, v in graph.edges:
         graph[u][v]["weight"] = rng.randint(1, 9)
@@ -97,6 +104,13 @@ def worker(args):
         )
     if args.case == "reward-forest":
         options.update(node_costs={3: 2}, node_prizes={6: 4}, hop_limit=8)
+    if args.case.startswith("terminal-costs"):
+        terminals = list(range(0, len(graph), 4))
+        options.update(
+            terminals=terminals,
+            node_costs={n: 2 + n % 5 for n in terminals},
+            preprocess=not args.case.endswith("unreduced"),
+        )
     started = perf_counter()
     problem = Problem(graph, **options)
     constructed = perf_counter()
@@ -106,6 +120,8 @@ def worker(args):
     assert all(graph.has_edge(*e) for e in solution.edges)
     return dict(
         case=args.case,
+        nodes=len(graph),
+        edges=len(graph.edges),
         objective=solution.objective,
         gap=solution.gap,
         implementation=type(problem.implementation).__name__,
