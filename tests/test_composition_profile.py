@@ -66,6 +66,13 @@ def test_coverage_proof_checks_secondary_cost():
         )
     with pytest.raises(AssertionError, match="infeasibility"):
         check_results([result(3), dict(case="tiny", status="infeasible")])
+    with pytest.raises(AssertionError):
+        check_results(
+            [
+                result(3, coverage=True),
+                result(3, "feasible", total_cost=3, coverage=True),
+            ]
+        )
 
 
 def test_incompatible_cut_formulation_is_rejected():
@@ -103,15 +110,18 @@ def test_profiled_solve_validates_result_and_records_native_solver_calls(
             dict(terminals=[0, 2], node_costs={1: 3}),
         ),
     )
-    # The harness runs in fresh processes. Reset the scheduler because earlier
-    # suite tests may already have initialized HiGHS with a different thread count.
-    import highspy
+    # Verify the worker requests one thread, but keep this shared test process
+    # on the scheduler setting used by the rest of the suite.
+    from steinerpy import mathematical_model as mm
 
-    highspy.Highs.resetGlobalScheduler(True)
-    try:
-        row = worker("optional-costs", config, 2)
-    finally:
-        highspy.Highs.resetGlobalScheduler(True)
+    original_make_model = mm.make_model
+
+    def make_model(time_limit, logfile="", threads=None):
+        assert threads == 1
+        return original_make_model(time_limit, logfile, threads=None)
+
+    monkeypatch.setattr(mm, "make_model", make_model)
+    row = worker("optional-costs", config, 2)
     assert row["status"] == "optimal", row
     assert row["objective"] == 5 and row["gap"] == 0
     assert row["backend_runs"] and row["phase_calls"]["optimization"] > 0

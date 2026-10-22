@@ -293,6 +293,10 @@ def check_results(rows):
             continue
         best = optima[0]
         for row in valid:
+            if row["lexicographic"] and math.isclose(
+                row["objective"], best["objective"]
+            ):
+                assert row["total_cost"] >= best["total_cost"] - 1e-7, case
             if row["status"] == "optimal":
                 assert math.isclose(row["objective"], best["objective"]), case
                 if row["lexicographic"]:
