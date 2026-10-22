@@ -1,0 +1,4696 @@
+{
+  "commits": {
+    "baseline": "9c980eca523c21101a5dd624901426a98d3cde56",
+    "candidate": "9c980eca523c21101a5dd624901426a98d3cde56"
+  },
+  "dirty": {
+    "baseline": false,
+    "candidate": true
+  },
+  "platform": "Windows-11-10.0.26100-SP0",
+  "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+  "python": "3.12.15",
+  "packages": {
+    "networkx": "3.6.1",
+    "highspy": "1.12.0",
+    "scipy": "1.18.0"
+  },
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "repeats": 1,
+  "time_limit": 5,
+  "threads": 1,
+  "solver": "highs",
+  "worker_timeout": 30,
+  "rows": [
+    {
+      "status": "Optimal",
+      "bound": 96.0,
+      "seconds": 0.06637500000215368,
+      "columns": 3842,
+      "rows": 4430,
+      "seed": 42,
+      "case": "mandatory-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 80.0,
+      "seconds": 0.12942289999773493,
+      "columns": 3562,
+      "rows": 4242,
+      "seed": 42,
+      "case": "mandatory-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "mandatory-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 98,
+      "total_cost": 98,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.1135684000000765,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07394660000136355,
+        "optimization": 5.015551399999822,
+        "separation": 0.0,
+        "decoding": 0.0010232999993604608,
+        "other": 0.023047099999530474
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3562,
+          "rows": 4242,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 160.05078125,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "mandatory-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 96,
+      "total_cost": 96,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.25880700000197976,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08306869999796618,
+        "optimization": 0.1666986000018369,
+        "separation": 0.0,
+        "decoding": 0.00031269999817595817,
+        "other": 0.008727000004000729
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3842,
+          "rows": 4430,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 94.15234375,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 15.0,
+      "seconds": 0.011513599998579593,
+      "columns": 1313,
+      "rows": 1460,
+      "seed": 42,
+      "case": "optional-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 14.0,
+      "seconds": 0.008861500002240064,
+      "columns": 1033,
+      "rows": 1272,
+      "seed": 42,
+      "case": "optional-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "optional-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 15,
+      "total_cost": 15,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.22662080000009155,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.029823600001691375,
+        "optimization": 0.19345220000104746,
+        "separation": 0.0,
+        "decoding": 0.0003249000001233071,
+        "other": 0.0030200999972294085
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 1033,
+          "rows": 1272,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 90.359375,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "optional-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 15,
+      "total_cost": 15,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.07382529999813414,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.03110949999972945,
+        "optimization": 0.039238199999090284,
+        "separation": 0.0,
+        "decoding": 0.0002647000001161359,
+        "other": 0.003212899999198271
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 1313,
+          "rows": 1460,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.25390625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 20.0,
+      "seconds": 0.008761900000536116,
+      "columns": 895,
+      "rows": 1020,
+      "seed": 42,
+      "case": "groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 17.5,
+      "seconds": 0.006560199999512406,
+      "columns": 763,
+      "rows": 930,
+      "seed": 42,
+      "case": "groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.21115260000078706,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.020460499999899184,
+        "optimization": 0.18867279999903985,
+        "separation": 0.0,
+        "decoding": 0.0002872000004572328,
+        "other": 0.0017321000013907906
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 763,
+          "rows": 930,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 89.53515625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.0673133999989659,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.022805500000686152,
+        "optimization": 0.04239890000098967,
+        "separation": 0.0,
+        "decoding": 0.00028979999842704274,
+        "other": 0.0018191999988630414
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 895,
+          "rows": 1020,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 81.76171875,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 19.5,
+      "seconds": 0.0049299000020255335,
+      "columns": 625,
+      "rows": 702,
+      "seed": 42,
+      "case": "forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 19.5,
+      "seconds": 0.004085600001417333,
+      "columns": 493,
+      "rows": 612,
+      "seed": 42,
+      "case": "forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.09164500000042608,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.019173900000168942,
+        "optimization": 0.06942530000014813,
+        "separation": 0.0,
+        "decoding": 0.0004549999976006802,
+        "other": 0.002590800002508331
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 493,
+          "rows": 612,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.44921875,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.06802410000091186,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.016427400001703063,
+        "optimization": 0.04971060000025318,
+        "separation": 0.0,
+        "decoding": 0.0002643000007083174,
+        "other": 0.0016217999982472975
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 625,
+          "rows": 702,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 81.34765625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 20.75,
+      "seconds": 0.01225450000129058,
+      "columns": 989,
+      "rows": 1117,
+      "seed": 42,
+      "case": "groups-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 20.5,
+      "seconds": 0.008524600001692306,
+      "columns": 857,
+      "rows": 1027,
+      "seed": 42,
+      "case": "groups-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "groups-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 25,
+      "total_cost": 25,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.4285051000006206,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.021655699998518685,
+        "optimization": 0.40471660000184784,
+        "separation": 0.0,
+        "decoding": 0.0003828999979305081,
+        "other": 0.0017499000023235567
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 857,
+          "rows": 1027,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 96.296875,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "groups-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 25,
+      "total_cost": 25,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.4268506999978854,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.022644899996521417,
+        "optimization": 0.4015209000026516,
+        "separation": 0.0,
+        "decoding": 0.0004181000003882218,
+        "other": 0.0022667999983241316
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 989,
+          "rows": 1117,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 94.34765625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 21.0,
+      "seconds": 0.007173099998908583,
+      "columns": 961,
+      "rows": 1218,
+      "seed": 42,
+      "case": "directed-groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 21.0,
+      "seconds": 0.005759800002124393,
+      "columns": 829,
+      "rows": 1062,
+      "seed": 42,
+      "case": "directed-groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "directed-groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 132,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.05095480000090902,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.022196700003405567,
+        "optimization": 0.02596070000072359,
+        "separation": 0.0,
+        "decoding": 0.00047899999844958074,
+        "other": 0.0023183999983302783
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 829,
+          "rows": 1062,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.9765625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "directed-groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 132,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.05728109999836306,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.02480189999914728,
+        "optimization": 0.02882310000131838,
+        "separation": 0.0,
+        "decoding": 0.00046609999844804406,
+        "other": 0.0031899999994493555
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 961,
+          "rows": 1218,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.859375,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 15.0,
+      "seconds": 0.004256899999745656,
+      "columns": 623,
+      "rows": 723,
+      "seed": 42,
+      "case": "degree-hops",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 15.0,
+      "seconds": 0.003241000002162764,
+      "columns": 491,
+      "rows": 633,
+      "seed": 42,
+      "case": "degree-hops",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "degree-hops",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 17,
+      "total_cost": 17,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.0723881000012625,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.015057399999932386,
+        "optimization": 0.05498470000020461,
+        "separation": 0.0,
+        "decoding": 0.00041250000140280463,
+        "other": 0.0019334999997226987
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 491,
+          "rows": 633,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.1875,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "degree-hops",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 17,
+      "total_cost": 17,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.055828299999120645,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.016584500001044944,
+        "optimization": 0.03731340000013006,
+        "separation": 0.0,
+        "decoding": 0.0002749999985098839,
+        "other": 0.0016553999994357582
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 623,
+          "rows": 723,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.9609375,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 15.0,
+      "seconds": 0.004300600001442945,
+      "columns": 623,
+      "rows": 724,
+      "seed": 42,
+      "case": "terminal-leaves",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 15.0,
+      "seconds": 0.004207000001770211,
+      "columns": 491,
+      "rows": 634,
+      "seed": 42,
+      "case": "terminal-leaves",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "terminal-leaves",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 17,
+      "total_cost": 17,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.04148590000113472,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.0135030999990704,
+        "optimization": 0.026231200001348043,
+        "separation": 0.0,
+        "decoding": 0.0002853999976650812,
+        "other": 0.001466200003051199
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 491,
+          "rows": 634,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.06640625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "terminal-leaves",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 17,
+      "total_cost": 17,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.07305099999939557,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.015862800002651056,
+        "optimization": 0.05525169999964419,
+        "separation": 0.0,
+        "decoding": 0.0002918999998655636,
+        "other": 0.0016445999972347636
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 623,
+          "rows": 724,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.90625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 4.333333333333331,
+      "seconds": 0.005594999998720596,
+      "columns": 625,
+      "rows": 702,
+      "seed": 42,
+      "case": "prize-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -1.395390070921987,
+      "seconds": 0.004307899998821085,
+      "columns": 493,
+      "rows": 612,
+      "seed": 42,
+      "case": "prize-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "prize-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 27,
+      "total_cost": 27,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.29868699999860837,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014405300000362331,
+        "optimization": 0.28252120000252035,
+        "separation": 0.0,
+        "decoding": 0.00028199999724165536,
+        "other": 0.0014784999984840397
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 493,
+          "rows": 612,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 86.88671875,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "prize-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 27,
+      "total_cost": 27,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.19247100000211503,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.015736900000774767,
+        "optimization": 0.1748318999998446,
+        "separation": 0.0,
+        "decoding": 0.0002888000017264858,
+        "other": 0.0016133999997691717
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 625,
+          "rows": 702,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 86.84375,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 1.0,
+      "seconds": 0.006115500000305474,
+      "columns": 623,
+      "rows": 700,
+      "seed": 42,
+      "case": "node-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -5.895390070921987,
+      "seconds": 0.003947299999708775,
+      "columns": 491,
+      "rows": 610,
+      "seed": 42,
+      "case": "node-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "node-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 22,
+      "total_cost": 22,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.20086630000150762,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.013887100001738872,
+        "optimization": 0.18521180000243476,
+        "separation": 0.0,
+        "decoding": 0.0002851000026566908,
+        "other": 0.0014822999946773052
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 491,
+          "rows": 610,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 84.05078125,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "node-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 22,
+      "total_cost": 22,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.039208800000778865,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014963599998736754,
+        "optimization": 0.02236819999961881,
+        "separation": 0.0,
+        "decoding": 0.0002782000010483898,
+        "other": 0.0015988000013749115
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 623,
+          "rows": 700,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.22265625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Infeasible",
+      "bound": null,
+      "seconds": 0.013213099999120459,
+      "columns": 895,
+      "rows": 1020,
+      "seed": 42,
+      "case": "coverage-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 0.0,
+      "seconds": 0.01065770000059274,
+      "columns": 763,
+      "rows": 930,
+      "seed": 42,
+      "case": "coverage-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.039545100000395905,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.018675399998755893,
+        "optimization": 0.019891799998731585,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0009779000029084273
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 763,
+          "rows": 930,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.546875,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.04021719999946072,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.02031639999768231,
+        "optimization": 0.018957500000396976,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0009433000013814308
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 895,
+          "rows": 1020,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.1796875,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": -2.0,
+      "seconds": 0.00585750000027474,
+      "columns": 629,
+      "rows": 704,
+      "seed": 42,
+      "case": "coverage-feasible",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -2.0,
+      "seconds": 0.004811900002096081,
+      "columns": 497,
+      "rows": 614,
+      "seed": 42,
+      "case": "coverage-feasible",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.0996116999995138,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.0147977999986324,
+        "optimization": 0.08185240000238991,
+        "separation": 0.0,
+        "decoding": 0.00036919999547535554,
+        "other": 0.0025923000030161347
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 497,
+          "rows": 614,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 497,
+          "rows": 615,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 81.34765625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.07557920000181184,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.015836599999602186,
+        "optimization": 0.0564615999974194,
+        "separation": 0.0,
+        "decoding": 0.0005734000005759299,
+        "other": 0.0027076000042143278
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 629,
+          "rows": 704,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 629,
+          "rows": 705,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.75390625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 7.0,
+      "seconds": 0.0030116999987512827,
+      "columns": 623,
+      "rows": 698,
+      "seed": 42,
+      "case": "penalty-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 7.0,
+      "seconds": 0.0026627000006556045,
+      "columns": 491,
+      "rows": 608,
+      "seed": 42,
+      "case": "penalty-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "penalty-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 7,
+      "total_cost": 4,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.03433719999884488,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.013300999999046326,
+        "optimization": 0.019235599997045938,
+        "separation": 0.0,
+        "decoding": 0.0002521999995224178,
+        "other": 0.0015484000032301992
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 491,
+          "rows": 608,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.1640625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "penalty-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 7,
+      "total_cost": 4,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.0387799999989511,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.016383700003643753,
+        "optimization": 0.020413999998709187,
+        "separation": 0.0,
+        "decoding": 0.0002629000009619631,
+        "other": 0.001719399995636195
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 623,
+          "rows": 698,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.4375,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": -25.0,
+      "seconds": 0.0031050999969011173,
+      "columns": 357,
+      "rows": 408,
+      "seed": 42,
+      "case": "signed-rewards",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -29.712899543378995,
+      "seconds": 0.00280170000041835,
+      "columns": 225,
+      "rows": 318,
+      "seed": 42,
+      "case": "signed-rewards",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "signed-rewards",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 24,
+      "total_cost": 31,
+      "objective_sense": "max",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.11018540000077337,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.008322500001668232,
+        "optimization": 0.10026149999976042,
+        "separation": 0.0,
+        "decoding": 0.0003341999981785193,
+        "other": 0.0012672000011662021
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 225,
+          "rows": 318,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 81.703125,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "signed-rewards",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 24,
+      "total_cost": 25,
+      "objective_sense": "max",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.03242089999912423,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.011256000001594657,
+        "optimization": 0.019386899999517482,
+        "separation": 0.0,
+        "decoding": 0.000289100000372855,
+        "other": 0.001488899997639237
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 357,
+          "rows": 408,
+          "status": "Optimal",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 78.1640625,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 90.0,
+      "seconds": 0.04408039999907487,
+      "columns": 3815,
+      "rows": 4403,
+      "seed": 43,
+      "case": "mandatory-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 82.5,
+      "seconds": 0.0429535000002943,
+      "columns": 3537,
+      "rows": 4216,
+      "seed": 43,
+      "case": "mandatory-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "mandatory-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 90,
+      "total_cost": 90,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.096945399996912,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07925140000224928,
+        "optimization": 5.006425600000512,
+        "separation": 0.0,
+        "decoding": 0.00043559999903663993,
+        "other": 0.010832799995114328
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3537,
+          "rows": 4216,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 148.48828125,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "mandatory-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 90,
+      "total_cost": 90,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.2935213000018848,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.0770509999965725,
+        "optimization": 0.20963470000060624,
+        "separation": 0.0,
+        "decoding": 0.0002967000000353437,
+        "other": 0.006538900004670722
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3815,
+          "rows": 4403,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 94.28125,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 16.0,
+      "seconds": 0.011217299997952068,
+      "columns": 1304,
+      "rows": 1451,
+      "seed": 43,
+      "case": "optional-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 16.0,
+      "seconds": 0.009819099999731407,
+      "columns": 1026,
+      "rows": 1264,
+      "seed": 43,
+      "case": "optional-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "optional-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 16,
+      "total_cost": 16,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.06456899999830057,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.026319700002204627,
+        "optimization": 0.03513810000004014,
+        "separation": 0.0,
+        "decoding": 0.0002728000035858713,
+        "other": 0.002838399992469931
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 1026,
+          "rows": 1264,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.85546875,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "optional-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 16,
+      "total_cost": 16,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.07286419999945792,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.03013429999919026,
+        "optimization": 0.0391444999986561,
+        "separation": 0.0,
+        "decoding": 0.0002750999992713332,
+        "other": 0.0033103000023402274
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 1304,
+          "rows": 1451,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 81.1796875,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 16.5,
+      "seconds": 0.011327500000334112,
+      "columns": 908,
+      "rows": 1033,
+      "seed": 43,
+      "case": "groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 14.5,
+      "seconds": 0.0072223000024678186,
+      "columns": 774,
+      "rows": 942,
+      "seed": 43,
+      "case": "groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 18,
+      "total_cost": 18,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.37140809999982594,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.018991299999470357,
+        "optimization": 0.35035579999748734,
+        "separation": 0.0,
+        "decoding": 0.00028759999986505136,
+        "other": 0.0017734000030031893
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 774,
+          "rows": 942,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 91.515625,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 18,
+      "total_cost": 18,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.3099638000021514,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.02053649999652407,
+        "optimization": 0.28735369999776594,
+        "separation": 0.0,
+        "decoding": 0.0002812999991874676,
+        "other": 0.0017923000086739194
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 908,
+          "rows": 1033,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 91.2734375,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 18.0,
+      "seconds": 0.005086099998152349,
+      "columns": 634,
+      "rows": 711,
+      "seed": 43,
+      "case": "forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 18.0,
+      "seconds": 0.004161000000749482,
+      "columns": 500,
+      "rows": 620,
+      "seed": 43,
+      "case": "forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 18,
+      "total_cost": 18,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.042925199999444885,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.01387770000292221,
+        "optimization": 0.027299900000798516,
+        "separation": 0.0,
+        "decoding": 0.00026369999977760017,
+        "other": 0.0014838999959465582
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 500,
+          "rows": 620,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.08203125,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 18,
+      "total_cost": 18,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.06135790000189445,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014960600001359126,
+        "optimization": 0.0445032000025094,
+        "separation": 0.0,
+        "decoding": 0.00027159999808645807,
+        "other": 0.001622499999939464
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 634,
+          "rows": 711,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.421875,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 18.375,
+      "seconds": 0.010159800000110408,
+      "columns": 1002,
+      "rows": 1130,
+      "seed": 43,
+      "case": "groups-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 18.375,
+      "seconds": 0.009732599999551894,
+      "columns": 868,
+      "rows": 1039,
+      "seed": 43,
+      "case": "groups-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "groups-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 22,
+      "total_cost": 22,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.8709842999996908,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.020859999996901024,
+        "optimization": 0.8475184999988414,
+        "separation": 0.0,
+        "decoding": 0.000492299997858936,
+        "other": 0.0021135000060894527
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 868,
+          "rows": 1039,
+          "status": "Optimal",
+          "mip_nodes": 5
+        }
+      ],
+      "peak_rss_mb": 94.97265625,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "groups-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 22,
+      "total_cost": 22,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.7460688999999547,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.03366400000231806,
+        "optimization": 0.709833200002322,
+        "separation": 0.0,
+        "decoding": 0.00038889999996172264,
+        "other": 0.0021827999953529797
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 1002,
+          "rows": 1130,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 95.46484375,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 18.0,
+      "seconds": 0.019329999999172287,
+      "columns": 975,
+      "rows": 1234,
+      "seed": 43,
+      "case": "directed-groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 18.0,
+      "seconds": 0.010222300003078999,
+      "columns": 841,
+      "rows": 1076,
+      "seed": 43,
+      "case": "directed-groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "directed-groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 134,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 18,
+      "total_cost": 18,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.057909200000722194,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.024188600000343286,
+        "optimization": 0.0309503999997105,
+        "separation": 0.0,
+        "decoding": 0.000455999997939216,
+        "other": 0.0023142000027291942
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 841,
+          "rows": 1076,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.80859375,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "directed-groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 134,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 18,
+      "total_cost": 18,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.08347929999945336,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.030234500001824927,
+        "optimization": 0.05006439999851864,
+        "separation": 0.0,
+        "decoding": 0.0004712999980256427,
+        "other": 0.0027091000010841526
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 975,
+          "rows": 1234,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 83.4453125,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 15.0,
+      "seconds": 0.00577270000212593,
+      "columns": 632,
+      "rows": 732,
+      "seed": 43,
+      "case": "degree-hops",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 13.5,
+      "seconds": 0.004019500000140397,
+      "columns": 498,
+      "rows": 641,
+      "seed": 43,
+      "case": "degree-hops",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "degree-hops",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 15,
+      "total_cost": 15,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.07443309999871417,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014302600000519305,
+        "optimization": 0.05822860000262153,
+        "separation": 0.0,
+        "decoding": 0.00028649999876506627,
+        "other": 0.0016153999968082644
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 498,
+          "rows": 641,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.08203125,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "degree-hops",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 15,
+      "total_cost": 15,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.0488904999983788,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.017249799999262905,
+        "optimization": 0.02962190000107512,
+        "separation": 0.0,
+        "decoding": 0.0002868000010494143,
+        "other": 0.0017319999969913624
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 632,
+          "rows": 732,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.12890625,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 15.0,
+      "seconds": 0.006184800000482937,
+      "columns": 632,
+      "rows": 733,
+      "seed": 43,
+      "case": "terminal-leaves",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 13.5,
+      "seconds": 0.004111300000658957,
+      "columns": 498,
+      "rows": 642,
+      "seed": 43,
+      "case": "terminal-leaves",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "terminal-leaves",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 15,
+      "total_cost": 15,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.17152590000114287,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014411500003916444,
+        "optimization": 0.15529329999844776,
+        "separation": 0.0,
+        "decoding": 0.0002858000007108785,
+        "other": 0.001535299998067785
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 498,
+          "rows": 642,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 86.9375,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "terminal-leaves",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 15,
+      "total_cost": 15,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.07442549999905168,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.01682789999904344,
+        "optimization": 0.05561399999714922,
+        "separation": 0.0,
+        "decoding": 0.0002893999990192242,
+        "other": 0.0016942000038397964
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 632,
+          "rows": 733,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 81.0,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 2.1999999999999984,
+      "seconds": 0.0062873999995645136,
+      "columns": 634,
+      "rows": 711,
+      "seed": 43,
+      "case": "prize-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -2.936594202898552,
+      "seconds": 0.00514879999900586,
+      "columns": 500,
+      "rows": 620,
+      "seed": 43,
+      "case": "prize-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "prize-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "error",
+      "error": "RuntimeError: Feature composition objective disagrees with original selections.",
+      "total_seconds": 0.7662023000011686,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014851799998723436,
+        "optimization": 0.7493158999968728,
+        "separation": 0.0,
+        "decoding": 0.00029260000155773014,
+        "other": 0.0017420000040146988
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 500,
+          "rows": 620,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 87.1875,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "prize-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 24,
+      "total_cost": 24,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.11231019999831915,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.016291999996610684,
+        "optimization": 0.09394990000146208,
+        "separation": 0.0,
+        "decoding": 0.00028750000274158083,
+        "other": 0.0017807999975048006
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 634,
+          "rows": 711,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 81.5078125,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 0.0,
+      "seconds": 0.00737690000096336,
+      "columns": 632,
+      "rows": 709,
+      "seed": 43,
+      "case": "node-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -7.348769625603866,
+      "seconds": 0.006557500000781147,
+      "columns": 498,
+      "rows": 618,
+      "seed": 43,
+      "case": "node-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "node-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.26785849999942,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014435599998250837,
+        "optimization": 0.251433100002032,
+        "separation": 0.0,
+        "decoding": 0.00038070000300649554,
+        "other": 0.0016090999961306807
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 498,
+          "rows": 618,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 87.66796875,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "node-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.0423387000009825,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.016106300001411,
+        "optimization": 0.02427979999993113,
+        "separation": 0.0,
+        "decoding": 0.00028920000113430433,
+        "other": 0.0016633999985060655
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 632,
+          "rows": 709,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.09375,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": -1.0,
+      "seconds": 0.017411600001651095,
+      "columns": 908,
+      "rows": 1033,
+      "seed": 43,
+      "case": "coverage-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -1.75,
+      "seconds": 0.012574200001836289,
+      "columns": 774,
+      "rows": 942,
+      "seed": 43,
+      "case": "coverage-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 1,
+      "total_cost": 15,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.17350159999841708,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.019315300000016578,
+        "optimization": 0.15055880000363686,
+        "separation": 0.0,
+        "decoding": 0.00035379999826545827,
+        "other": 0.0032736999964981806
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 774,
+          "rows": 942,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 774,
+          "rows": 943,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 82.70703125,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 1,
+      "total_cost": 15,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.09409470000173314,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.02067729999907897,
+        "optimization": 0.06956029999855673,
+        "separation": 0.0,
+        "decoding": 0.0003875999973388389,
+        "other": 0.003469500006758608
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 908,
+          "rows": 1033,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 908,
+          "rows": 1034,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.84375,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": -2.0,
+      "seconds": 0.0037573000008706003,
+      "columns": 638,
+      "rows": 713,
+      "seed": 43,
+      "case": "coverage-feasible",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -2.0,
+      "seconds": 0.0030339000004460104,
+      "columns": 504,
+      "rows": 622,
+      "seed": 43,
+      "case": "coverage-feasible",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 9,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.0491920000022219,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.013620499998069135,
+        "optimization": 0.03262690000337898,
+        "separation": 0.0,
+        "decoding": 0.00038330000097630545,
+        "other": 0.002561299999797484
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 504,
+          "rows": 622,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 504,
+          "rows": 623,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.078125,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 9,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.06030059999829973,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.015077499996550614,
+        "optimization": 0.042264600000635255,
+        "separation": 0.0,
+        "decoding": 0.00034640000012586825,
+        "other": 0.0026121000009879936
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 638,
+          "rows": 713,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 638,
+          "rows": 714,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.859375,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 10.5,
+      "seconds": 0.005640600000333507,
+      "columns": 632,
+      "rows": 707,
+      "seed": 43,
+      "case": "penalty-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 9.75,
+      "seconds": 0.003551300000253832,
+      "columns": 498,
+      "rows": 616,
+      "seed": 43,
+      "case": "penalty-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "penalty-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 12,
+      "total_cost": 9,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.10014930000033928,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.015211299996735761,
+        "optimization": 0.08305139999720268,
+        "separation": 0.0,
+        "decoding": 0.0002780999966489617,
+        "other": 0.0016085000097518787
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 498,
+          "rows": 616,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 81.015625,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "penalty-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 12,
+      "total_cost": 9,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.12385740000172518,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.016564400000788737,
+        "optimization": 0.10521309999967343,
+        "separation": 0.0,
+        "decoding": 0.0002679999997781124,
+        "other": 0.0018119000014849007
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 632,
+          "rows": 707,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 82.921875,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": -21.62962962962963,
+      "seconds": 0.0034648000000743195,
+      "columns": 362,
+      "rows": 413,
+      "seed": 43,
+      "case": "signed-rewards",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -29.58928571428571,
+      "seconds": 0.0030427000019699335,
+      "columns": 228,
+      "rows": 322,
+      "seed": 43,
+      "case": "signed-rewards",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "signed-rewards",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 19,
+      "total_cost": 28,
+      "objective_sense": "max",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.5806406999981846,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.008869000001141103,
+        "optimization": 0.5700049000006402,
+        "separation": 0.0,
+        "decoding": 0.0002849000011337921,
+        "other": 0.0014818999952694867
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 228,
+          "rows": 322,
+          "status": "Optimal",
+          "mip_nodes": 17
+        }
+      ],
+      "peak_rss_mb": 89.26171875,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "signed-rewards",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 67,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 19,
+      "total_cost": 26,
+      "objective_sense": "max",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.36655270000119344,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.012191100002382882,
+        "optimization": 0.352547800001048,
+        "separation": 0.0,
+        "decoding": 0.00028620000011869706,
+        "other": 0.001527599997643847
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 362,
+          "rows": 413,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 88.08984375,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 85.00000000000001,
+      "seconds": 0.05794189999869559,
+      "columns": 3869,
+      "rows": 4457,
+      "seed": 44,
+      "case": "mandatory-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 75.5,
+      "seconds": 0.07954059999974561,
+      "columns": 3587,
+      "rows": 4268,
+      "seed": 44,
+      "case": "mandatory-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "mandatory-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 90,
+      "total_cost": 90,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.143522700000176,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08070750000115368,
+        "optimization": 5.0352864999986195,
+        "separation": 0.0,
+        "decoding": 0.0008885999995982274,
+        "other": 0.026640100000804523
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3587,
+          "rows": 4268,
+          "status": "Time limit reached",
+          "mip_nodes": 2
+        }
+      ],
+      "peak_rss_mb": 131.71875,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "mandatory-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 85,
+      "total_cost": 85,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.27720639999824925,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.09350289999929373,
+        "optimization": 0.17681810000067344,
+        "separation": 0.0,
+        "decoding": 0.00030390000029001385,
+        "other": 0.0065814999979920685
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3869,
+          "rows": 4457,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 94.8671875,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 13.000000000000002,
+      "seconds": 0.012320300000283169,
+      "columns": 1322,
+      "rows": 1469,
+      "seed": 44,
+      "case": "optional-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 12.000000000000002,
+      "seconds": 0.007281499998498475,
+      "columns": 1040,
+      "rows": 1280,
+      "seed": 44,
+      "case": "optional-costs",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "optional-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 13,
+      "total_cost": 13,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.12942370000018855,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.03281979999883333,
+        "optimization": 0.09314969999832101,
+        "separation": 0.0,
+        "decoding": 0.0002769999991869554,
+        "other": 0.003177200003847247
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 1040,
+          "rows": 1280,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 84.58984375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "optional-costs",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 13,
+      "total_cost": 13,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.08505229999718722,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.0352472000013222,
+        "optimization": 0.04525099999955273,
+        "separation": 0.0,
+        "decoding": 0.00039480000123148784,
+        "other": 0.004159299995080801
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 1322,
+          "rows": 1469,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 82.37109375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 19.833333333333336,
+      "seconds": 0.012325499999860767,
+      "columns": 882,
+      "rows": 1007,
+      "seed": 44,
+      "case": "groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 17.0,
+      "seconds": 0.0059225000004516914,
+      "columns": 752,
+      "rows": 918,
+      "seed": 44,
+      "case": "groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.2631234000000404,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.019255200004408835,
+        "optimization": 0.24179220000223722,
+        "separation": 0.0,
+        "decoding": 0.0002956000025733374,
+        "other": 0.0017803999908210244
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 752,
+          "rows": 918,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 90.69140625,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.0659443000004103,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.02183329999752459,
+        "optimization": 0.041744199999811826,
+        "separation": 0.0,
+        "decoding": 0.0002865999995265156,
+        "other": 0.002080200003547361
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 882,
+          "rows": 1007,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 81.12890625,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 16.5,
+      "seconds": 0.004826699998375261,
+      "columns": 616,
+      "rows": 693,
+      "seed": 44,
+      "case": "forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 15.5,
+      "seconds": 0.0045939000010548625,
+      "columns": 486,
+      "rows": 604,
+      "seed": 44,
+      "case": "forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 17,
+      "total_cost": 17,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.06014289999802713,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014218200001778314,
+        "optimization": 0.043817900001158705,
+        "separation": 0.0,
+        "decoding": 0.00043200000072829425,
+        "other": 0.0016747999943618197
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 486,
+          "rows": 604,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.25,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 17,
+      "total_cost": 17,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.043239700000412995,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.015490800000407035,
+        "optimization": 0.02558159999898635,
+        "separation": 0.0,
+        "decoding": 0.0002983999984280672,
+        "other": 0.0018689000025915448
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 616,
+          "rows": 693,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.60546875,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 17.5,
+      "seconds": 0.011283100000582635,
+      "columns": 976,
+      "rows": 1104,
+      "seed": 44,
+      "case": "groups-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 17.0,
+      "seconds": 0.007739299999229843,
+      "columns": 846,
+      "rows": 1015,
+      "seed": 44,
+      "case": "groups-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "groups-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 22,
+      "total_cost": 22,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.41024929999912274,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.021865999999135965,
+        "optimization": 0.3861447999988741,
+        "separation": 0.0,
+        "decoding": 0.0003895999980159104,
+        "other": 0.0018489000030967873
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 846,
+          "rows": 1015,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 96.640625,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "groups-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 22,
+      "total_cost": 22,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.5611816000018734,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.023175500002253102,
+        "optimization": 0.5355511000016122,
+        "separation": 0.0,
+        "decoding": 0.0003892999993695412,
+        "other": 0.0020656999986385927
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 976,
+          "rows": 1104,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 107.7734375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 21.0,
+      "seconds": 0.007248900001286529,
+      "columns": 947,
+      "rows": 1202,
+      "seed": 44,
+      "case": "directed-groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 21.0,
+      "seconds": 0.006960599999729311,
+      "columns": 817,
+      "rows": 1048,
+      "seed": 44,
+      "case": "directed-groups",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "directed-groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 130,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.05674699999872246,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.022091499999078223,
+        "optimization": 0.031797799998457776,
+        "separation": 0.0,
+        "decoding": 0.00046579999980167486,
+        "other": 0.0023919000013847835
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 817,
+          "rows": 1048,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.12109375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "directed-groups",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 130,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 21,
+      "total_cost": 21,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.0549769000026572,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.024384899999859044,
+        "optimization": 0.02765480000016396,
+        "separation": 0.0,
+        "decoding": 0.000472699997771997,
+        "other": 0.0024645000048622023
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 947,
+          "rows": 1202,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.5,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 9.0,
+      "seconds": 0.0033736000004864763,
+      "columns": 614,
+      "rows": 714,
+      "seed": 44,
+      "case": "degree-hops",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 9.0,
+      "seconds": 0.002942600000096718,
+      "columns": 484,
+      "rows": 625,
+      "seed": 44,
+      "case": "degree-hops",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "degree-hops",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 9,
+      "total_cost": 9,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.03565030000027036,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014136199999484234,
+        "optimization": 0.019709500000317348,
+        "separation": 0.0,
+        "decoding": 0.0002722999997786246,
+        "other": 0.0015323000006901566
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 484,
+          "rows": 625,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.07421875,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "degree-hops",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 9,
+      "total_cost": 9,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.03681940000024042,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.01513389999672654,
+        "optimization": 0.01987139999982901,
+        "separation": 0.0,
+        "decoding": 0.0002762000003713183,
+        "other": 0.0015379000033135526
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 614,
+          "rows": 714,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.57421875,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 9.0,
+      "seconds": 0.0035613000000012107,
+      "columns": 614,
+      "rows": 715,
+      "seed": 44,
+      "case": "terminal-leaves",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 9.0,
+      "seconds": 0.003833500002656365,
+      "columns": 484,
+      "rows": 626,
+      "seed": 44,
+      "case": "terminal-leaves",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "terminal-leaves",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 9,
+      "total_cost": 9,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.036469899998337496,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.013625299998238916,
+        "optimization": 0.020866800001385855,
+        "separation": 0.0,
+        "decoding": 0.0002860999993572477,
+        "other": 0.0016916999993554782
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 484,
+          "rows": 626,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.1015625,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "terminal-leaves",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 9,
+      "total_cost": 9,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.03875559999869438,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.01504219999696943,
+        "optimization": 0.021875099999306258,
+        "separation": 0.0,
+        "decoding": 0.00026729999808594584,
+        "other": 0.0015710000043327454
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 614,
+          "rows": 715,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.44140625,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 7.5,
+      "seconds": 0.005729699998482829,
+      "columns": 616,
+      "rows": 693,
+      "seed": 44,
+      "case": "prize-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -5.124999999999999,
+      "seconds": 0.004191199997876538,
+      "columns": 486,
+      "rows": 604,
+      "seed": 44,
+      "case": "prize-forest",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "prize-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 30,
+      "total_cost": 30,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.21125190000020666,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.013113100001646671,
+        "optimization": 0.19642259999818634,
+        "separation": 0.0,
+        "decoding": 0.00028480000037234277,
+        "other": 0.0014314000000013039
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 486,
+          "rows": 604,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 85.8359375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "prize-forest",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 30,
+      "total_cost": 30,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.04492540000137524,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.015184399999270681,
+        "optimization": 0.02787010000247392,
+        "separation": 0.0,
+        "decoding": 0.00030669999978272244,
+        "other": 0.001564199999847915
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 616,
+          "rows": 693,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.25,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 5.0,
+      "seconds": 0.004203899999993155,
+      "columns": 614,
+      "rows": 691,
+      "seed": 44,
+      "case": "node-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -11.298510340969107,
+      "seconds": 0.005619200001092395,
+      "columns": 484,
+      "rows": 602,
+      "seed": 44,
+      "case": "node-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "node-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 26,
+      "total_cost": 10,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.26673570000275504,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.012991499999770895,
+        "optimization": 0.25197680000201217,
+        "separation": 0.0,
+        "decoding": 0.0002716999988479074,
+        "other": 0.0014957000021240674
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 484,
+          "rows": 602,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 85.1796875,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "node-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 26,
+      "total_cost": 10,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.03959759999997914,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.015079800003150012,
+        "optimization": 0.02263920000041253,
+        "separation": 0.0,
+        "decoding": 0.0002620999985083472,
+        "other": 0.0016164999979082495
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 614,
+          "rows": 691,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.5234375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": -1.1617647058823528,
+      "seconds": 0.014818299998296425,
+      "columns": 882,
+      "rows": 1007,
+      "seed": 44,
+      "case": "coverage-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -1.278688524590164,
+      "seconds": 0.011256100002356106,
+      "columns": 752,
+      "rows": 918,
+      "seed": 44,
+      "case": "coverage-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 1,
+      "total_cost": 14,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.05784430000130669,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.018674499999178806,
+        "optimization": 0.03624090000084834,
+        "separation": 0.0,
+        "decoding": 0.000347400000464404,
+        "other": 0.00258150000081514
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 752,
+          "rows": 918,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 752,
+          "rows": 919,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.98828125,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 1,
+      "total_cost": 14,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.07366630000251462,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.020063200001459336,
+        "optimization": 0.05048220000026049,
+        "separation": 0.0,
+        "decoding": 0.00034500000401749276,
+        "other": 0.002775899996777298
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 882,
+          "rows": 1007,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 882,
+          "rows": 1008,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 78.84375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": -2.0,
+      "seconds": 0.006295800001680618,
+      "columns": 620,
+      "rows": 695,
+      "seed": 44,
+      "case": "coverage-feasible",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -2.0,
+      "seconds": 0.005851800000527874,
+      "columns": 490,
+      "rows": 606,
+      "seed": 44,
+      "case": "coverage-feasible",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 1,
+      "total_cost": 7,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.07798760000150651,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.012883800001873169,
+        "optimization": 0.06238639999719453,
+        "separation": 0.0,
+        "decoding": 0.0003338999995321501,
+        "other": 0.0023835000029066578
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 490,
+          "rows": 606,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 490,
+          "rows": 607,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.39453125,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 1,
+      "total_cost": 7,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.0620734000003722,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014799300002778182,
+        "optimization": 0.044325999999273336,
+        "separation": 0.0,
+        "decoding": 0.0003781000013987068,
+        "other": 0.002569999996921979
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 620,
+          "rows": 695,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 620,
+          "rows": 696,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.4375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 7.5,
+      "seconds": 0.0039098000015656,
+      "columns": 614,
+      "rows": 689,
+      "seed": 44,
+      "case": "penalty-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 7.5,
+      "seconds": 0.0031501999983447604,
+      "columns": 484,
+      "rows": 600,
+      "seed": 44,
+      "case": "penalty-budget",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "penalty-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 9,
+      "total_cost": 6,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.03908199999932549,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.013316800002939999,
+        "optimization": 0.02378809999936493,
+        "separation": 0.0,
+        "decoding": 0.0003809000008914154,
+        "other": 0.001596199996129144
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 484,
+          "rows": 600,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 79.24609375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "penalty-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 9,
+      "total_cost": 6,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.042324999998527346,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014549199997418327,
+        "optimization": 0.025915800000802847,
+        "separation": 0.0,
+        "decoding": 0.00027159999808645807,
+        "other": 0.0015884000022197142
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 614,
+          "rows": 689,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.05078125,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": -23.80443828016644,
+      "seconds": 0.005142699999851175,
+      "columns": 352,
+      "rows": 403,
+      "seed": 44,
+      "case": "signed-rewards",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": -29.19637924692349,
+      "seconds": 0.003044599998247577,
+      "columns": 222,
+      "rows": 314,
+      "seed": 44,
+      "case": "signed-rewards",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "signed-rewards",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 19,
+      "total_cost": 27,
+      "objective_sense": "max",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 0.7578378999969573,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.008763999998336658,
+        "optimization": 0.7473462999987532,
+        "separation": 0.0,
+        "decoding": 0.00028029999884893186,
+        "other": 0.0014473000010184478
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 222,
+          "rows": 314,
+          "status": "Optimal",
+          "mip_nodes": 16
+        }
+      ],
+      "peak_rss_mb": 87.66015625,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "signed-rewards",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 65,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 19,
+      "total_cost": 27,
+      "objective_sense": "max",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 1.037466999998287,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.010581299997284077,
+        "optimization": 1.0250876999998582,
+        "separation": 0.0,
+        "decoding": 0.00035180000122636557,
+        "other": 0.0014461999999184627
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 352,
+          "rows": 403,
+          "status": "Optimal",
+          "mip_nodes": 9
+        }
+      ],
+      "peak_rss_mb": 104.1875,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    }
+  ]
+}
