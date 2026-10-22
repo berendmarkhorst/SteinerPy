@@ -60,13 +60,35 @@ class Problem:
 
     def get_solution(self, *args, **kwargs):
         """Solve using the selected variant's solver options and solution type."""
-        return self._implementation.get_solution(*args, **kwargs)
+        solution = self._implementation.get_solution(*args, **kwargs)
+        if self._uses_classic_composition():
+            from ._feature_composition import FeatureComposition
+
+            # Preserve composed original-node metadata and validate the decoded
+            # selection, including isolated mandatory terminals in forests.
+            nodes = {n for group in self._spec.terminal_groups for n in group}
+            nodes.update(n for edge in solution.edges for n in edge)
+            strategy = FeatureComposition(self._spec)
+            result = strategy.decode(
+                solution.edges, [n for n in self._spec.graph if n in nodes]
+            )
+            return strategy.solution(result, solution.gap, solution.runtime)
+        return solution
+
+    def _uses_classic_composition(self):
+        from .objects import SteinerProblem
+
+        return self.variant is None and isinstance(self._implementation, SteinerProblem)
 
     def get_optimal_solutions(self, *args, **kwargs):
         """Enumerate optima, retaining the selected variant's restrictions."""
-        if self.variant in {"group", "directed_group"} or (
-            self._spec.budget is not None
-            and self.variant in {"steiner", "directed", "hop_constrained"}
+        if (
+            self._uses_classic_composition()
+            or self.variant in {"group", "directed_group"}
+            or (
+                self._spec.budget is not None
+                and self.variant in {"steiner", "directed", "hop_constrained"}
+            )
         ):
             from ._feature_composition import FeatureComposition
 

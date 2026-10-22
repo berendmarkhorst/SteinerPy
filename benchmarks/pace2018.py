@@ -95,6 +95,25 @@ def validate_solution(graph, terminals, edges, objective, gap, lower, upper):
     )
 
 
+def composition_problem(graph, groups):
+    """Force the measured formulation independently of public dispatch rules."""
+    from steinerpy import Problem
+    from steinerpy._feature_composition import FeatureComposition
+    from steinerpy._problem_spec import normalize_problem
+    from steinerpy._problem_validation import validate_problem
+
+    spec = normalize_problem(
+        graph,
+        None,
+        groups,
+        None,
+        dict(node_costs={}, preprocess=True),
+        Problem.variants,
+    )
+    validate_problem(spec, None)
+    return FeatureComposition(spec)
+
+
 def worker(request_path):
     """One process, one instance, at most one Gurobi environment."""
     request = json.loads(Path(request_path).read_text())
@@ -115,7 +134,7 @@ def worker(request_path):
         logging.disable(logging.CRITICAL)
         random.seed(0)
         from benchmarks.stp_parser import read_stp
-        from steinerpy import Problem, SteinerProblem
+        from steinerpy import SteinerProblem
         from steinerpy import objects
 
         def timed_builder(original, uses_gurobi):
@@ -152,7 +171,7 @@ def worker(request_path):
         prep = time.monotonic()
         config = request["config"]
         if config.startswith("composition-"):
-            problem = Problem(graph, terminals=groups, node_costs={}, preprocess=True)
+            problem = composition_problem(graph, groups)
         else:
             # Default classic solver, with one model per process. Decomposition and
             # DA fallback can create additional environments and are not used here.
