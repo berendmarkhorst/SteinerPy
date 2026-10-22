@@ -780,7 +780,7 @@ class BaseSteinerProblem:
         # already-anticipated infeasibility error.
         if self.budget is None and self.graph.number_of_edges() == 0:
             raise RuntimeError(
-                "no Steiner tree connects the terminal groups (graph reduction "
+                "infeasible: no Steiner tree connects the terminal groups (graph reduction "
                 "left an empty graph with unconnected terminals remaining)"
             )
 

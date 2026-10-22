@@ -21,8 +21,9 @@ class Problem:
     them optional; ``penalty_budget`` limits missed requirements. Without rewards
     or penalties, an edge budget maximizes coverage, then minimizes cost.
     ``partial_terminals`` limits listed terminals/group members to degree one.
-    Composed ``preprocess=True`` removes only edges forbidden by resource bounds,
-    preserving all optima. Enumeration returns distinct inclusion-minimal original
+    Composed ``preprocess=True`` uses classic reductions for compatible single
+    trees; other combinations remove only edges forbidden by resource bounds.
+    Enumeration preserves ties and returns distinct inclusion-minimal original
     node/edge selections; its time limit applies per solve, as in the legacy API.
 
     Existing implementations serve as composed strategies, retaining their
@@ -67,6 +68,8 @@ class Problem:
     def _classic_composed_solution(
         self, time_limit=300, log_file="", solver="highs", threads=None, exact=True
     ):
+        import math
+
         from ._feature_composition import FeatureComposition
 
         if not exact:
@@ -88,7 +91,12 @@ class Problem:
         result = strategy.decode(
             solution.edges, [n for n in self._spec.graph if n in nodes]
         )
-        return strategy.solution(result, solution.gap, solution.runtime)
+        gap = solution.gap
+        if math.isfinite(gap):
+            # Mandatory-node costs shift both bounds equally; retain the
+            # classic result's absolute bound difference in the full objective.
+            gap *= max(1.0, abs(solution.objective)) / max(1.0, abs(result[2]))
+        return strategy.solution(result, gap, solution.runtime)
 
     def _uses_classic_composition(self):
         from .objects import SteinerProblem
