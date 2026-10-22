@@ -31,7 +31,9 @@ def _classic_cost_only(spec):
     return (
         spec.requested_variant in {None, "steiner"}
         and not spec.graph.is_directed()
-        and bool(spec.terminal_groups)
+        # The local repeated comparison regressed on forests; keep their
+        # existing formulation until a measured selection rule supports them.
+        and len(spec.terminal_groups) == 1
         and not spec.groups
         and not any(spec.node_costs.values())
         and not spec.partial_terminals

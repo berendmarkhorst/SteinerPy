@@ -24,7 +24,8 @@ def test_inactive_node_costs_use_classic_and_preserve_composed_results(
         weight="cost",
         preprocess=preprocess,
     )
-    assert type(problem.implementation) is SteinerProblem
+    expected_type = SteinerProblem if terminals == [0, 2] else FeatureComposition
+    assert type(problem.implementation) is expected_type
     actual = problem.get_solution()
     expected = FeatureComposition(problem._spec).get_solution()
     assert type(actual) is type(expected) is NodeWeightedSolution
