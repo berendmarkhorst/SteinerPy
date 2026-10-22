@@ -1,0 +1,692 @@
+{
+  "commit": "eda114dd76b8c727b7ebdbcc97e1626d3a3328b3",
+  "platform": "Windows-11-10.0.26100-SP0",
+  "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+  "threads": 1,
+  "seed": 42,
+  "solver": "highs",
+  "time_limit": 5,
+  "timing_scope": "construction (including preprocessing) + solve (including model build)",
+  "rows": [
+    {
+      "case": "plain-tree",
+      "objective": 15.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.007979699999850709,
+      "solve_seconds": 2.6499999876250513e-05,
+      "total_seconds": 0.00800619999972696,
+      "peak_rss_mb": 70.203125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 0
+    },
+    {
+      "case": "plain-forest",
+      "objective": 9.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.008473999999296211,
+      "solve_seconds": 0.029351900000619935,
+      "total_seconds": 0.037825899999916146,
+      "peak_rss_mb": 73.8828125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 0
+    },
+    {
+      "case": "zero-tree",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.00850910000008298,
+      "solve_seconds": 0.00031859999944572337,
+      "total_seconds": 0.008827699999528704,
+      "peak_rss_mb": 70.359375,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 0
+    },
+    {
+      "case": "zero-forest",
+      "objective": 9,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.009615300000405114,
+      "solve_seconds": 0.03826539999954548,
+      "total_seconds": 0.04788069999995059,
+      "peak_rss_mb": 73.78125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 0
+    },
+    {
+      "case": "zero-unreduced",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.0006450000000768341,
+      "solve_seconds": 0.003131800000119256,
+      "total_seconds": 0.00377680000019609,
+      "peak_rss_mb": 70.15234375,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 0
+    },
+    {
+      "case": "paid-degree-hop",
+      "objective": 15,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.0003418000005694921,
+      "solve_seconds": 0.02676530000007915,
+      "total_seconds": 0.027107100000648643,
+      "peak_rss_mb": 74.01171875,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 0
+    },
+    {
+      "case": "groups-budget",
+      "objective": 2,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.00037089999932504725,
+      "solve_seconds": 0.04956320000019332,
+      "total_seconds": 0.049934099999518367,
+      "peak_rss_mb": 73.65625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 0
+    },
+    {
+      "case": "reward-forest",
+      "objective": 9,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.00038550000044779154,
+      "solve_seconds": 0.01953640000010637,
+      "total_seconds": 0.01992190000055416,
+      "peak_rss_mb": 73.17578125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 0
+    },
+    {
+      "case": "plain-tree",
+      "objective": 15.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.00918309999997291,
+      "solve_seconds": 3.259999994043028e-05,
+      "total_seconds": 0.00921569999991334,
+      "peak_rss_mb": 70.33984375,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 1
+    },
+    {
+      "case": "plain-forest",
+      "objective": 9.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.012073099999724946,
+      "solve_seconds": 0.04270200000064506,
+      "total_seconds": 0.05477510000037,
+      "peak_rss_mb": 73.875,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 1
+    },
+    {
+      "case": "zero-tree",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.016551800000343064,
+      "solve_seconds": 0.0005447000003186986,
+      "total_seconds": 0.017096500000661763,
+      "peak_rss_mb": 70.546875,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 1
+    },
+    {
+      "case": "zero-forest",
+      "objective": 9,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.007998400000360562,
+      "solve_seconds": 0.03765190000012808,
+      "total_seconds": 0.04565030000048864,
+      "peak_rss_mb": 74.0546875,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 1
+    },
+    {
+      "case": "zero-unreduced",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.00035480000042298343,
+      "solve_seconds": 0.0015118000001166365,
+      "total_seconds": 0.00186660000053962,
+      "peak_rss_mb": 70.0,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 1
+    },
+    {
+      "case": "paid-degree-hop",
+      "objective": 15,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.00040300000000570435,
+      "solve_seconds": 0.029501199999685923,
+      "total_seconds": 0.029904199999691627,
+      "peak_rss_mb": 73.890625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 1
+    },
+    {
+      "case": "groups-budget",
+      "objective": 2,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.0003256999998484389,
+      "solve_seconds": 0.033527000000503904,
+      "total_seconds": 0.03385270000035234,
+      "peak_rss_mb": 73.68359375,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 1
+    },
+    {
+      "case": "reward-forest",
+      "objective": 9,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.0004760000001624576,
+      "solve_seconds": 0.016743899999710266,
+      "total_seconds": 0.017219899999872723,
+      "peak_rss_mb": 73.0859375,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 1
+    },
+    {
+      "case": "plain-tree",
+      "objective": 15.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.008520999999745982,
+      "solve_seconds": 2.9800000447721686e-05,
+      "total_seconds": 0.008550800000193703,
+      "peak_rss_mb": 70.37890625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 2
+    },
+    {
+      "case": "plain-forest",
+      "objective": 9.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.008372700000109035,
+      "solve_seconds": 0.034989499999937834,
+      "total_seconds": 0.04336220000004687,
+      "peak_rss_mb": 74.08203125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 2
+    },
+    {
+      "case": "zero-tree",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.011755900000025576,
+      "solve_seconds": 0.00033350000012433156,
+      "total_seconds": 0.012089400000149908,
+      "peak_rss_mb": 70.3515625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 2
+    },
+    {
+      "case": "zero-forest",
+      "objective": 9,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.008745699999963108,
+      "solve_seconds": 0.03457150000031106,
+      "total_seconds": 0.04331720000027417,
+      "peak_rss_mb": 74.046875,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 2
+    },
+    {
+      "case": "zero-unreduced",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.0005512000007001916,
+      "solve_seconds": 0.0025379999997312552,
+      "total_seconds": 0.003089200000431447,
+      "peak_rss_mb": 70.20703125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 2
+    },
+    {
+      "case": "paid-degree-hop",
+      "objective": 15,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.0003112999993390986,
+      "solve_seconds": 0.024600800000371237,
+      "total_seconds": 0.024912099999710335,
+      "peak_rss_mb": 74.1796875,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 2
+    },
+    {
+      "case": "groups-budget",
+      "objective": 2,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.00034299999970244244,
+      "solve_seconds": 0.03468669999983831,
+      "total_seconds": 0.03502969999954075,
+      "peak_rss_mb": 73.91796875,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 2
+    },
+    {
+      "case": "reward-forest",
+      "objective": 9,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.0003894000001309905,
+      "solve_seconds": 0.01699209999969753,
+      "total_seconds": 0.01738149999982852,
+      "peak_rss_mb": 72.890625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 2
+    },
+    {
+      "case": "plain-tree",
+      "objective": 15.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.01523289999931876,
+      "solve_seconds": 3.310000010969816e-05,
+      "total_seconds": 0.015265999999428459,
+      "peak_rss_mb": 70.703125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 3
+    },
+    {
+      "case": "plain-forest",
+      "objective": 9.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.007805999999618507,
+      "solve_seconds": 0.032554399999753514,
+      "total_seconds": 0.04036039999937202,
+      "peak_rss_mb": 74.12890625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 3
+    },
+    {
+      "case": "zero-tree",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.008670100000017555,
+      "solve_seconds": 0.0003202999996574363,
+      "total_seconds": 0.008990399999674992,
+      "peak_rss_mb": 70.19140625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 3
+    },
+    {
+      "case": "zero-forest",
+      "objective": 9,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.008213600000090082,
+      "solve_seconds": 0.03165999999964697,
+      "total_seconds": 0.03987359999973705,
+      "peak_rss_mb": 73.92578125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 3
+    },
+    {
+      "case": "zero-unreduced",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.00033820000044215703,
+      "solve_seconds": 0.001475899999604735,
+      "total_seconds": 0.001814100000046892,
+      "peak_rss_mb": 70.08203125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 3
+    },
+    {
+      "case": "paid-degree-hop",
+      "objective": 15,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.00042239999947923934,
+      "solve_seconds": 0.02780720000009751,
+      "total_seconds": 0.02822959999957675,
+      "peak_rss_mb": 74.09765625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 3
+    },
+    {
+      "case": "groups-budget",
+      "objective": 2,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.00037599999996018596,
+      "solve_seconds": 0.03289980000045034,
+      "total_seconds": 0.03327580000041053,
+      "peak_rss_mb": 73.87109375,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 3
+    },
+    {
+      "case": "reward-forest",
+      "objective": 9,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.0003288000007160008,
+      "solve_seconds": 0.017077499999686552,
+      "total_seconds": 0.017406300000402553,
+      "peak_rss_mb": 73.09375,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 3
+    },
+    {
+      "case": "plain-tree",
+      "objective": 15.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.008435800000370364,
+      "solve_seconds": 3.0199999855540227e-05,
+      "total_seconds": 0.008466000000225904,
+      "peak_rss_mb": 70.53515625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 4
+    },
+    {
+      "case": "plain-forest",
+      "objective": 9.0,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.00796260000061011,
+      "solve_seconds": 0.03249539999978879,
+      "total_seconds": 0.0404580000003989,
+      "peak_rss_mb": 73.953125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 4
+    },
+    {
+      "case": "zero-tree",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.00825170000007347,
+      "solve_seconds": 0.0003090999998676125,
+      "total_seconds": 0.008560799999941082,
+      "peak_rss_mb": 70.484375,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 4
+    },
+    {
+      "case": "zero-forest",
+      "objective": 9,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.008195899999918765,
+      "solve_seconds": 0.03280940000058763,
+      "total_seconds": 0.041005300000506395,
+      "peak_rss_mb": 74.0,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 4
+    },
+    {
+      "case": "zero-unreduced",
+      "objective": 15,
+      "gap": 0.0,
+      "implementation": "SteinerProblem",
+      "construction_seconds": 0.00037799999972776277,
+      "solve_seconds": 0.002040500000475731,
+      "total_seconds": 0.002418500000203494,
+      "peak_rss_mb": 70.25390625,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 4
+    },
+    {
+      "case": "paid-degree-hop",
+      "objective": 15,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.0003913000000466127,
+      "solve_seconds": 0.027527500000360305,
+      "total_seconds": 0.027918800000406918,
+      "peak_rss_mb": 74.2734375,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 4
+    },
+    {
+      "case": "groups-budget",
+      "objective": 2,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.00034979999963979935,
+      "solve_seconds": 0.033539099999870814,
+      "total_seconds": 0.03388889999951061,
+      "peak_rss_mb": 73.98828125,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 4
+    },
+    {
+      "case": "reward-forest",
+      "objective": 9,
+      "gap": 0,
+      "implementation": "FeatureComposition",
+      "construction_seconds": 0.0003723999998328509,
+      "solve_seconds": 0.018267500000547443,
+      "total_seconds": 0.018639900000380294,
+      "peak_rss_mb": 73.3671875,
+      "python": "3.12.15",
+      "packages": {
+        "networkx": "3.6.1",
+        "highspy": "1.12.0",
+        "scipy": "1.18.0"
+      },
+      "repeat": 4
+    }
+  ]
+}

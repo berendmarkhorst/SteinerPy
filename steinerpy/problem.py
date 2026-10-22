@@ -60,13 +60,50 @@ class Problem:
 
     def get_solution(self, *args, **kwargs):
         """Solve using the selected variant's solver options and solution type."""
+        if self._uses_classic_composition():
+            return self._classic_composed_solution(*args, **kwargs)
         return self._implementation.get_solution(*args, **kwargs)
+
+    def _classic_composed_solution(
+        self, time_limit=300, log_file="", solver="highs", threads=None, exact=True
+    ):
+        from ._feature_composition import FeatureComposition
+
+        if not exact:
+            raise NotImplementedError(
+                "Feature composition does not support heuristic-only solving."
+            )
+        # Composition's fourth positional argument is threads; the classic
+        # signature uses that position for dual_ascent. Forward by name.
+        solution = self._implementation.get_solution(
+            time_limit=time_limit,
+            log_file=log_file,
+            solver=solver,
+            threads=threads,
+            exact=exact,
+        )
+        nodes = {n for group in self._spec.terminal_groups for n in group}
+        nodes.update(n for edge in solution.edges for n in edge)
+        strategy = FeatureComposition(self._spec)
+        result = strategy.decode(
+            solution.edges, [n for n in self._spec.graph if n in nodes]
+        )
+        return strategy.solution(result, solution.gap, solution.runtime)
+
+    def _uses_classic_composition(self):
+        from .objects import SteinerProblem
+
+        return self.variant is None and isinstance(self._implementation, SteinerProblem)
 
     def get_optimal_solutions(self, *args, **kwargs):
         """Enumerate optima, retaining the selected variant's restrictions."""
-        if self.variant in {"group", "directed_group"} or (
-            self._spec.budget is not None
-            and self.variant in {"steiner", "directed", "hop_constrained"}
+        if (
+            self._uses_classic_composition()
+            or self.variant in {"group", "directed_group"}
+            or (
+                self._spec.budget is not None
+                and self.variant in {"steiner", "directed", "hop_constrained"}
+            )
         ):
             from ._feature_composition import FeatureComposition
 

@@ -200,6 +200,8 @@ def test_incomplete_solve_phases_keep_valid_incumbents(
     ],
 )
 def test_decoder_rejects_invalid_original_selection(edges, nodes, match):
+    from steinerpy._feature_composition import FeatureComposition
+
     p = Problem(nx.path_graph(4), terminals=[[0, 1], [1]], node_costs={})
     with pytest.raises(RuntimeError, match=match):
-        p.implementation.decode(edges, nodes)
+        FeatureComposition(p._spec).decode(edges, nodes)

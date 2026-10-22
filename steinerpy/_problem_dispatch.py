@@ -26,6 +26,34 @@ _IMPLEMENTATIONS = {
 VARIANTS = tuple(_IMPLEMENTATIONS)
 
 
+def _classic_cost_only(spec):
+    """Only inactive features may be removed from a composed cost problem."""
+    return (
+        spec.requested_variant in {None, "steiner"}
+        and not spec.graph.is_directed()
+        # The local repeated comparison regressed on forests; keep their
+        # existing formulation until a measured selection rule supports them.
+        and len(spec.terminal_groups) == 1
+        and not spec.groups
+        and not any(spec.node_costs.values())
+        and not spec.partial_terminals
+        and all(
+            getattr(spec, name) is None
+            for name in (
+                "root",
+                "node_prizes",
+                "node_weights",
+                "budget",
+                "node_budget",
+                "penalty_cost",
+                "penalty_budget",
+                "max_degree",
+                "hop_limit",
+            )
+        )
+    )
+
+
 def _select_variant(spec):
     """Resolve supported features without changing the normalized specification."""
     if spec.requested_variant is not None:
@@ -158,6 +186,20 @@ def build_problem(spec):
             ),
             partial_terminals=tuple(spec.partial_terminals or ()),
         )
+        if _classic_cost_only(spec):
+            # Composition defaults to no reductions. Enumeration still uses the
+            # original specification so reductions cannot erase tied optima.
+            return (
+                spec,
+                None,
+                objects.SteinerProblem(
+                    spec.graph,
+                    [list(group) for group in spec.terminal_groups],
+                    weight=spec.weight,
+                    preprocess=spec.options.get("preprocess", False),
+                    enumeration_safe=False,
+                ),
+            )
         strategy = (
             FeatureComposition
             if feature_mode or len(spec.terminal_groups) > 1
