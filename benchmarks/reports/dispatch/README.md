@@ -79,7 +79,8 @@ The harness checks matching objective/gap pairs and bounds each worker at
 The compatibility regressions cover all-zero and absent costs, forests,
 non-neutral features, validation order, solver/dependency forwarding, original
 graph snapshots, isolated terminals and tied-optimum enumeration. The two
-follow-up PRs together pass 3,700 local tests (29 skipped).
+follow-up PRs together pass 3,702 local tests (29 skipped), including positional
+solver-argument compatibility.
 
 The PACE composition benchmark now constructs its generic strategy explicitly,
 so changing public dispatch cannot silently turn that comparison into another
