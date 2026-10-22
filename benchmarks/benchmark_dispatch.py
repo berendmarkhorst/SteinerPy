@@ -1,7 +1,7 @@
 """Bounded before/after dispatch comparison; each measurement is a fresh process.
 
-Run this same script with --source-root pointing at each checkout. Compare
-matching case objectives and gaps before timings. An engineering regression
+Use --compare-root to alternate old/new checkouts within each case and repeat.
+Compare matching case objectives and gaps before timings. An engineering regression
 threshold for unchanged paths is +10% or +2 ms in median construction+solve time,
 whichever is larger. This small sample does not establish general performance.
 """
@@ -121,6 +121,9 @@ def worker(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", required=True)
+    parser.add_argument(
+        "--compare-root", help="baseline checkout to interleave with source-root"
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--case", choices=CASES)
@@ -140,37 +143,51 @@ def main():
         STEINERPY_DW_MAX_TERMINALS="10",
         STEINERPY_DECOMPOSE="0",
     )
+    sources = {"candidate": args.source_root}
+    if args.compare_root:
+        sources["baseline"] = args.compare_root
+    commits = {
+        label: subprocess.check_output(
+            ["git", "-C", root, "rev-parse", "HEAD"], text=True
+        ).strip()
+        for label, root in sources.items()
+    }
     rows = []
     for repeat in range(args.repeats):
         for case in CASES:
-            command = [
-                sys.executable,
-                str(Path(__file__).resolve()),
-                "--source-root",
-                args.source_root,
-                "--case",
-                case,
-            ]
-            result = subprocess.run(
-                command,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
-            if result.returncode:
-                raise RuntimeError(case + ": " + result.stderr)
-            rows.append(dict(json.loads(result.stdout), repeat=repeat))
+            order = list(sources)
+            if repeat % 2:
+                order.reverse()
+            pair = []
+            for label in order:
+                command = [
+                    sys.executable,
+                    str(Path(__file__).resolve()),
+                    "--source-root",
+                    sources[label],
+                    "--case",
+                    case,
+                ]
+                result = subprocess.run(
+                    command,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                if result.returncode:
+                    raise RuntimeError(case + ": " + result.stderr)
+                row = dict(json.loads(result.stdout), repeat=repeat, label=label)
+                pair.append(row)
+                rows.append(row)
+            assert len({(r["objective"], r["gap"]) for r in pair}) == 1, case
         print("Completed repeat {}/{}".format(repeat + 1, args.repeats), flush=True)
-    commit = subprocess.check_output(
-        ["git", "-C", args.source_root, "rev-parse", "HEAD"], text=True
-    ).strip()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(
             dict(
-                commit=commit,
+                commits=commits,
                 platform=platform.platform(),
                 cpu=platform.processor(),
                 threads=1,
