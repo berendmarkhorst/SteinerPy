@@ -24,6 +24,8 @@ class SelectionModel:
         self.spec = spec
         self.solver = solver.lower()
         self.env = None
+        self._connectivity_roots = None
+        self._fallback = None
         if self.solver == "highs":
             self.model = mm.make_model(time_limit, logfile, threads)
         elif self.solver == "gurobi":
@@ -110,6 +112,26 @@ class SelectionModel:
         for r, active in roots.items():
             self.add(supplies[r] <= size * active)
         self.flow(supplies, self.nodes, capacity=size)
+        self._connectivity_roots = roots
+
+    def strengthen_connectivity(self):
+        # A reachable selection contains a forest rooted at the active roots.
+        # Its parent arcs are witnesses, not restrictions on the selected edges.
+        roots = self._connectivity_roots
+        if roots is None:
+            return
+        self._connectivity_roots = None
+        parents = {a: self.variable() for a in self.arcs}
+        for (u, v), edge in self.edges.items():
+            used = parents[u, v]
+            if not self.spec.graph.is_directed():
+                used = used + parents[v, u]
+            self.add(used <= edge)
+        for n, selected in self.nodes.items():
+            self.add(
+                self.sum(parents[a] for a in self.incoming.get(n, ()))
+                == selected - roots.get(n, 0)
+            )
 
     def choices(self, groups, roots, optional):
         coverage = []
@@ -129,6 +151,33 @@ class SelectionModel:
         return coverage
 
     def solve(self, objective, deadline):
+        self._fallback = None
+        # Extra rows help hard models but regress some easy ones. Only strengthen
+        # an unfinished solve with enough time left to use the stronger model.
+        probe = self._connectivity_roots is not None and deadline - perf_counter() > 2
+        outcome = self._optimize(
+            objective, min(deadline, perf_counter() + 1) if probe else deadline
+        )
+        if not probe or outcome[0] != "incomplete" or perf_counter() >= deadline:
+            return outcome
+        fallback = None
+        if outcome[1]:
+            values = (
+                self.model.getSolution().col_value
+                if self.solver == "highs"
+                else self.model.getAttr("X", self.model.getVars())
+            )
+            fallback = (values, self.objective_value())
+        self.strengthen_connectivity()
+        outcome = self._optimize(objective, deadline)
+        if fallback is not None and (
+            not outcome[1] or self.objective_value() > fallback[1] + 1e-7
+        ):
+            self._fallback = fallback
+            return "incomplete", True
+        return outcome
+
+    def _optimize(self, objective, deadline):
         remaining = max(0, deadline - perf_counter())
         if self.solver == "highs":
             self.model.setOptionValue("time_limit", remaining)
@@ -142,6 +191,8 @@ class SelectionModel:
         return mm._gurobi_outcome(self.model, GRB)
 
     def value(self, variable):
+        if self._fallback is not None:
+            return self._fallback[0][variable.index]
         return (
             self.model.variableValue(variable) if self.solver == "highs" else variable.X
         )
@@ -153,6 +204,8 @@ class SelectionModel:
         )
 
     def objective_value(self):
+        if self._fallback is not None:
+            return self._fallback[1]
         return (
             self.model.getObjectiveValue()
             if self.solver == "highs"
