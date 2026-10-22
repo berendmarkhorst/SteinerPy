@@ -80,6 +80,16 @@ def test_incompatible_cut_formulation_is_rejected():
         worker("forest", "cuts", 1)
 
 
+def test_resource_tree_uses_the_general_model_through_public_dispatch():
+    from benchmarks.profile_composition import make_case
+    from steinerpy import Problem
+    from steinerpy._feature_composition import FeatureComposition
+
+    graph, options = make_case("resource-tree")
+    assert len(graph) == 48 and len(options["terminals"]) == 12
+    assert isinstance(Problem(graph, **options).implementation, FeatureComposition)
+
+
 def test_proved_infeasibility_is_distinguished_from_a_broken_run(monkeypatch):
     from steinerpy._feature_composition import FeatureComposition
     from steinerpy._selection_model import NoIncumbent

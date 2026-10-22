@@ -38,6 +38,7 @@ CASES = (
     "coverage-feasible",
     "penalty-budget",
     "signed-rewards",
+    "resource-tree",
 )
 CUT_CASES = {
     "mandatory-costs",
@@ -60,7 +61,7 @@ PHASES = (
 def make_case(name, seed=42):
     import networkx as nx
 
-    size = 48 if name in {"mandatory-costs", "optional-costs"} else 24
+    size = 48 if name in {"mandatory-costs", "optional-costs", "resource-tree"} else 24
     graph = nx.gnm_random_graph(size, 2 * size, seed=seed)
     graph.add_edges_from(nx.cycle_graph(size).edges)
     rng = random.Random(seed)
@@ -69,9 +70,13 @@ def make_case(name, seed=42):
         terminals=[0, size // 3, 2 * size // 3],
         node_costs={n: 2 + n % 3 for n in graph if n % 4 == 3},
     )
-    if name == "mandatory-costs":
+    if name in {"mandatory-costs", "resource-tree"}:
         options.update(terminals=list(range(0, size, 4)))
         options["node_costs"] = {n: 2 + n % 5 for n in options["terminals"]}
+    if name == "resource-tree":
+        options.update(
+            node_budget=sum(options["node_costs"].values()), max_degree=3, hop_limit=24
+        )
     if name in {"groups", "groups-forest", "directed-groups"}:
         options.update(groups=[[5, 6], [18, 19]])
     if "forest" in name:
