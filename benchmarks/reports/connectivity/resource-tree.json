@@ -1,0 +1,931 @@
+{
+  "commits": {
+    "baseline": "9c980eca523c21101a5dd624901426a98d3cde56",
+    "candidate": "f0de5606c06ccf0855241e188204dd256e20e3d6"
+  },
+  "dirty": {
+    "baseline": false,
+    "candidate": true
+  },
+  "platform": "Windows-11-10.0.26100-SP0",
+  "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+  "python": "3.12.15",
+  "packages": {
+    "networkx": "3.6.1",
+    "highspy": "1.12.0",
+    "scipy": "1.18.0"
+  },
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "repeats": 3,
+  "always_strengthen": false,
+  "time_limit": 5,
+  "threads": 1,
+  "solver": "highs",
+  "worker_timeout": 30,
+  "rows": [
+    {
+      "status": "Optimal",
+      "bound": 96.0,
+      "report_sign": 1,
+      "report_offset": 0,
+      "seconds": 0.08104000000093947,
+      "columns": 3842,
+      "rows": 4480,
+      "seed": 42,
+      "case": "resource-tree",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 80.0,
+      "report_sign": 1,
+      "report_offset": 0,
+      "seconds": 0.09681360000104178,
+      "columns": 3562,
+      "rows": 4292,
+      "seed": 42,
+      "case": "resource-tree",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 97,
+      "total_cost": 97,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.133578999997553,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07563429999936488,
+        "optimization": 5.040634400000272,
+        "separation": 0.0,
+        "decoding": 0.00079100000220933,
+        "other": 0.016519299995707115
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3562,
+          "rows": 4292,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 158.3125,
+      "seed": 42,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 96,
+      "total_cost": 96,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 1.2640457000015886,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08123890000206302,
+        "optimization": 1.1753774999997404,
+        "separation": 0.0,
+        "decoding": 0.0003281999997852836,
+        "other": 0.00710109999999986
+      },
+      "phase_calls": {
+        "model_build": 3,
+        "optimization": 2,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3562,
+          "rows": 4292,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        },
+        {
+          "columns": 3842,
+          "rows": 4480,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 100.41796875,
+      "seed": 42,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 96,
+      "total_cost": 96,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 1.2640030999973533,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08383909999975003,
+        "optimization": 1.1724152999995567,
+        "separation": 0.0,
+        "decoding": 0.00031569999919156544,
+        "other": 0.007432999998854939
+      },
+      "phase_calls": {
+        "model_build": 3,
+        "optimization": 2,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3562,
+          "rows": 4292,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        },
+        {
+          "columns": 3842,
+          "rows": 4480,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 100.54296875,
+      "seed": 42,
+      "repeat": 1,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 97,
+      "total_cost": 97,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.146687799999199,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07428400000208057,
+        "optimization": 5.04527009999947,
+        "separation": 0.0,
+        "decoding": 0.0009295000018028077,
+        "other": 0.026204199995845556
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3562,
+          "rows": 4292,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 157.1953125,
+      "seed": 42,
+      "repeat": 1,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 97,
+      "total_cost": 97,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.119220700002188,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07717149999734829,
+        "optimization": 5.027982100000372,
+        "separation": 0.0,
+        "decoding": 0.0005404000003181864,
+        "other": 0.013526700004149461
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3562,
+          "rows": 4292,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 157.6171875,
+      "seed": 42,
+      "repeat": 2,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 140,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 96,
+      "total_cost": 96,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 1.2707556999994267,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08176090000051772,
+        "optimization": 1.181832400005078,
+        "separation": 0.0,
+        "decoding": 0.0003223999992769677,
+        "other": 0.006839999994554091
+      },
+      "phase_calls": {
+        "model_build": 3,
+        "optimization": 2,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3562,
+          "rows": 4292,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        },
+        {
+          "columns": 3842,
+          "rows": 4480,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 99.6953125,
+      "seed": 42,
+      "repeat": 2,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 91.75000000000003,
+      "report_sign": 1,
+      "report_offset": 0,
+      "seconds": 0.08839960000113933,
+      "columns": 3815,
+      "rows": 4453,
+      "seed": 43,
+      "case": "resource-tree",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 82.5,
+      "report_sign": 1,
+      "report_offset": 0,
+      "seconds": 0.04895629999737139,
+      "columns": 3537,
+      "rows": 4266,
+      "seed": 43,
+      "case": "resource-tree",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 96,
+      "total_cost": 96,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.090554300000804,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07506809999904362,
+        "optimization": 5.005008000000089,
+        "separation": 0.0,
+        "decoding": 0.0005167999988771044,
+        "other": 0.009961400002794107
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3537,
+          "rows": 4266,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 156.80078125,
+      "seed": 43,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 94,
+      "total_cost": 94,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 4.31536540000161,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.09336590000020806,
+        "optimization": 4.191071800003556,
+        "separation": 0.0,
+        "decoding": 0.0011507000017445534,
+        "other": 0.02977699999610195
+      },
+      "phase_calls": {
+        "model_build": 3,
+        "optimization": 2,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3537,
+          "rows": 4266,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        },
+        {
+          "columns": 3815,
+          "rows": 4453,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 148.4140625,
+      "seed": 43,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 94,
+      "total_cost": 94,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 4.977042300000903,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08059719999801018,
+        "optimization": 4.873912200000632,
+        "separation": 0.0,
+        "decoding": 0.0011407000019971747,
+        "other": 0.021392200000263983
+      },
+      "phase_calls": {
+        "model_build": 3,
+        "optimization": 2,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3537,
+          "rows": 4266,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        },
+        {
+          "columns": 3815,
+          "rows": 4453,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 148.73046875,
+      "seed": 43,
+      "repeat": 1,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 97,
+      "total_cost": 97,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.117945500001952,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.09716739999930724,
+        "optimization": 5.009827300000325,
+        "separation": 0.0,
+        "decoding": 0.0004870999982813373,
+        "other": 0.010463700004038401
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3537,
+          "rows": 4266,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 157.4453125,
+      "seed": 43,
+      "repeat": 1,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 96,
+      "total_cost": 96,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.172481900001003,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07711399999971036,
+        "optimization": 5.07364559999769,
+        "separation": 0.0,
+        "decoding": 0.0010010000005422626,
+        "other": 0.020721300003060605
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3537,
+          "rows": 4266,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 156.15625,
+      "seed": 43,
+      "repeat": 2,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 139,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 94,
+      "total_cost": 94,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 4.984612500000367,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08359629999904428,
+        "optimization": 4.885606599997118,
+        "separation": 0.0,
+        "decoding": 0.001035799999954179,
+        "other": 0.01437380000425037
+      },
+      "phase_calls": {
+        "model_build": 3,
+        "optimization": 2,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3537,
+          "rows": 4266,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        },
+        {
+          "columns": 3815,
+          "rows": 4453,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 148.6796875,
+      "seed": 43,
+      "repeat": 2,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "status": "Optimal",
+      "bound": 85.25,
+      "report_sign": 1,
+      "report_offset": 0,
+      "seconds": 0.11641740000050049,
+      "columns": 3869,
+      "rows": 4507,
+      "seed": 44,
+      "case": "resource-tree",
+      "config": "flow",
+      "repeat": -1,
+      "label": "candidate",
+      "lp": true
+    },
+    {
+      "status": "Optimal",
+      "bound": 75.5,
+      "report_sign": 1,
+      "report_offset": 0,
+      "seconds": 0.10266909999700147,
+      "columns": 3587,
+      "rows": 4318,
+      "seed": 44,
+      "case": "resource-tree",
+      "config": "flow",
+      "repeat": -1,
+      "label": "baseline",
+      "lp": true
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 87,
+      "total_cost": 87,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.10777859999871,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07630780000181403,
+        "optimization": 5.014267099999415,
+        "separation": 0.0,
+        "decoding": 0.0011039000019081868,
+        "other": 0.01609979999557254
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3587,
+          "rows": 4318,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 130.3359375,
+      "seed": 44,
+      "repeat": 0,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 87,
+      "total_cost": 87,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 3.7119276999983413,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08444690000033006,
+        "optimization": 3.5997299999980896,
+        "separation": 0.0,
+        "decoding": 0.0009381000018038321,
+        "other": 0.02681269999811775
+      },
+      "phase_calls": {
+        "model_build": 3,
+        "optimization": 2,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3587,
+          "rows": 4318,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        },
+        {
+          "columns": 3869,
+          "rows": 4507,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 115.16796875,
+      "seed": 44,
+      "repeat": 0,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 87,
+      "total_cost": 87,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 3.061810399998649,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08292379999693367,
+        "optimization": 2.966999100004614,
+        "separation": 0.0,
+        "decoding": 0.0004626000009011477,
+        "other": 0.01142489999620011
+      },
+      "phase_calls": {
+        "model_build": 3,
+        "optimization": 2,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3587,
+          "rows": 4318,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        },
+        {
+          "columns": 3869,
+          "rows": 4507,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 115.31640625,
+      "seed": 44,
+      "repeat": 1,
+      "label": "candidate",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 87,
+      "total_cost": 87,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.108671800000593,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07835069999782718,
+        "optimization": 5.00908089999939,
+        "separation": 0.0,
+        "decoding": 0.0009952000000339467,
+        "other": 0.020245000003342284
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3587,
+          "rows": 4318,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 130.03515625,
+      "seed": 44,
+      "repeat": 1,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "feasible",
+      "objective": 87,
+      "total_cost": 87,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": null,
+      "total_seconds": 5.136776600000303,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.07668740000008256,
+        "optimization": 5.040595899998152,
+        "separation": 0.0,
+        "decoding": 0.0005882000004930887,
+        "other": 0.018905100001575192
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3587,
+          "rows": 4318,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        }
+      ],
+      "peak_rss_mb": 129.921875,
+      "seed": 44,
+      "repeat": 2,
+      "label": "baseline",
+      "lp": false
+    },
+    {
+      "case": "resource-tree",
+      "config": "flow",
+      "nodes": 48,
+      "edges": 141,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 87,
+      "total_cost": 87,
+      "objective_sense": "min",
+      "lexicographic": false,
+      "gap": 0,
+      "total_seconds": 3.8925164000029326,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.08270169999741483,
+        "optimization": 3.784352400001808,
+        "separation": 0.0,
+        "decoding": 0.0009465999974054284,
+        "other": 0.02451570000630454
+      },
+      "phase_calls": {
+        "model_build": 3,
+        "optimization": 2,
+        "decoding": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 3587,
+          "rows": 4318,
+          "status": "Time limit reached",
+          "mip_nodes": 0
+        },
+        {
+          "columns": 3869,
+          "rows": 4507,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 116.0,
+      "seed": 44,
+      "repeat": 2,
+      "label": "candidate",
+      "lp": false
+    }
+  ]
+}

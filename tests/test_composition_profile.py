@@ -80,6 +80,16 @@ def test_incompatible_cut_formulation_is_rejected():
         worker("forest", "cuts", 1)
 
 
+def test_resource_tree_uses_the_general_model_through_public_dispatch():
+    from benchmarks.profile_composition import make_case
+    from steinerpy import Problem
+    from steinerpy._feature_composition import FeatureComposition
+
+    graph, options = make_case("resource-tree")
+    assert len(graph) == 48 and len(options["terminals"]) == 12
+    assert isinstance(Problem(graph, **options).implementation, FeatureComposition)
+
+
 def test_proved_infeasibility_is_distinguished_from_a_broken_run(monkeypatch):
     from steinerpy._feature_composition import FeatureComposition
     from steinerpy._selection_model import NoIncumbent
@@ -128,3 +138,30 @@ def test_profiled_solve_validates_result_and_records_native_solver_calls(
     assert all(v >= 0 for v in row["phases_seconds"].values())
     assert sum(row["phases_seconds"].values()) == pytest.approx(row["total_seconds"])
     assert row["phase_calls"].get("preprocessing", 0) == (config == "flow-filtered")
+
+
+def test_benchmark_does_not_compare_different_seeds_or_ignore_weaker_bounds():
+    from benchmarks.benchmark_connectivity import check_results
+
+    def bound(label, value, seed=42):
+        return dict(
+            case="tiny",
+            config="flow",
+            seed=seed,
+            label=label,
+            lp=True,
+            status="Optimal",
+            bound=value,
+        )
+
+    check_results([bound("baseline", 2), bound("candidate", 1, seed=43)])
+    check_results([bound("baseline", 2), bound("candidate", 3)])
+    with pytest.raises(AssertionError):
+        check_results([bound("baseline", 2), bound("candidate", 1)])
+    solution = dict(result(7), seed=42, config="flow", lp=False)
+    lp = dict(bound("candidate", 2), report_sign=1, report_offset=5)
+    check_results([solution, lp])
+    with pytest.raises(AssertionError):
+        check_results([solution, dict(lp, bound=3)])
+    with pytest.raises(AssertionError, match="infeasibility"):
+        check_results([solution, dict(lp, status="Infeasible")])
