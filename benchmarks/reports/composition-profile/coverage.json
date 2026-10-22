@@ -1,0 +1,824 @@
+{
+  "commit": "b13f91cd793e5c867c8d5e77001d1956c849d6d3",
+  "platform": "Windows-11-10.0.26100-SP0",
+  "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+  "python": "3.12.15",
+  "packages": {
+    "networkx": "3.6.1",
+    "highspy": "1.12.0",
+    "scipy": "1.18.0"
+  },
+  "threads": 1,
+  "repeats": 5,
+  "cases": [
+    "coverage-budget",
+    "coverage-feasible"
+  ],
+  "profiled": true,
+  "seed": 42,
+  "solver": "highs",
+  "time_limit": 5,
+  "worker_timeout": 30,
+  "rows": [
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.04220060000079684,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.02050729999973555,
+        "optimization": 0.020602900000085356,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.001090400000975933
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 763,
+          "rows": 930,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.4453125,
+      "repeat": 0
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.03923939999731374,
+      "phases_seconds": {
+        "preprocessing": 6.260000009206124e-05,
+        "compilation": 0.0,
+        "model_build": 0.017592899999726797,
+        "optimization": 0.02063619999898947,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0009476999985054135
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 631,
+          "rows": 786,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.48828125,
+      "repeat": 0
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.09818670000095153,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.013794799997413065,
+        "optimization": 0.08160430000134511,
+        "separation": 0.0,
+        "decoding": 0.0003719000014825724,
+        "other": 0.0024157000007107854
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 497,
+          "rows": 614,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 497,
+          "rows": 615,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.50390625,
+      "repeat": 0
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.09616520000054152,
+      "phases_seconds": {
+        "preprocessing": 5.6400000175926834e-05,
+        "compilation": 0.0,
+        "model_build": 0.011726400000043213,
+        "optimization": 0.08179250000102911,
+        "separation": 0.0,
+        "decoding": 0.0003490999988571275,
+        "other": 0.0022408000004361384
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 413,
+          "rows": 518,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 413,
+          "rows": 519,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.21484375,
+      "repeat": 0
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.03691469999830588,
+      "phases_seconds": {
+        "preprocessing": 5.740000051446259e-05,
+        "compilation": 0.0,
+        "model_build": 0.015995999998267507,
+        "optimization": 0.01990289999957895,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0009583999999449588
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 631,
+          "rows": 786,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.06640625,
+      "repeat": 1
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.04411619999882532,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.022478999999293592,
+        "optimization": 0.02045469999939087,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0011825000001408625
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 763,
+          "rows": 930,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.515625,
+      "repeat": 1
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.09701419999692007,
+      "phases_seconds": {
+        "preprocessing": 5.5999997130129486e-05,
+        "compilation": 0.0,
+        "model_build": 0.013767899999947986,
+        "optimization": 0.08069130000149016,
+        "separation": 0.0,
+        "decoding": 0.0003524000021570828,
+        "other": 0.002146599996194709
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 413,
+          "rows": 518,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 413,
+          "rows": 519,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.2265625,
+      "repeat": 1
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.10009319999880972,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.01367010000103619,
+        "optimization": 0.08309400000143796,
+        "separation": 0.0,
+        "decoding": 0.00047810000251047313,
+        "other": 0.0028509999938250985
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 497,
+          "rows": 614,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 497,
+          "rows": 615,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.3515625,
+      "repeat": 1
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.04203919999781647,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.019792499999311985,
+        "optimization": 0.0212457000016002,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0010009999969042838
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 763,
+          "rows": 930,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.50390625,
+      "repeat": 2
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.03843549999874085,
+      "phases_seconds": {
+        "preprocessing": 6.040000153006986e-05,
+        "compilation": 0.0,
+        "model_build": 0.016906799995922484,
+        "optimization": 0.02034769999954733,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0011206000017409679
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 631,
+          "rows": 786,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.2421875,
+      "repeat": 2
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.10098980000111624,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.01525709999987157,
+        "optimization": 0.08272000000215485,
+        "separation": 0.0,
+        "decoding": 0.0003974999999627471,
+        "other": 0.0026151999991270714
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 497,
+          "rows": 614,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 497,
+          "rows": 615,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.48046875,
+      "repeat": 2
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.09566400000039721,
+      "phases_seconds": {
+        "preprocessing": 5.8099998568650335e-05,
+        "compilation": 0.0,
+        "model_build": 0.011981999996351078,
+        "optimization": 0.08118050000121002,
+        "separation": 0.0,
+        "decoding": 0.00036729999919771217,
+        "other": 0.0020761000050697476
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 413,
+          "rows": 518,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 413,
+          "rows": 519,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.2421875,
+      "repeat": 2
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.03742910000073607,
+      "phases_seconds": {
+        "preprocessing": 5.8000001445179805e-05,
+        "compilation": 0.0,
+        "model_build": 0.016049299996666377,
+        "optimization": 0.020266700001229765,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0010551000013947487
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 631,
+          "rows": 786,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.3125,
+      "repeat": 3
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.04099299999870709,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.019625699998869095,
+        "optimization": 0.020377699998789467,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0009896000010485295
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 763,
+          "rows": 930,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.546875,
+      "repeat": 3
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.09499189999769442,
+      "phases_seconds": {
+        "preprocessing": 6.690000009257346e-05,
+        "compilation": 0.0,
+        "model_build": 0.011606899999605957,
+        "optimization": 0.08094960000016727,
+        "separation": 0.0,
+        "decoding": 0.0003673999963211827,
+        "other": 0.0020011000015074387
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 413,
+          "rows": 518,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 413,
+          "rows": 519,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.421875,
+      "repeat": 3
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.11230060000161757,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.016227800002525328,
+        "optimization": 0.09207209999658517,
+        "separation": 0.0,
+        "decoding": 0.0005375000037020072,
+        "other": 0.0034631999988050666
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 497,
+          "rows": 614,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 497,
+          "rows": 615,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.59765625,
+      "repeat": 3
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.04040770000210614,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.01917899999898509,
+        "optimization": 0.02019780000046012,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0010309000026609283
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 763,
+          "rows": 930,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.9375,
+      "repeat": 4
+    },
+    {
+      "case": "coverage-budget",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "infeasible",
+      "error": "NoIncumbent: Feature composition is infeasible or stopped without a feasible incumbent.",
+      "total_seconds": 0.03820120000091265,
+      "phases_seconds": {
+        "preprocessing": 6.67000022076536e-05,
+        "compilation": 0.0,
+        "model_build": 0.0173940999993647,
+        "optimization": 0.019789699999819277,
+        "separation": 0.0,
+        "decoding": 0.0,
+        "other": 0.0009506999995210208
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 1,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 631,
+          "rows": 786,
+          "status": "Infeasible",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 77.51953125,
+      "repeat": 4
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.09864160000142874,
+      "phases_seconds": {
+        "preprocessing": 0.0,
+        "compilation": 0.0,
+        "model_build": 0.014277899997978238,
+        "optimization": 0.08161540000219247,
+        "separation": 0.0,
+        "decoding": 0.0003502999970805831,
+        "other": 0.0023980000041774474
+      },
+      "phase_calls": {
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 497,
+          "rows": 614,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 497,
+          "rows": 615,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.453125,
+      "repeat": 4
+    },
+    {
+      "case": "coverage-feasible",
+      "config": "flow-filtered",
+      "nodes": 24,
+      "edges": 66,
+      "profiled": true,
+      "status": "optimal",
+      "objective": 2,
+      "total_cost": 11,
+      "objective_sense": "max",
+      "lexicographic": true,
+      "gap": 0,
+      "total_seconds": 0.09213509999972302,
+      "phases_seconds": {
+        "preprocessing": 6.209999992279336e-05,
+        "compilation": 0.0,
+        "model_build": 0.011540300001797732,
+        "optimization": 0.07808870000008028,
+        "separation": 0.0,
+        "decoding": 0.00034610000147949904,
+        "other": 0.0020978999964427203
+      },
+      "phase_calls": {
+        "preprocessing": 1,
+        "model_build": 2,
+        "optimization": 2,
+        "decoding": 2,
+        "other": 1
+      },
+      "backend_runs": [
+        {
+          "columns": 413,
+          "rows": 518,
+          "status": "Optimal",
+          "mip_nodes": 1
+        },
+        {
+          "columns": 413,
+          "rows": 519,
+          "status": "Optimal",
+          "mip_nodes": 1
+        }
+      ],
+      "peak_rss_mb": 80.14453125,
+      "repeat": 4
+    }
+  ]
+}
