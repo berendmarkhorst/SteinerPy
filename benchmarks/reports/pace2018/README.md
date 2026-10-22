@@ -1,6 +1,6 @@
 # SteinerPy on PACE 2018
 
-**Provisional** snapshot generated 2026-10-21T12:04:07.071004+00:00.
+Completed snapshot generated 2026-10-22T07:10:38.381346+00:00.
 
 This benchmark attempts the official few-terminal, low-treewidth and heuristic tracks. Track 2 is solved as a graph problem; SteinerPy does not consume its supplied tree decompositions. The [organizers' dataset](https://github.com/PACE-challenge/SteinerTree-PACE-2018-instances) contains 200, 200 and 199 instances respectively; Track 3 instance 058 was withdrawn.
 
@@ -12,15 +12,15 @@ The Gurobi runs are licensed; HiGHS and heuristic mode are the open-source alter
 
 | Track | Configuration | Finished / expected | Valid trees | Proven/reference optima | Timeouts | Errors / resource exits | Median wall, valid (s) |
 |---|---|---:|---:|---:|---:|---:|---:|
-| 1 | gurobi | 148/200 | 147 | 133 | 0 | 1 | 2.119 |
+| 1 | gurobi | 200/200 | 179 | 152 | 13 | 8 | 3.206 |
 | 1 | heuristic | 200/200 | 200 | 16 | 0 | 0 | 1.513 |
-| 1 | highs | 120/200 | 120 | 120 | 0 | 0 | 2.105 |
-| 2 | gurobi | 0/200 | 0 | 0 | 0 | 0 | — |
-| 2 | heuristic | 199/200 | 198 | 4 | 0 | 1 | 2.106 |
-| 2 | highs | 0/200 | 0 | 0 | 0 | 0 | — |
-| 3 | gurobi | 0/199 | 0 | 0 | 0 | 0 | — |
-| 3 | heuristic | 122/199 | 108 | 0 | 0 | 14 | 7.978 |
-| 3 | highs | 0/199 | 0 | 0 | 0 | 0 | — |
+| 1 | highs | 200/200 | 132 | 132 | 43 | 25 | 2.405 |
+| 2 | gurobi | 200/200 | 187 | 126 | 6 | 7 | 12.626 |
+| 2 | heuristic | 200/200 | 198 | 4 | 1 | 1 | 2.106 |
+| 2 | highs | 200/200 | 129 | 126 | 15 | 56 | 12.220 |
+| 3 | gurobi | 199/199 | 44 | 18 | 114 | 41 | 776.402 |
+| 3 | heuristic | 199/199 | 132 | 0 | 1 | 66 | 14.545 |
+| 3 | highs | 199/199 | 12 | 11 | 132 | 55 | 293.705 |
 
 Median times cover valid returned solutions only; configurations can solve different subsets. Use the per-instance CSV for paired timing comparisons. `solve_seconds` measures the whole `get_solution` call (including model construction); `model_build_seconds` times its classic model builders, and `solver_seconds` is the library-reported solver runtime.
 
@@ -28,15 +28,15 @@ Median times cover valid returned solutions only; configurations can solve diffe
 
 | Track | Configuration | Finished / expected | Optima | Quality index (%) |
 |---|---|---:|---:|---:|
-| 1 | gurobi | 72/100 | 63 | pending |
+| 1 | gurobi | 100/100 | 72 | 89.989 |
 | 1 | heuristic | 100/100 | 8 | 95.456 |
-| 1 | highs | 58/100 | 58 | pending |
-| 2 | gurobi | 0/100 | 0 | pending |
+| 1 | highs | 100/100 | 61 | 61.000 |
+| 2 | gurobi | 100/100 | 57 | 90.000 |
 | 2 | heuristic | 100/100 | 3 | 96.568 |
-| 2 | highs | 0/100 | 0 | pending |
-| 3 | gurobi | 0/99 | 0 | pending |
-| 3 | heuristic | 59/99 | 0 | pending |
-| 3 | highs | 0/99 | 0 | pending |
+| 2 | highs | 100/100 | 60 | 63.000 |
+| 3 | gurobi | 99/99 | 8 | 17.984 |
+| 3 | heuristic | 99/99 | 0 | 62.932 |
+| 3 | highs | 99/99 | 5 | 5.051 |
 
 Quality is `100 × mean(reference_upper / objective)` over the full requested private set, with zero for missing/invalid solutions. A completed sweep is required before publishing this score. The upper reference is not necessarily an optimum for Track 3.
 
@@ -96,12 +96,26 @@ These nine cases are a fixed engineering sample, not a representative ranking of
 }
 ```
 
+## Where wall deadlines expired
+
+| Configuration | Phase | Instances |
+|---|---|---:|
+| gurobi | solve | 133 |
+| heuristic | solve | 2 |
+| highs | solve | 190 |
+
 ## Rejected results and resource failures
 
 | Configuration | Phase | Reason | Instances |
 |---|---|---|---:|
+| gurobi | solve | GurobiError: Out of memory | 5 |
+| gurobi | solve | RuntimeError: Exact solve stopped before finding a connectivity-valid feasible incumbent. | 46 |
+| gurobi | validate | ValueError: objective below published lower bound | 2 |
+| gurobi | validate | ValueError: reported objective differs from original edge costs | 2 |
 | gurobi | validate | ValueError: solution is not a tree spanning all terminals | 1 |
-| heuristic | solve | MemoryError | 15 |
+| heuristic | solve | MemoryError | 67 |
+| highs | solve | MemoryError | 42 |
+| highs | solve | RuntimeError: Exact solve stopped before finding a connectivity-valid feasible incumbent. | 94 |
 
 The [per-instance results](results.csv) include checksums, versions, objective/proof distinctions, memory and phase timings. Raw JSON and original-edge solution certificates remain in the HPC run directory. The runner and Slurm script live in `benchmarks/pace2018.py` and `benchmarks/slurm_pace2018.sh`.
 
