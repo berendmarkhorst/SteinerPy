@@ -27,7 +27,7 @@ VARIANTS = tuple(_IMPLEMENTATIONS)
 
 
 def _classic_cost_only(spec):
-    """Only inactive features may be removed from a composed cost problem."""
+    """Classic edge minimization also permits constant mandatory-node costs."""
     return (
         spec.requested_variant in {None, "steiner"}
         and not spec.graph.is_directed()
@@ -35,7 +35,8 @@ def _classic_cost_only(spec):
         # existing formulation until a measured selection rule supports them.
         and len(spec.terminal_groups) == 1
         and not spec.groups
-        and not any(spec.node_costs.values())
+        and {n for n, cost in spec.node_costs.items() if cost}
+        <= set(spec.terminal_groups[0])
         and not spec.partial_terminals
         and all(
             getattr(spec, name) is None
