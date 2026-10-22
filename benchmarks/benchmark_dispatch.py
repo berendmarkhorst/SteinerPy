@@ -8,6 +8,7 @@ whichever is larger. This small sample does not establish general performance.
 
 import argparse
 import json
+import math
 import os
 import platform
 from pathlib import Path
@@ -75,6 +76,7 @@ def worker(args):
     sys.path.insert(0, str(Path(args.source_root).resolve()))
     import networkx as nx
     from steinerpy import Problem
+    from steinerpy._feature_composition import FeatureComposition
 
     logging.disable(logging.CRITICAL)
     graph = nx.cycle_graph(12)
@@ -116,14 +118,27 @@ def worker(args):
     constructed = perf_counter()
     solution = problem.get_solution(time_limit=5, solver="highs", threads=1)
     finished = perf_counter()
-    assert solution.gap == 0, "case did not prove optimality within its limit"
-    assert all(graph.has_edge(*e) for e in solution.edges)
+    nodes = getattr(solution, "selected_nodes", None)
+    if nodes is None:
+        nodes = {n for group in problem._spec.terminal_groups for n in group}
+        nodes.update(n for e in solution.edges for n in e)
+    checker = FeatureComposition(problem._spec)
+    decoded = checker.decode(solution.edges, list(nodes))
+    checked = checker.solution(decoded, solution.gap, solution.runtime)
+    assert checked.objective == solution.objective
+    assert math.isfinite(solution.objective)
     return dict(
         case=args.case,
         nodes=len(graph),
         edges=len(graph.edges),
         objective=solution.objective,
-        gap=solution.gap,
+        objective_sense=(
+            "max"
+            if checker.coverage_mode or checker.objective.report_sign < 0
+            else "min"
+        ),
+        status="optimal" if solution.gap == 0 else "feasible",
+        gap=solution.gap if math.isfinite(solution.gap) else None,
         implementation=type(problem.implementation).__name__,
         construction_seconds=constructed - started,
         solve_seconds=finished - constructed,
@@ -193,11 +208,24 @@ def main():
                     check=False,
                 )
                 if result.returncode:
-                    raise RuntimeError(case + ": " + result.stderr)
+                    raise RuntimeError(label + " / " + case + ": " + result.stderr)
                 row = dict(json.loads(result.stdout), repeat=repeat, label=label)
                 pair.append(row)
                 rows.append(row)
-            assert len({(r["objective"], r["gap"]) for r in pair}) == 1, case
+            optima = {r["objective"] for r in pair if r["status"] == "optimal"}
+            assert len(optima) <= 1, case
+            if optima:
+                optimum = next(iter(optima))
+                # A partial incumbent cannot beat a proven optimum from
+                # either path, in the case's declared objective direction.
+                assert all(
+                    (
+                        r["objective"] >= optimum
+                        if r["objective_sense"] == "min"
+                        else r["objective"] <= optimum
+                    )
+                    for r in pair
+                ), case
         print("Completed repeat {}/{}".format(repeat + 1, args.repeats), flush=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
