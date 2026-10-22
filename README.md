@@ -70,6 +70,9 @@ print(f"Proven optimality gap: {solution.gap}")  # 0.0 == provably optimal
 
 See the [documentation](https://steinerpy.readthedocs.io) for the full catalogue of problem variants, solver selection, performance features (dual ascent, graph reductions, heuristic-only mode), benchmarks against NetworkX and `pcst_fast`, and the API reference. The [example notebook](example.ipynb) walks through the main features.
 
+For measurements on the three PACE 2018 tracks and historical participant
+results, see the [PACE benchmark report](benchmarks/reports/pace2018/README.md).
+
 ## Citing
 
 If you use SteinerPy in your research, please cite:

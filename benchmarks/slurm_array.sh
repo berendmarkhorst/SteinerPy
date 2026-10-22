@@ -10,7 +10,7 @@
 # and trivial parallelism. Build an instance list first, e.g.:
 #   ls benchmarks/data/B/*.stp > benchmarks/instances.txt
 #
-# Each task solves its instance and appends to a shared, resumable CSV.
+# Each task solves only its selected instance and writes a separate CSV.
 
 set -euo pipefail
 
@@ -23,14 +23,10 @@ if [[ -z "$INSTANCE" ]]; then
     echo "No instance for task ${SLURM_ARRAY_TASK_ID}"; exit 0
 fi
 
-DIR=$(dirname "$INSTANCE")
-BASENAME=$(basename "$INSTANCE")
-
-# Run a single-instance directory view by symlinking into a temp dir, or simply
-# point --instances at the parent and rely on the resumable skip for the rest.
+TASK_OUT="${OUT%.csv}-${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.csv"
 python -m benchmarks.run_benchmarks \
-    --instances "$DIR" \
+    --instances "$INSTANCE" \
     --config both --full \
     --time-limit "$TIME_LIMIT" \
-    --out "$OUT" \
+    --out "$TASK_OUT" \
     --jobs 1

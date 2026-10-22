@@ -6,10 +6,16 @@ SteinerPy is a **Python / NetworkX library**, and it is honest about where that 
 Its goal is *breadth and accessibility* — a unified, pip-installable, MIT-licensed API that solves many Steiner variants exactly (with a certified optimality gap), and drops straight into a Python data pipeline.
 Its sweet spot is **small-to-medium instances** (up to roughly a few thousand nodes/edges), rapid prototyping, and research that needs to move across variants quickly.
 
-It is **not** a performance competitor to dedicated C/C++ exact solvers such as [SCIP-Jack](https://scipjack.zib.de) (the DIMACS 2014 / PACE 2018 winner).
-On the hard SteinLib / DIMACS families — instances with tens of thousands of nodes/edges, or the notoriously difficult PUC/hypercube sets — SCIP-Jack is faster by orders of magnitude, thanks to a decade of C engineering, a far deeper reduction-test arsenal, and SCIP's full branch-and-cut.
-The benchmarks below use the **mid-size** SteinLib `C` tier (500 nodes, up to 12 500 edges) — still well short of a large-scale exact race, but heavy enough that the dual-ascent acceleration and reductions earn their keep; the point is *solution quality and a certified gap versus fast heuristics*, not raw scale.
-If you need to solve million-edge instances to proven optimality, reach for SCIP-Jack; if you want exactness, breadth, and Python ergonomics on tractable instances, SteinerPy is built for you.
+The [PACE 2018 report](https://github.com/berendmarkhorst/SteinerPy/blob/main/benchmarks/reports/pace2018/README.md)
+measures all three undirected Steiner-tree tracks on Snellius, with HiGHS,
+Gurobi and heuristic configurations reported separately. It includes per-instance
+CSV data, failures, resource limits and historical participant results, including
+SCIP-Jack. Historical results use different hardware and software; they do not
+establish a measured speedup or a current competition ranking. Check the report's
+completion status before interpreting aggregate scores.
+
+The smaller SteinLib experiments below compare solution quality, proof status
+and runtime with Python baselines. They do not measure SCIP-Jack's runtime.
 
 ## Setup
 

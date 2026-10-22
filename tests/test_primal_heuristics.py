@@ -130,6 +130,29 @@ def test_opt_in_portfolio_never_worsens_public_heuristic_solution(monkeypatch):
     assert stats["objective_after"] <= stats["objective_before"]
 
 
+@pytest.mark.parametrize("local_search,implied_profit", [(False, False), (True, True)])
+def test_heuristic_cleanup_retains_terminals_removed_by_contraction(
+    local_search, implied_profit
+):
+    graph = nx.Graph()
+    graph.add_weighted_edges_from([
+        (0, 3, 7), (0, 4, 7), (0, 6, 1), (0, 8, 1),
+        (1, 2, 5), (1, 3, 9), (1, 7, 8), (2, 5, 7),
+        (3, 6, 5), (4, 7, 8), (5, 6, 6), (5, 7, 4),
+    ])
+    terminals = [8, 2, 4, 6]
+    problem = SteinerProblem(graph, [terminals], heavy=False)
+    assert set(problem.terminal_groups[0]) != set(terminals)
+    solution = problem.get_solution(
+        exact=False, primal_local_search=local_search, implied_profit=implied_profit
+    )
+    tree = nx.Graph(solution.original_selected_edges)
+    assert set(terminals) <= set(tree) and nx.is_tree(tree)
+    assert solution.objective == sum(graph[u][v]["weight"] for u, v in tree.edges)
+    assert solution.objective >= problem.get_solution().objective
+    assert solution.gap >= 0
+
+
 @pytest.mark.parametrize("seed", range(30))
 def test_random_candidates_are_feasible_and_local_search_is_monotone(seed):
     rng = random.Random(seed)
