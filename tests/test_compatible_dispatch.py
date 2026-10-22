@@ -153,7 +153,31 @@ def test_selected_solver_and_dependency_errors_are_forwarded(monkeypatch):
     monkeypatch.setattr(problem.implementation, "get_solution", unavailable)
     with pytest.raises(ImportError, match="requested backend"):
         problem.get_solution(solver="gurobi", threads=1, time_limit=2)
-    assert calls == [dict(solver="gurobi", threads=1, time_limit=2)]
+    assert calls == [
+        dict(solver="gurobi", threads=1, time_limit=2, log_file="", exact=True)
+    ]
+
+
+def test_composed_positional_options_keep_their_meaning(monkeypatch):
+    problem = Problem(nx.path_graph(3), terminals=[0, 2], node_costs={})
+    solution = problem.implementation.get_solution()
+    calls = []
+
+    def solve(**kwargs):
+        calls.append(kwargs)
+        return solution
+
+    monkeypatch.setattr(problem.implementation, "get_solution", solve)
+    assert problem.get_solution(4, "run.log", "highs", 2, True).objective == 2
+    assert calls == [
+        dict(time_limit=4, log_file="run.log", solver="highs", threads=2, exact=True)
+    ]
+
+
+def test_composed_heuristic_restriction_is_preserved():
+    problem = Problem(nx.path_graph(3), terminals=[0, 2], node_costs={})
+    with pytest.raises(NotImplementedError, match="heuristic-only"):
+        problem.get_solution(exact=False)
 
 
 def test_comparison_benchmark_still_forces_generic_formulation():
