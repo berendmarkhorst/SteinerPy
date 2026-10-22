@@ -310,6 +310,37 @@ class BaseSteinerProblem:
         """
         return self.reduction_tracker.fixed_cost if self.preprocess else 0.0
 
+    def _finalize_exact_incumbent(self, selected_edges, objective, gap):
+        """Report actual edge costs after subset-only undirected cleanup."""
+        import math
+        from .dual_ascent import refine_primal_mst
+
+        def clean(graph, edges, groups):
+            if graph.is_directed():
+                return list(edges)
+            # Restrict the MST to selected edges: adding cheaper chords could
+            # violate degree limits or other transformed constraints.
+            return refine_primal_mst(
+                graph.edge_subgraph(edges), edges,
+                [node for group in groups for node in group], self.weight,
+            )
+
+        if not math.isfinite(objective):
+            return selected_edges, [], objective, gap
+        selected_edges = clean(self.graph, selected_edges, self.terminal_groups)
+        original = (
+            map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
+            if self.preprocess else selected_edges
+        )
+        original = clean(self.original_graph, original, self.original_terminal_groups)
+        actual = sum(self.original_graph.edges[e].get(self.weight, 1) for e in original)
+        if math.isfinite(gap):
+            lower = objective - gap * abs(objective) + self._fixed_cost()
+            if lower > actual and not math.isclose(lower, actual, rel_tol=1e-9, abs_tol=1e-9):
+                raise RuntimeError("Exact incumbent cost is below its reported lower bound.")
+            gap = max(0.0, actual - lower) / max(1.0, abs(actual))
+        return selected_edges, original, actual, gap
+
     def _solution_from_da(self, da, t0, gap) -> 'Solution':
         """Build a :class:`Solution` from a dual-ascent result (no ILP).
 
@@ -949,21 +980,9 @@ class BaseSteinerProblem:
                 "terminal group; the result was discarded."
             )
 
-        # Map solution back to original graph if preprocessing was used
-        if self.preprocess:
-            original_selected_edges = map_solution_to_original(selected_edges, self.reduction_tracker, self.graph)
-        else:
-            original_selected_edges = selected_edges
-
-        # Shift the objective by the terminal-contraction fixed cost; rescale a
-        # finite nonzero relative gap so it refers to the shifted objective.
-        fc = self._fixed_cost()
-        if fc:
-            import math as _m
-            if _m.isfinite(objective):
-                if gap and _m.isfinite(gap):
-                    gap = gap * abs(objective) / max(1.0, abs(objective + fc))
-                objective = objective + fc
+        selected_edges, original_selected_edges, objective, gap = (
+            self._finalize_exact_incumbent(selected_edges, objective, gap)
+        )
 
         solution = Solution(
             gap=gap,
