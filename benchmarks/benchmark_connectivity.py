@@ -2,6 +2,7 @@
 
 import argparse
 from collections import Counter
+from contextlib import ExitStack
 from importlib.metadata import version
 import json
 import math
@@ -22,9 +23,24 @@ def worker(args):
     sys.path.insert(0, str(args.source_root.resolve()))
     if not args.lp:
         make_case = profile.make_case
-        with patch.object(
-            profile, "make_case", lambda name: make_case(name, args.seed)
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(
+                    profile, "make_case", lambda name: make_case(name, args.seed)
+                )
+            )
+            if args.always_strengthen:
+                from steinerpy._selection_model import SelectionModel
+
+                original = SelectionModel.attach_selected_nodes
+
+                def attach(model, roots):
+                    original(model, roots)
+                    model.strengthen_connectivity()
+
+                stack.enter_context(
+                    patch.object(SelectionModel, "attach_selected_nodes", attach)
+                )
             return profile.worker(args.case, args.config, args.time_limit)
 
     from steinerpy import Problem
@@ -56,6 +72,12 @@ def worker(args):
             status=status,
             # Always the minimization objective, including negated coverage/rewards.
             bound=model.model.getObjectiveValue() if status == "Optimal" else None,
+            report_sign=(
+                -1 if strategy.coverage_mode else strategy.objective.report_sign
+            ),
+            report_offset=(
+                0 if strategy.coverage_mode else strategy.objective.report_offset
+            ),
             seconds=perf_counter() - started,
             columns=model.model.getNumCol(),
             rows=model.model.getNumRow(),
@@ -70,6 +92,28 @@ def check_results(rows):
             subset = [r for r in rows if r["seed"] == seed and r["config"] == config]
             profile.check_results([r for r in subset if not r["lp"]])
             for case in {r["case"] for r in subset}:
+                valid = [
+                    r
+                    for r in subset
+                    if r["case"] == case
+                    and not r["lp"]
+                    and r["status"] in {"optimal", "feasible"}
+                ]
+                for row in subset:
+                    if row["case"] != case or not row["lp"]:
+                        continue
+                    if row["status"] == "Infeasible":
+                        assert (
+                            not valid
+                        ), f"{case}: LP infeasibility contradicts a solution"
+                    if row["status"] == "Optimal":
+                        assert all(
+                            row["bound"]
+                            <= (r["objective"] - row["report_offset"])
+                            / row["report_sign"]
+                            + 1e-7
+                            for r in valid
+                        ), case
                 bounds = {
                     r["label"]: r["bound"]
                     for r in subset
@@ -98,6 +142,11 @@ def main():
     parser.add_argument("--config", choices=["flow", "flow-filtered"])
     parser.add_argument("--seed", type=int)
     parser.add_argument("--lp", action="store_true")
+    parser.add_argument(
+        "--always-strengthen",
+        action="store_true",
+        help="Reproduce the rejected always-on candidate",
+    )
     args = parser.parse_args()
     if args.repeats < 1 or not math.isfinite(args.time_limit) or args.time_limit <= 0:
         parser.error("repeats and time limit must be positive and finite")
@@ -134,6 +183,7 @@ def main():
         packages={p: version(p) for p in ("networkx", "highspy", "scipy")},
         seeds=args.seeds,
         repeats=args.repeats,
+        always_strengthen=args.always_strengthen,
         time_limit=args.time_limit,
         threads=1,
         solver="highs",
@@ -173,6 +223,8 @@ def main():
                         ]
                         if repeat == -1:
                             command.append("--lp")
+                        if args.always_strengthen and label == "candidate":
+                            command.append("--always-strengthen")
                         try:
                             result = subprocess.run(
                                 command,

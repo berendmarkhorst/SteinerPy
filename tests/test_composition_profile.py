@@ -148,3 +148,10 @@ def test_benchmark_does_not_compare_different_seeds_or_ignore_weaker_bounds():
     check_results([bound("baseline", 2), bound("candidate", 3)])
     with pytest.raises(AssertionError):
         check_results([bound("baseline", 2), bound("candidate", 1)])
+    solution = dict(result(7), seed=42, config="flow", lp=False)
+    lp = dict(bound("candidate", 2), report_sign=1, report_offset=5)
+    check_results([solution, lp])
+    with pytest.raises(AssertionError):
+        check_results([solution, dict(lp, bound=3)])
+    with pytest.raises(AssertionError, match="infeasibility"):
+        check_results([solution, dict(lp, status="Infeasible")])
