@@ -333,8 +333,16 @@ def test_budget_tie_breaking_does_not_restart_expired_time_allowance(
 ):
     from steinerpy import _selection_model
 
-    times = iter((0, 0, 2, 2))
-    monkeypatch.setattr(_selection_model, "perf_counter", lambda: next(times))
+    clock = [0]
+    monkeypatch.setattr(_selection_model, "perf_counter", lambda: clock[0])
+    original = _selection_model.SelectionModel._optimize
+
+    def optimize(model, objective, deadline):
+        result = original(model, objective, deadline)
+        clock[0] = 2
+        return result
+
+    monkeypatch.setattr(_selection_model.SelectionModel, "_optimize", optimize)
     s = Problem(
         nx.path_graph(3), terminals=[[0, 1], [1, 2]], node_costs={}, budget=2
     ).get_solution(solver=solver, time_limit=1)

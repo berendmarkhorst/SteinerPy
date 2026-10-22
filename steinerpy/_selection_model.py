@@ -158,7 +158,12 @@ class SelectionModel:
         outcome = self._optimize(
             objective, min(deadline, perf_counter() + 1) if probe else deadline
         )
-        if not probe or outcome[0] != "incomplete" or perf_counter() >= deadline:
+        if (
+            not probe
+            or outcome[0] != "incomplete"
+            or not self._time_limit_reached()
+            or perf_counter() >= deadline
+        ):
             return outcome
         fallback = None
         if outcome[1]:
@@ -176,6 +181,14 @@ class SelectionModel:
             self._fallback = fallback
             return "incomplete", True
         return outcome
+
+    def _time_limit_reached(self):
+        # User interrupts and solver errors must not trigger another solve.
+        if self.solver == "highs":
+            return self.model.getModelStatus() == hp.HighsModelStatus.kTimeLimit
+        from gurobipy import GRB
+
+        return self.model.Status == GRB.TIME_LIMIT
 
     def _optimize(self, objective, deadline):
         remaining = max(0, deadline - perf_counter())

@@ -92,6 +92,7 @@ def test_adaptive_solve_retains_incumbent_values_and_clears_fallback(
             return original(objective + (10 if second == "worse" else 0), deadline)
 
         monkeypatch.setattr(model, "_optimize", optimize)
+        monkeypatch.setattr(model, "_time_limit_reached", lambda: True)
         deadline = perf_counter() + 5
         status, incumbent = model.solve(model.cost, deadline)
         assert len(calls) == 2 and calls[0] < calls[1] == deadline
@@ -137,6 +138,7 @@ def test_adaptive_solve_respects_deadline_and_does_not_restart_finished_solves(
         return outcome
 
     model._optimize = optimize
+    model._time_limit_reached = lambda: True
     model.strengthen_connectivity = lambda: strengthened.append(True)
     assert model.solve(None, 100 + remaining) == outcome
     assert len(calls) == expected and len(strengthened) == expected - 1
