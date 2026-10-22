@@ -57,13 +57,13 @@ PHASES = (
 )
 
 
-def make_case(name):
+def make_case(name, seed=42):
     import networkx as nx
 
     size = 48 if name in {"mandatory-costs", "optional-costs"} else 24
-    graph = nx.gnm_random_graph(size, 2 * size, seed=42)
+    graph = nx.gnm_random_graph(size, 2 * size, seed=seed)
     graph.add_edges_from(nx.cycle_graph(size).edges)
-    rng = random.Random(42)
+    rng = random.Random(seed)
     nx.set_edge_attributes(graph, {e: rng.randint(1, 9) for e in graph.edges}, "weight")
     options = dict(
         terminals=[0, size // 3, 2 * size // 3],
@@ -169,6 +169,10 @@ class PhaseTimer:
             (mm, "find_violated_cuts_from_values", "separation"),
             (highspy.Highs, "solve", "optimization"),
         ]
+        if hasattr(selection.SelectionModel, "strengthen_connectivity"):
+            hooks.append(
+                (selection.SelectionModel, "strengthen_connectivity", "model_build")
+            )
         for module in (cuts, budget):
             hooks.extend(
                 (module, name, "compilation")

@@ -128,3 +128,23 @@ def test_profiled_solve_validates_result_and_records_native_solver_calls(
     assert all(v >= 0 for v in row["phases_seconds"].values())
     assert sum(row["phases_seconds"].values()) == pytest.approx(row["total_seconds"])
     assert row["phase_calls"].get("preprocessing", 0) == (config == "flow-filtered")
+
+
+def test_benchmark_does_not_compare_different_seeds_or_ignore_weaker_bounds():
+    from benchmarks.benchmark_connectivity import check_results
+
+    def bound(label, value, seed=42):
+        return dict(
+            case="tiny",
+            config="flow",
+            seed=seed,
+            label=label,
+            lp=True,
+            status="Optimal",
+            bound=value,
+        )
+
+    check_results([bound("baseline", 2), bound("candidate", 1, seed=43)])
+    check_results([bound("baseline", 2), bound("candidate", 3)])
+    with pytest.raises(AssertionError):
+        check_results([bound("baseline", 2), bound("candidate", 1)])
