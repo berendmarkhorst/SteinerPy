@@ -35,6 +35,7 @@ CASES = (
     "prize-forest",
     "node-budget",
     "coverage-budget",
+    "coverage-feasible",
     "penalty-budget",
     "signed-rewards",
 )
@@ -86,8 +87,10 @@ def make_case(name):
         options.update(node_prizes={6: 7, 14: 9, 22: 5})
     if name == "node-budget":
         options.update(node_budget=3, budget=40)
-    if name == "coverage-budget":
+    if name in {"coverage-budget", "coverage-feasible"}:
         options.update(groups=[[5, 6], [18, 19]], budget=12, node_budget=3)
+        if name == "coverage-feasible":
+            options["terminals"] = [0]
     if name == "penalty-budget":
         options.update(penalty_cost=3, penalty_budget=1, hop_limit=8)
     if name == "signed-rewards":
@@ -196,6 +199,7 @@ def worker(case, config, limit, profiled=True):
     from steinerpy._problem_validation import validate_problem
     from steinerpy._feature_composition import FeatureComposition
     from steinerpy._composition import GroupComposition
+    from steinerpy._selection_model import NoIncumbent
 
     if config == "cuts" and case not in CUT_CASES:
         raise ValueError("Cut composition does not support every requested feature.")
@@ -209,6 +213,7 @@ def worker(case, config, limit, profiled=True):
         edges=len(graph.edges),
         profiled=profiled,
     )
+    previous_logging = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
     started = perf_counter()
     try:
@@ -256,7 +261,10 @@ def worker(case, config, limit, profiled=True):
     except Exception as error:
         finished = perf_counter()
         phases = dict(timer.seconds)
-        row.update(status="error", error=f"{type(error).__name__}: {error}")
+        status = "error"
+        if isinstance(error, NoIncumbent):
+            status = "infeasible" if error.status == "infeasible" else "no_incumbent"
+        row.update(status=status, error=f"{type(error).__name__}: {error}")
     elapsed = finished - started
     phases["other"] += elapsed - sum(phases.values())
     row.update(
@@ -266,6 +274,7 @@ def worker(case, config, limit, profiled=True):
         backend_runs=timer.backend_runs if profiled else None,
         peak_rss_mb=peak_rss_mb(),
     )
+    logging.disable(previous_logging)
     return row
 
 
@@ -277,6 +286,8 @@ def check_results(rows):
             for r in rows
             if r["case"] == case and r["status"] in {"optimal", "feasible"}
         ]
+        if any(r["case"] == case and r["status"] == "infeasible" for r in rows):
+            assert not valid, f"{case}: infeasibility contradicts a valid selection"
         optima = [r for r in valid if r["status"] == "optimal"]
         if not optima:
             continue
@@ -332,6 +343,9 @@ def main():
         python=sys.version.split()[0],
         packages={p: version(p) for p in ("networkx", "highspy", "scipy")},
         threads=1,
+        repeats=args.repeats,
+        cases=list(args.cases),
+        profiled=not args.no_profile,
         seed=42,
         solver="highs",
         time_limit=args.time_limit,

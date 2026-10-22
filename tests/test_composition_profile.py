@@ -64,11 +64,28 @@ def test_coverage_proof_checks_secondary_cost():
         check_results(
             [result(3, coverage=True), result(3, total_cost=5, coverage=True)]
         )
+    with pytest.raises(AssertionError, match="infeasibility"):
+        check_results([result(3), dict(case="tiny", status="infeasible")])
 
 
 def test_incompatible_cut_formulation_is_rejected():
     with pytest.raises(ValueError, match="every requested feature"):
         worker("forest", "cuts", 1)
+
+
+def test_proved_infeasibility_is_distinguished_from_a_broken_run(monkeypatch):
+    from steinerpy._feature_composition import FeatureComposition
+    from steinerpy._selection_model import NoIncumbent
+    import logging
+
+    def infeasible(*args, **kwargs):
+        raise NoIncumbent("infeasible")
+
+    previous = logging.root.manager.disable
+    monkeypatch.setattr(FeatureComposition, "get_solution", infeasible)
+    row = worker("coverage-budget", "flow", 1)
+    assert row["status"] == "infeasible"
+    assert logging.root.manager.disable == previous
 
 
 @pytest.mark.parametrize("config", ["flow", "flow-filtered", "cuts"])
