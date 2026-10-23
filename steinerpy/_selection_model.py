@@ -231,6 +231,20 @@ class SelectionModel:
             self.env.dispose()
 
 
+def _checked_cost_matches(model, cost):
+    native = model.objective_value()
+    if math.isfinite(cost) and math.isfinite(native):
+        if math.isclose(cost, native, rel_tol=1e-8, abs_tol=1e-7):
+            return True
+        # Keep a validated incumbent for tiny absolute roundoff, without a proof.
+        # This allowance does not grow with cost or relax original feasibility.
+        if abs(cost - native) <= 1e-6:
+            return False
+    raise RuntimeError(
+        "Feature composition objective disagrees with original selections."
+    )
+
+
 def solve_selection(model, coverage, decode, time_limit):
     """Share a deadline across coverage and cost phases, retaining valid incumbents."""
     started = perf_counter()
@@ -241,17 +255,9 @@ def solve_selection(model, coverage, decode, time_limit):
     if not incumbent:
         raise NoIncumbent(status)
     result = decode(*model.selection())
-    if (
-        not coverage
-        and status == "optimal"
-        and not math.isclose(
-            result[2], model.objective_value(), rel_tol=1e-8, abs_tol=1e-7
-        )
-    ):
-        raise RuntimeError(
-            "Feature composition objective disagrees with original selections."
-        )
-    gap = 0 if status == "optimal" else math.inf
+    gap = math.inf
+    if not coverage and status == "optimal" and _checked_cost_matches(model, result[2]):
+        gap = 0
     if coverage:
         claimed = round(sum(model.value(x) for x in coverage))
         if result[3] < claimed:
@@ -262,18 +268,15 @@ def solve_selection(model, coverage, decode, time_limit):
             cost_status, cost_incumbent = model.solve(model.cost, deadline)
             if cost_incumbent:
                 candidate = decode(*model.selection())
-                if cost_status == "optimal" and not math.isclose(
-                    candidate[2], model.objective_value(), rel_tol=1e-8, abs_tol=1e-7
-                ):
-                    raise RuntimeError(
-                        "Feature composition objective disagrees with original selections."
-                    )
+                cost_proven = cost_status == "optimal" and _checked_cost_matches(
+                    model, candidate[2]
+                )
                 if candidate[3] < claimed:
                     raise RuntimeError(
                         "Feature composition overstates connected requirements."
                     )
                 if candidate[2] <= result[2]:
                     result = candidate
-                if cost_status == "optimal" and result[3] == claimed:
+                if cost_proven and result[3] == claimed:
                     gap = 0
     return result, gap, perf_counter() - started
