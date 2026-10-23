@@ -114,10 +114,12 @@ def test_adaptive_solve_retains_incumbent_values_and_clears_fallback(
     "remaining,outcome,elapsed,expected",
     [
         (1, ("incomplete", False), 0, 1),
+        (3, ("incomplete", False), 0, 1),
+        (4, ("incomplete", False), 0, 1),
         (5, ("optimal", True), 0, 1),
         (5, ("infeasible", False), 0, 1),
         (5, ("incomplete", False), 6, 1),
-        (5, ("incomplete", False), 1, 2),
+        (5, ("incomplete", False), 2, 2),
     ],
 )
 def test_adaptive_solve_respects_deadline_and_does_not_restart_finished_solves(
@@ -143,3 +145,32 @@ def test_adaptive_solve_respects_deadline_and_does_not_restart_finished_solves(
     assert model.solve(None, 100 + remaining) == outcome
     assert len(calls) == expected and len(strengthened) == expected - 1
     assert calls[-1] <= 100 + remaining
+
+
+def test_near_finished_model_gets_time_to_prove_without_strengthening(monkeypatch):
+    # The measured Snellius regression needs about 1.27 seconds on the first model.
+    from steinerpy import _selection_model as selection
+
+    model = SelectionModel.__new__(SelectionModel)
+    model._connectivity_roots = {}
+    model._fallback = None
+    clock = [100.0]
+    calls = []
+    monkeypatch.setattr(selection, "perf_counter", lambda: clock[0])
+
+    def optimize(objective, deadline):
+        calls.append(deadline)
+        if deadline - clock[0] < 1.3:
+            clock[0] = deadline
+            return "incomplete", False
+        clock[0] += 1.3
+        return "optimal", True
+
+    def unexpected_retry():
+        pytest.fail("A near-finished solve should retain its original model")
+
+    model._optimize = optimize
+    model._time_limit_reached = lambda: True
+    model.strengthen_connectivity = unexpected_retry
+    assert model.solve(None, 110) == ("optimal", True)
+    assert len(calls) == 1
