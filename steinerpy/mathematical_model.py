@@ -345,6 +345,22 @@ def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsMo
     return model
 
 
+def _minimize_highs_lp(model, objective):
+    # Forced parallel simplex can stall tiny cut relaxations (issue #85).
+    # Let HiGHS choose for this LP; retain the caller's MIP parallelism.
+    # shortcut: older HiGHS needs this workaround; remove when its minimum is 1.15.
+    if (hp.HIGHS_VERSION_MAJOR, hp.HIGHS_VERSION_MINOR) >= (1, 15):
+        return model.minimize(objective)
+    parallel = model.getOptionValue("parallel")[1]
+    if parallel != "on":
+        return model.minimize(objective)
+    try:
+        model.setOptionValue("parallel", "choose")
+        return model.minimize(objective)
+    finally:
+        model.setOptionValue("parallel", parallel)
+
+
 def _arc_adjacency(arcs) -> Tuple[Dict, Dict]:
     """Per-node incoming/outgoing arc lists, built in one pass over ``arcs``.
 
@@ -1231,7 +1247,7 @@ def run_model(model: hp.HighsModel, steiner_problem: 'SteinerProblem', x: hp.Hig
                     break
                 model.setOptionValue("time_limit", remaining)
                 solve_start = perf_counter()
-                model.minimize(objective_expr)
+                _minimize_highs_lp(model, objective_expr)
                 cut_pool.record_solve("lp", perf_counter() - solve_start)
                 if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
                         or not model.getSolution().value_valid):
@@ -2154,7 +2170,7 @@ def solve_sap_highs(view, time_limit: float = 300, logfile: str = "",
                     break
                 model.setOptionValue("time_limit", remaining)
                 solve_start = perf_counter()
-                model.minimize(obj)
+                _minimize_highs_lp(model, obj)
                 cut_pool.record_solve("lp", perf_counter() - solve_start)
                 if (model.getModelStatus() != hp.HighsModelStatus.kOptimal
                         or not model.getSolution().value_valid):
