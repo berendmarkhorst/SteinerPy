@@ -1,0 +1,173 @@
+{
+  "highs-1.12": {
+    "commits": {
+      "baseline": "35e911557a93c1e71fbc223a2e52787a4ee4d785",
+      "candidate": "8027740c7569a44d83addfd07242674233e6a3d9"
+    },
+    "dirty": {
+      "baseline": false,
+      "candidate": false
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "python": "3.12.15",
+    "logical_cpus": 14,
+    "threads": 0,
+    "time_limit": 3,
+    "worker_timeout": 12,
+    "repeats": 3,
+    "observation_count": 36
+  },
+  "highs-1.15": {
+    "commits": {
+      "baseline": "35e911557a93c1e71fbc223a2e52787a4ee4d785",
+      "candidate": "8027740c7569a44d83addfd07242674233e6a3d9"
+    },
+    "dirty": {
+      "baseline": false,
+      "candidate": false
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "python": "3.12.15",
+    "logical_cpus": 14,
+    "threads": 0,
+    "time_limit": 3,
+    "worker_timeout": 12,
+    "repeats": 3,
+    "observation_count": 36
+  },
+  "highs-1.15-followup": {
+    "commits": {
+      "baseline": "35e911557a93c1e71fbc223a2e52787a4ee4d785",
+      "candidate": "8027740c7569a44d83addfd07242674233e6a3d9"
+    },
+    "dirty": {
+      "baseline": false,
+      "candidate": false
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "python": "3.12.15",
+    "logical_cpus": 14,
+    "threads": 0,
+    "time_limit": 3,
+    "worker_timeout": 12,
+    "repeats": 9,
+    "observation_count": 54
+  },
+  "final-1.12.0": {
+    "commits": {
+      "baseline": "35e911557a93c1e71fbc223a2e52787a4ee4d785",
+      "candidate": "9007009626d34c81e80a0471af41dcc8bd6de47e"
+    },
+    "dirty": {
+      "baseline": false,
+      "candidate": false
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "python": "3.12.15",
+    "logical_cpus": 14,
+    "threads": 0,
+    "time_limit": 3,
+    "worker_timeout": 12,
+    "repeats": 3,
+    "observation_count": 6
+  },
+  "final-1.13.1": {
+    "commits": {
+      "baseline": "35e911557a93c1e71fbc223a2e52787a4ee4d785",
+      "candidate": "9007009626d34c81e80a0471af41dcc8bd6de47e"
+    },
+    "dirty": {
+      "baseline": false,
+      "candidate": false
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "python": "3.12.15",
+    "logical_cpus": 14,
+    "threads": 0,
+    "time_limit": 3,
+    "worker_timeout": 12,
+    "repeats": 3,
+    "observation_count": 6
+  },
+  "final-1.14.0": {
+    "commits": {
+      "baseline": "35e911557a93c1e71fbc223a2e52787a4ee4d785",
+      "candidate": "9007009626d34c81e80a0471af41dcc8bd6de47e"
+    },
+    "dirty": {
+      "baseline": false,
+      "candidate": false
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "python": "3.12.15",
+    "logical_cpus": 14,
+    "threads": 0,
+    "time_limit": 3,
+    "worker_timeout": 12,
+    "repeats": 3,
+    "observation_count": 6
+  },
+  "final-1.15.0": {
+    "commits": {
+      "baseline": "35e911557a93c1e71fbc223a2e52787a4ee4d785",
+      "candidate": "9007009626d34c81e80a0471af41dcc8bd6de47e"
+    },
+    "dirty": {
+      "baseline": false,
+      "candidate": false
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "python": "3.12.15",
+    "logical_cpus": 14,
+    "threads": 0,
+    "time_limit": 3,
+    "worker_timeout": 12,
+    "repeats": 3,
+    "observation_count": 6
+  },
+  "final-1.15.1": {
+    "commits": {
+      "baseline": "35e911557a93c1e71fbc223a2e52787a4ee4d785",
+      "candidate": "9007009626d34c81e80a0471af41dcc8bd6de47e"
+    },
+    "dirty": {
+      "baseline": false,
+      "candidate": false
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "python": "3.12.15",
+    "logical_cpus": 14,
+    "threads": 0,
+    "time_limit": 3,
+    "worker_timeout": 12,
+    "repeats": 3,
+    "observation_count": 6
+  },
+  "final-controls-1.15.1": {
+    "commits": {
+      "baseline": "35e911557a93c1e71fbc223a2e52787a4ee4d785",
+      "candidate": "9007009626d34c81e80a0471af41dcc8bd6de47e"
+    },
+    "dirty": {
+      "baseline": false,
+      "candidate": false
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "python": "3.12.15",
+    "logical_cpus": 14,
+    "threads": 0,
+    "time_limit": 3,
+    "worker_timeout": 12,
+    "repeats": 3,
+    "observation_count": 36
+  }
+}

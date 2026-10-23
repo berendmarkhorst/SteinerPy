@@ -1,0 +1,293 @@
+{
+  "issue": 97,
+  "date": "2026-10-23",
+  "baseline": "c9f4e67dbdfecabe3e243276f58542e21ca84c0e",
+  "fix": "12f3ab7",
+  "platform": "Windows",
+  "python": "3.12.15",
+  "networkx": "3.6.1",
+  "case": "prize-forest",
+  "seed": 43,
+  "preprocess": false,
+  "threads": 1,
+  "time_limit": 5,
+  "gap_convention": "null means unknown; numeric zero retains the existing solver proof convention",
+  "validation": "Original edges, required connectivity, node attachment and prize objective independently recomputed for all retained certificates.",
+  "scope": "Single-instance correctness diagnostics, not a performance benchmark. Certificates are unchanged before/after per backend.",
+  "observations": [
+    {
+      "solver": "highs",
+      "version": "1.12.0",
+      "native_status": "Optimal",
+      "native_objective": 2.999999797884911,
+      "native_bound": 2.999999797884911,
+      "native_gap": 0.0,
+      "original_canonical": 3,
+      "reported_objective": 24,
+      "before": {
+        "status": "error",
+        "gap": null,
+        "error": "Feature composition objective disagrees with original selections."
+      },
+      "after": {
+        "status": "feasible",
+        "gap": null
+      },
+      "selected_nodes": [
+        0,
+        3,
+        4,
+        5,
+        6,
+        12,
+        14,
+        16,
+        17,
+        21,
+        22
+      ],
+      "selected_edges": [
+        [
+          0,
+          4
+        ],
+        [
+          3,
+          14
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          5,
+          12
+        ],
+        [
+          5,
+          21
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          16,
+          17
+        ],
+        [
+          17,
+          22
+        ],
+        [
+          21,
+          22
+        ]
+      ],
+      "fractional_selections": [
+        [
+          "1",
+          -2.5330926245459295e-09
+        ],
+        [
+          "17",
+          1.000000199581968
+        ],
+        [
+          "21",
+          0.9999998004180346
+        ],
+        [
+          "(0, 4)",
+          1.0000000025330926
+        ],
+        [
+          "(0, 1)",
+          -2.5330926245459295e-09
+        ],
+        [
+          "(1, 21)",
+          -2.5330926245459295e-09
+        ],
+        [
+          "(3, 14)",
+          0.9999999999999933
+        ],
+        [
+          "(3, 4)",
+          0.9999997978849456
+        ],
+        [
+          "(5, 12)",
+          0.9999999999999933
+        ],
+        [
+          "(5, 21)",
+          0.9999999999999981
+        ],
+        [
+          "(17, 22)",
+          1.000000199581968
+        ],
+        [
+          "(21, 22)",
+          0.9999998004180346
+        ]
+      ],
+      "max_integrality_violation": 2.0211505435963062e-07
+    },
+    {
+      "solver": "highs",
+      "version": "1.15.1",
+      "native_status": "Optimal",
+      "native_objective": 3.000000000000001,
+      "native_bound": 3.0,
+      "native_gap": 0.0,
+      "original_canonical": 3,
+      "reported_objective": 24,
+      "before": {
+        "status": "optimal",
+        "gap": 0,
+        "error": null
+      },
+      "after": {
+        "status": "optimal",
+        "gap": 0
+      },
+      "selected_nodes": [
+        0,
+        4,
+        5,
+        6,
+        12,
+        14,
+        15,
+        16,
+        17,
+        21,
+        22
+      ],
+      "selected_edges": [
+        [
+          0,
+          4
+        ],
+        [
+          5,
+          12
+        ],
+        [
+          5,
+          21
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          14,
+          15
+        ],
+        [
+          15,
+          16
+        ],
+        [
+          16,
+          17
+        ],
+        [
+          17,
+          22
+        ],
+        [
+          21,
+          22
+        ]
+      ],
+      "fractional_selections": [
+        [
+          "15",
+          1.0000000000000002
+        ],
+        [
+          "(15, 16)",
+          1.0000000000000002
+        ]
+      ],
+      "max_integrality_violation": 2.220446049250313e-16
+    },
+    {
+      "solver": "gurobi",
+      "version": "13.0.3",
+      "native_status": 2,
+      "native_objective": 3.0,
+      "native_bound": 3.0,
+      "native_gap": 0.0,
+      "original_canonical": 3,
+      "reported_objective": 24,
+      "before": {
+        "status": "optimal",
+        "gap": 0,
+        "error": null
+      },
+      "after": {
+        "status": "optimal",
+        "gap": 0
+      },
+      "selected_nodes": [
+        0,
+        3,
+        4,
+        5,
+        6,
+        12,
+        14,
+        16,
+        17,
+        21,
+        22
+      ],
+      "selected_edges": [
+        [
+          0,
+          4
+        ],
+        [
+          3,
+          14
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          5,
+          12
+        ],
+        [
+          5,
+          21
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          16,
+          17
+        ],
+        [
+          17,
+          22
+        ],
+        [
+          21,
+          22
+        ]
+      ],
+      "fractional_selections": [],
+      "max_integrality_violation": null
+    }
+  ]
+}
