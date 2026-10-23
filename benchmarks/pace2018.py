@@ -33,13 +33,15 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-def reference_cases(dataset, tracks):
+def reference_cases(dataset, tracks, instances=None):
     """Use the organizers' manifests, including the omission of Track 3 #058."""
     result = []
     for track in tracks:
         with (dataset / "track{}.csv".format(track)).open(newline="") as stream:
             for row in csv.DictReader(stream):
                 name = row["paceName"].strip()
+                if instances is not None and name not in instances:
+                    continue
                 path = dataset / "Track{}".format(track) / name
                 if not path.is_file():
                     raise FileNotFoundError(path)

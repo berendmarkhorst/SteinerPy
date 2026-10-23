@@ -1,0 +1,158 @@
+{
+  "run": {
+    "commit": "85b1235d1239896a3e463432ea936b610ac84866",
+    "dataset_commit": "4df73cea9c311faea7d03e6d6bffa8733c34a1aa",
+    "python": "3.12.3",
+    "packages": {
+      "networkx": "3.7",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "highspy": "1.15.1",
+      "gurobipy": "13.0.3"
+    },
+    "cpu": "AMD EPYC 7H12 64-Core Processor",
+    "platform": "Linux-5.14.0-687.59.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "slurm_job": "28473801",
+    "slurm_array_task": null,
+    "commits": {
+      "baseline": "9c980eca523c21101a5dd624901426a98d3cde56",
+      "candidate": "a11d90eec231349640691f721a7fdca87b1578cb"
+    },
+    "harness_commit": "85b1235d1239896a3e463432ea936b610ac84866",
+    "native_highs_version": "1.15.1",
+    "memory_limit_enforced": true
+  },
+  "cases": [
+    {
+      "track": 1,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track1/instance001.gr",
+      "reference_lower": 503.0,
+      "reference_upper": 503.0,
+      "instance_sha256": "76ea79c05e41de49a8c3b24c953d512155a5ff7ad40109fb77c915ec6e7efed1",
+      "id": "general-track1-001",
+      "config": "composition-highs",
+      "kind": "pace"
+    },
+    {
+      "track": 1,
+      "instance": "instance002.gr",
+      "split": "private",
+      "path": "Track1/instance002.gr",
+      "reference_lower": 111.0,
+      "reference_upper": 111.0,
+      "instance_sha256": "a051a8782307aa2c7ed2a0db2422157b58eb1c0e96dd3857c7ecd22ac3bb1d84",
+      "id": "general-track1-002",
+      "config": "composition-highs",
+      "kind": "pace"
+    },
+    {
+      "track": 2,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track2/instance001.gr",
+      "reference_lower": 1086.0,
+      "reference_upper": 1086.0,
+      "instance_sha256": "c3913bf1709f5dd21c4c94204810b24f0fb100d29571ecfa25bc162dacde490b",
+      "id": "general-track2-001",
+      "config": "composition-highs",
+      "kind": "pace"
+    },
+    {
+      "track": 2,
+      "instance": "instance002.gr",
+      "split": "private",
+      "path": "Track2/instance002.gr",
+      "reference_lower": 626.0,
+      "reference_upper": 626.0,
+      "instance_sha256": "5e1419f683f331238110e5689c0d9344f98956a57d2cbd726c8e33a1b4b14d55",
+      "id": "general-track2-002",
+      "config": "composition-highs",
+      "kind": "pace"
+    },
+    {
+      "track": 3,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track3/instance001.gr",
+      "reference_lower": 2256.0,
+      "reference_upper": 2256.0,
+      "instance_sha256": "57b06e0686347939436566441bedf41e22dd0abee6d48145243ccbe92d2f7fae",
+      "id": "general-track3-001",
+      "config": "composition-highs",
+      "kind": "pace"
+    },
+    {
+      "track": 3,
+      "instance": "instance002.gr",
+      "split": "private",
+      "path": "Track3/instance002.gr",
+      "reference_lower": 15076.0,
+      "reference_upper": 15076.0,
+      "instance_sha256": "6cd5de5c7d8741d66e27ed494d1f965cb47dc0d5c7d450736e8cd10ee9d7c04b",
+      "id": "general-track3-002",
+      "config": "composition-highs",
+      "kind": "pace"
+    },
+    {
+      "id": "resource-tree-42",
+      "name": "resource-tree",
+      "seed": 42,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-43",
+      "name": "resource-tree",
+      "seed": 43,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "groups-forest-44",
+      "name": "groups-forest",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-44",
+      "name": "signed-rewards",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "track": 1,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track1/instance001.gr",
+      "reference_lower": 503.0,
+      "reference_upper": 503.0,
+      "instance_sha256": "76ea79c05e41de49a8c3b24c953d512155a5ff7ad40109fb77c915ec6e7efed1",
+      "id": "classic-track1-001",
+      "config": "highs",
+      "kind": "pace"
+    },
+    {
+      "track": 2,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track2/instance001.gr",
+      "reference_lower": 1086.0,
+      "reference_upper": 1086.0,
+      "instance_sha256": "c3913bf1709f5dd21c4c94204810b24f0fb100d29571ecfa25bc162dacde490b",
+      "id": "classic-track2-001",
+      "config": "highs",
+      "kind": "pace"
+    }
+  ],
+  "jobs": 3,
+  "repeats": 2,
+  "workers": 48,
+  "threads": 1,
+  "time_limit": 120,
+  "memory_gb": 8,
+  "solver": "highs"
+}
