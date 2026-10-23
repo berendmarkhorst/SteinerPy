@@ -348,6 +348,9 @@ def make_model(time_limit: float, logfile: str = "", threads=None) -> hp.HighsMo
 def _minimize_highs_lp(model, objective):
     # Forced parallel simplex can stall tiny cut relaxations (issue #85).
     # Let HiGHS choose for this LP; retain the caller's MIP parallelism.
+    # shortcut: older HiGHS needs this workaround; remove when its minimum is 1.15.
+    if (hp.HIGHS_VERSION_MAJOR, hp.HIGHS_VERSION_MINOR) >= (1, 15):
+        return model.minimize(objective)
     parallel = model.getOptionValue("parallel")[1]
     if parallel != "on":
         return model.minimize(objective)

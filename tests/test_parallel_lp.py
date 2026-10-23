@@ -15,13 +15,18 @@ from steinerpy import mathematical_model as mm
 
 @pytest.mark.parametrize("parallel", ["on", "off", "choose"])
 @pytest.mark.parametrize("fails", [False, True])
-def test_lp_configuration_is_restored_even_on_failure(monkeypatch, parallel, fails):
+@pytest.mark.parametrize("native_version", [(1, 12), (1, 14), (1, 15), (2, 0)])
+def test_lp_configuration_is_restored_even_on_failure(
+    monkeypatch, parallel, fails, native_version
+):
+    monkeypatch.setattr(hp, "HIGHS_VERSION_MAJOR", native_version[0])
+    monkeypatch.setattr(hp, "HIGHS_VERSION_MINOR", native_version[1])
     model = mm.make_model(3, threads=2)
     model.setOptionValue("parallel", parallel)
 
     def minimize(objective):
         assert model.getOptionValue("parallel")[1] == (
-            "choose" if parallel == "on" else parallel
+            "choose" if parallel == "on" and native_version < (1, 15) else parallel
         )
         assert model.getOptionValue("threads")[1] == 2
         if fails:
@@ -58,7 +63,13 @@ def test_both_cut_loops_keep_integer_parallelism_and_exact_solution(
             t != hp.HighsVarType.kContinuous for t in model.getLp().integrality_
         )
         calls.append(integer)
-        assert model.getOptionValue("parallel")[1] == ("on" if integer else "choose")
+        expect_parallel = integer or (
+            hp.HIGHS_VERSION_MAJOR,
+            hp.HIGHS_VERSION_MINOR,
+        ) >= (1, 15)
+        assert model.getOptionValue("parallel")[1] == (
+            "on" if expect_parallel else "choose"
+        )
         return minimize(model, *args, **kwargs)
 
     monkeypatch.setattr(hp.Highs, "minimize", record)
