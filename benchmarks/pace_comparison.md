@@ -4,6 +4,13 @@ Issue #104 follows the [completed connectivity pilot](reports/connectivity/snell
 Keep its two questions separate: when should the general model be strengthened,
 and how does the normal public API compare with a PACE participant?
 
+The [completed 23 October report](reports/connectivity/pace-followup-20261023/README.md)
+retains all 96 HPC observations. The longer probe removes the measured reward-case
+regression but adds 0.55–0.85 seconds to the sampled resource cases. The normal
+HiGHS API reaches eight optima in 24 PACE runs versus eighteen for wata&sigma.
+The report records failures, limitations and a focused next investigation of
+classic-solver incumbents and proof progress.
+
 The fixed experiment has two parts, each with two alternating repetitions:
 
 1. Twelve combined-feature cases compare the one-second policy on main after
