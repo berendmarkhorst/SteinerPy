@@ -14,7 +14,8 @@ set -euo pipefail
 module purge
 module load 2024 Python/3.12.3-GCCcore-13.3.0
 BENCH_ROOT="${BENCH_ROOT:-$HOME/steinerpy-benchmarks}"
-PILOT_ROOT="${PILOT_ROOT:?Set PILOT_ROOT to the prepared pilot directory}"
+# Some sites strip custom exported variables from the submitted environment.
+PILOT_ROOT="${PILOT_ROOT:-${SLURM_SUBMIT_DIR:?Submit from the prepared pilot directory}}"
 cd "$PILOT_ROOT/harness"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 exec "$BENCH_ROOT/.venv/bin/python" -m benchmarks.connectivity_pilot \

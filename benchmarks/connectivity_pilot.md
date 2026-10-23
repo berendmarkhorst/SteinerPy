@@ -45,6 +45,9 @@ cd "$PILOT_ROOT"
 sbatch "$PILOT_ROOT/harness/benchmarks/slurm_connectivity_pilot.sh"
 ```
 
+Submit from the pilot directory as shown. If the site does not forward
+`PILOT_ROOT`, the job uses Slurm's recorded submission directory.
+
 The existing virtual environment and official PACE dataset are reused. The
 manifest records exact revisions, dependencies, CPU, node, job ID and instance
 hashes. Source checkouts must be clean, and output directories must be new to
