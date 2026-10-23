@@ -1,0 +1,166 @@
+{
+  "run": {
+    "commit": "f8ab541053e4746a26b8a23e90527c8388b665a3",
+    "dataset_commit": "4df73cea9c311faea7d03e6d6bffa8733c34a1aa",
+    "python": "3.12.15",
+    "packages": {
+      "networkx": "3.6.1",
+      "numpy": "2.3.5",
+      "scipy": "1.18.0",
+      "highspy": "1.15.1",
+      "gurobipy": "13.0.3"
+    },
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "platform": "Windows-11-10.0.26100-SP0",
+    "slurm_job": null,
+    "slurm_array_task": null,
+    "commits": {
+      "baseline": "9c980eca523c21101a5dd624901426a98d3cde56",
+      "candidate": "a11d90eec231349640691f721a7fdca87b1578cb"
+    },
+    "harness_commit": "f8ab541053e4746a26b8a23e90527c8388b665a3",
+    "native_highs_version": "1.15.1",
+    "memory_limit_enforced": false
+  },
+  "cases": [
+    {
+      "track": 1,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track1/instance001.gr",
+      "reference_lower": 503.0,
+      "reference_upper": 503.0,
+      "instance_sha256": "b53257aea5a0096f77138cdce6ab986a9a31fc5a71acb37497debebdf25ab043",
+      "id": "general-track1-001",
+      "config": "composition-highs",
+      "kind": "pace",
+      "lf_instance_sha256": "76ea79c05e41de49a8c3b24c953d512155a5ff7ad40109fb77c915ec6e7efed1"
+    },
+    {
+      "track": 1,
+      "instance": "instance002.gr",
+      "split": "private",
+      "path": "Track1/instance002.gr",
+      "reference_lower": 111.0,
+      "reference_upper": 111.0,
+      "instance_sha256": "713047ceadcf5b447499e78660b7b39ec9727fc758c7b965ef5ed78fbb3c816d",
+      "id": "general-track1-002",
+      "config": "composition-highs",
+      "kind": "pace",
+      "lf_instance_sha256": "a051a8782307aa2c7ed2a0db2422157b58eb1c0e96dd3857c7ecd22ac3bb1d84"
+    },
+    {
+      "track": 2,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track2/instance001.gr",
+      "reference_lower": 1086.0,
+      "reference_upper": 1086.0,
+      "instance_sha256": "513f34c3fe27dda04d878077b6d1f446c979e3ce616a6929772eda917e18f06d",
+      "id": "general-track2-001",
+      "config": "composition-highs",
+      "kind": "pace",
+      "lf_instance_sha256": "c3913bf1709f5dd21c4c94204810b24f0fb100d29571ecfa25bc162dacde490b"
+    },
+    {
+      "track": 2,
+      "instance": "instance002.gr",
+      "split": "private",
+      "path": "Track2/instance002.gr",
+      "reference_lower": 626.0,
+      "reference_upper": 626.0,
+      "instance_sha256": "5dc24234541df362cb867ca4db88af46ef00b07cd7a58ceaf62b92211f4545fa",
+      "id": "general-track2-002",
+      "config": "composition-highs",
+      "kind": "pace",
+      "lf_instance_sha256": "5e1419f683f331238110e5689c0d9344f98956a57d2cbd726c8e33a1b4b14d55"
+    },
+    {
+      "track": 3,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track3/instance001.gr",
+      "reference_lower": 2256.0,
+      "reference_upper": 2256.0,
+      "instance_sha256": "7abbd7df6567977565e22473177947d804216e6a00c9a46f903d3138b64a64c4",
+      "id": "general-track3-001",
+      "config": "composition-highs",
+      "kind": "pace",
+      "lf_instance_sha256": "57b06e0686347939436566441bedf41e22dd0abee6d48145243ccbe92d2f7fae"
+    },
+    {
+      "track": 3,
+      "instance": "instance002.gr",
+      "split": "private",
+      "path": "Track3/instance002.gr",
+      "reference_lower": 15076.0,
+      "reference_upper": 15076.0,
+      "instance_sha256": "bd8ead478f21057f2e3caaeb4a552bc0580f6af62e33a799699576a996edae75",
+      "id": "general-track3-002",
+      "config": "composition-highs",
+      "kind": "pace",
+      "lf_instance_sha256": "6cd5de5c7d8741d66e27ed494d1f965cb47dc0d5c7d450736e8cd10ee9d7c04b"
+    },
+    {
+      "id": "resource-tree-42",
+      "name": "resource-tree",
+      "seed": 42,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-43",
+      "name": "resource-tree",
+      "seed": 43,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "groups-forest-44",
+      "name": "groups-forest",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-44",
+      "name": "signed-rewards",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "track": 1,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track1/instance001.gr",
+      "reference_lower": 503.0,
+      "reference_upper": 503.0,
+      "instance_sha256": "b53257aea5a0096f77138cdce6ab986a9a31fc5a71acb37497debebdf25ab043",
+      "id": "classic-track1-001",
+      "config": "highs",
+      "kind": "pace",
+      "lf_instance_sha256": "76ea79c05e41de49a8c3b24c953d512155a5ff7ad40109fb77c915ec6e7efed1"
+    },
+    {
+      "track": 2,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track2/instance001.gr",
+      "reference_lower": 1086.0,
+      "reference_upper": 1086.0,
+      "instance_sha256": "513f34c3fe27dda04d878077b6d1f446c979e3ce616a6929772eda917e18f06d",
+      "id": "classic-track2-001",
+      "config": "highs",
+      "kind": "pace",
+      "lf_instance_sha256": "c3913bf1709f5dd21c4c94204810b24f0fb100d29571ecfa25bc162dacde490b"
+    }
+  ],
+  "jobs": 1,
+  "repeats": 2,
+  "workers": 48,
+  "threads": 1,
+  "time_limit": 15.0,
+  "memory_gb": 8,
+  "solver": "highs"
+}

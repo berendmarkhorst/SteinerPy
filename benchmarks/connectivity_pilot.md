@@ -62,6 +62,11 @@ speedup guarantee; even unchanged controls may vary under shared-node load.
 
 ## Short local assessment
 
+The [23 October local results](reports/connectivity/local-pilot-20261023/README.md)
+retain all 48 observations: current main reaches 18 known or solver-proven optima
+versus 10 for the baseline, with six timeouts each. This includes two repetitions
+per case and does not establish a PACE ranking.
+
 The same twelve cases and two alternating repetitions can run sequentially with
 `--jobs 1 --time-limit 15`. This caps the 48 workers at twelve minutes in total,
 plus supervisor overhead. The default HPC limit remains 120 seconds. Use a new
