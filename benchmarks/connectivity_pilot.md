@@ -2,7 +2,8 @@
 
 This follows PR #98 and keeps the completed PACE 2018 report unchanged.
 Compare baseline `9c980eca523c21101a5dd624901426a98d3cde56` with merged
-candidate `c9f4e67dbdfecabe3e243276f58542e21ca84c0e` using the same harness,
+candidate `a11d90eec231349640691f721a7fdca87b1578cb` (main after PRs #98, #101
+and #103) using the same harness,
 Python environment, compute node, limits and input data.
 
 The fixed sample contains twelve cases:
@@ -32,13 +33,13 @@ first, then replace `HARNESS_SHA` below with its reviewed commit:
 
 ```bash
 BENCH_ROOT="$HOME/steinerpy-benchmarks"
-export PILOT_ROOT="$BENCH_ROOT/connectivity-pilot-20261022"
+export PILOT_ROOT="$BENCH_ROOT/connectivity-pilot-20261023"
 git -C "$BENCH_ROOT/source" fetch origin
 mkdir "$PILOT_ROOT"
 git -C "$BENCH_ROOT/source" worktree add --detach "$PILOT_ROOT/baseline" \
   9c980eca523c21101a5dd624901426a98d3cde56
 git -C "$BENCH_ROOT/source" worktree add --detach "$PILOT_ROOT/candidate" \
-  c9f4e67dbdfecabe3e243276f58542e21ca84c0e
+  a11d90eec231349640691f721a7fdca87b1578cb
 git -C "$BENCH_ROOT/source" worktree add --detach "$PILOT_ROOT/harness" HARNESS_SHA
 cd "$PILOT_ROOT"
 sbatch "$PILOT_ROOT/harness/benchmarks/slurm_connectivity_pilot.sh"
@@ -59,5 +60,28 @@ A timeout is not a measured solve time, and an unproved incumbent is not a prove
 optimum. Two repeats on twelve cases are a pilot, not a PACE ranking or a general
 speedup guarantee; even unchanged controls may vary under shared-node load.
 
-The previous local measurements establish promising improvements on some hard
-combinations. New Snellius performance claims require the completed pilot data.
+## Short local assessment
+
+The same twelve cases and two alternating repetitions can run sequentially with
+`--jobs 1 --time-limit 15`. This caps the 48 workers at twelve minutes in total,
+plus supervisor overhead. The default HPC limit remains 120 seconds. Use a new
+output directory so the local observations cannot be mixed with HPC results:
+
+```bash
+python -m benchmarks.connectivity_pilot --dataset DATASET --baseline BASELINE --candidate CANDIDATE --output LOCAL_RESULTS --jobs 1 --time-limit 15
+```
+
+A sparse copy of the official dataset is sufficient: retain the three `trackN.csv`
+manifests and `instance001.gr`/`instance002.gr` from each `TrackN` directory. The
+runner checks and hashes every selected file. Keep the pinned dataset revision
+`4df73cea9c311faea7d03e6d6bffa8733c34a1aa` for comparison with the previous sweep.
+
+Use HiGHS 1.15.1 for this comparison, matching the previous Snellius run. The
+manifest records both package and native solver versions. Windows enforces the
+worker deadline but does not enforce the Linux 8 GiB address-space cap; this is
+recorded as `memory_limit_enforced=false`. Run one worker at a time locally.
+
+These short local measurements are a provisional assessment. The pilot compares
+SteinerPy revisions, not PACE competitors. New Snellius performance claims require
+completed HPC data, and a current winner comparison requires rerunning that solver
+under the same conditions.
