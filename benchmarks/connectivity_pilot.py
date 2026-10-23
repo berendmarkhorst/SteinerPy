@@ -1,4 +1,4 @@
-"""The fixed, bounded HiGHS pilot for the connectivity change in PR #98."""
+"""A bounded before/after HiGHS pilot, locally or on Snellius."""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +18,9 @@ from benchmarks import pace2018 as pace, profile_composition as profile
 def cases(dataset):
     references = {
         (row["track"], row["instance"]): row
-        for row in pace.reference_cases(dataset, [1, 2, 3])
+        for row in pace.reference_cases(
+            dataset, [1, 2, 3], instances={"instance001.gr", "instance002.gr"}
+        )
     }
     result = []
     for track in (1, 2, 3):
@@ -164,7 +166,7 @@ def clean_revision(root):
     return revision
 
 
-def run_pair(case, roots, context, output):
+def run_pair(case, roots, context, output, time_limit=120):
     rows = []
     for repeat in range(2):
         labels = list(roots) if repeat == 0 else list(reversed(roots))
@@ -174,7 +176,7 @@ def run_pair(case, roots, context, output):
             directory.mkdir()
             args = argparse.Namespace(
                 config=case["config"],
-                time_limit=120,
+                time_limit=time_limit,
                 memory_gb=8,
                 worker_module="benchmarks.connectivity_pilot",
             )
@@ -184,7 +186,7 @@ def run_pair(case, roots, context, output):
                 commit=context["commits"][label],
                 repeat=repeat,
                 threads=1,
-                time_limit=120,
+                time_limit=time_limit,
                 memory_gb=8,
                 config=case["config"],
             )
@@ -232,11 +234,19 @@ def main():
     parser.add_argument("--candidate", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--jobs", type=int, choices=(1, 2, 3), default=3)
+    parser.add_argument(
+        "--time-limit",
+        type=float,
+        default=120,
+        help="Whole-worker seconds (at most 120); use 15 for a short local pilot",
+    )
     parser.add_argument("--worker", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
         worker(args.worker)
         return
+    if not math.isfinite(args.time_limit) or not 0 < args.time_limit <= 120:
+        parser.error("--time-limit must be finite, positive and at most 120 seconds")
     if any(
         getattr(args, name) is None
         for name in ("dataset", "baseline", "candidate", "output")
@@ -247,9 +257,13 @@ def main():
     if commits["baseline"] == commits["candidate"]:
         parser.error("baseline and candidate must differ")
     context = pace.provenance(args.dataset)
+    import highspy
+
     context.update(
         commits=commits,
         harness_commit=clean_revision(Path(__file__).resolve().parents[1]),
+        native_highs_version=highspy.Highs().version(),
+        memory_limit_enforced=sys.platform == "linux",
     )
     selected = cases(args.dataset)
     args.output = args.output.resolve()
@@ -263,14 +277,15 @@ def main():
             repeats=2,
             workers=48,
             threads=1,
-            time_limit=120,
+            time_limit=args.time_limit,
             memory_gb=8,
             solver="highs",
         ),
     )
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         batches = pool.map(
-            lambda case: run_pair(case, roots, context, args.output), selected
+            lambda case: run_pair(case, roots, context, args.output, args.time_limit),
+            selected,
         )
         rows = [row for batch in batches for row in batch]
     pace.write_json(args.output / "results.json", dict(run=context, rows=rows))

@@ -39,6 +39,23 @@ def test_manifest_separates_tracks_and_public_private_instances(tmp_path):
     assert len({(c["track"], c["instance"]) for c in cases}) == 5
 
 
+def test_sparse_dataset_still_requires_selected_instances(tmp_path):
+    (tmp_path / "Track1").mkdir()
+    graph = tmp_path / "Track1" / "instance001.gr"
+    graph.write_text("selected instance")
+    (tmp_path / "track1.csv").write_text(
+        "paceName,opt\ninstance001.gr,3\ninstance002.gr,4\n"
+    )
+    rows = reference_cases(tmp_path, [1], instances={"instance001.gr"})
+    assert len(rows) == 1 and rows[0]["reference_lower"] == 3
+    assert len(rows[0]["instance_sha256"]) == 64
+    with pytest.raises(FileNotFoundError):
+        reference_cases(tmp_path, [1])
+    graph.unlink()
+    with pytest.raises(FileNotFoundError):
+        reference_cases(tmp_path, [1], instances={"instance001.gr"})
+
+
 def test_feasible_timeout_incumbent_is_not_claimed_optimal():
     graph = nx.Graph()
     graph.add_weighted_edges_from([(1, 2, 2), (2, 3, 2), (1, 3, 3)])

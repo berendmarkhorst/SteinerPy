@@ -2,19 +2,21 @@
 
 import argparse
 from pathlib import Path
+import sys
 
 import pytest
 
 from benchmarks import connectivity_pilot as pilot
 
 
-def test_fixed_sample_and_paired_order(monkeypatch, tmp_path):
+@pytest.mark.parametrize("time_limit", [15, 120])
+def test_fixed_sample_and_paired_order(monkeypatch, tmp_path, time_limit):
     references = [
         dict(track=track, instance=f"instance{number:03}.gr")
         for track in (1, 2, 3)
         for number in (1, 2, 3)
     ]
-    monkeypatch.setattr(pilot.pace, "reference_cases", lambda *args: references)
+    monkeypatch.setattr(pilot.pace, "reference_cases", lambda *a, **kw: references)
     selected = pilot.cases(tmp_path)
     assert len(selected) == len({case["id"] for case in selected}) == 12
     assert sum(case["config"] == "composition-highs" for case in selected) == 6
@@ -29,7 +31,8 @@ def test_fixed_sample_and_paired_order(monkeypatch, tmp_path):
     observed = []
 
     def execute(case, args, identity, directory, result_path, name):
-        assert args.time_limit == 120 and args.memory_gb == 8
+        assert args.time_limit == identity["time_limit"] == time_limit
+        assert args.memory_gb == 8
         assert identity["threads"] == 1
         assert args.config in {"highs", "composition-highs"}
         assert Path(case["source_root"]) == roots[identity["label"]]
@@ -39,12 +42,21 @@ def test_fixed_sample_and_paired_order(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pilot.pace, "execute_case", execute)
     for case in selected:
-        pilot.run_pair(case, roots, dict(commits=commits), tmp_path)
+        pilot.run_pair(case, roots, dict(commits=commits), tmp_path, time_limit)
     assert len(observed) == 48
     assert (
         observed
         == [(0, "baseline"), (0, "candidate"), (1, "candidate"), (1, "baseline")] * 12
     )
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "nan", "inf", "121"])
+def test_pilot_rejects_unbounded_deadlines(monkeypatch, capsys, limit):
+    monkeypatch.setattr(sys, "argv", ["pilot", "--time-limit", limit])
+    with pytest.raises(SystemExit) as error:
+        pilot.main()
+    assert error.value.code == 2
+    assert "--time-limit must be" in capsys.readouterr().err
 
 
 def isolated(case, tmp_path, limit=30, root=None):
