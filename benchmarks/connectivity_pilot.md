@@ -63,6 +63,17 @@ A timeout is not a measured solve time, and an unproved incumbent is not a prove
 optimum. Two repeats on twelve cases are a pilot, not a PACE ranking or a general
 speedup guarantee; even unchanged controls may vary under shared-node load.
 
+## Completed Snellius assessment
+
+The [23 October Snellius report](reports/connectivity/snellius-pilot-20261023/README.md)
+retains all 48 observations from job 28473801, which completed in 15 minutes
+45 seconds. Current main reaches 20 known or solver-proven optima in 24 runs
+versus 12 for the baseline; eighteen of the current results have solver proofs.
+Resource-tree seed 43 is 17.45 times faster to the same proved optimum, while
+signed-rewards seed 44 is 2.16 times slower. Both Track 3 cases still time out.
+These results motivate a focused follow-up on when to strengthen the model;
+they do not establish PACE-winner parity.
+
 ## Short local assessment
 
 The [23 October local results](reports/connectivity/local-pilot-20261023/README.md)
@@ -90,6 +101,7 @@ worker deadline but does not enforce the Linux 8 GiB address-space cap; this is
 recorded as `memory_limit_enforced=false`. Run one worker at a time locally.
 
 These short local measurements are a provisional assessment. The pilot compares
-SteinerPy revisions, not PACE competitors. New Snellius performance claims require
-completed HPC data, and a current winner comparison requires rerunning that solver
-under the same conditions.
+SteinerPy revisions, not PACE competitors. The completed Snellius assessment
+above uses a longer deadline and different hardware, so keep its observations
+separate. A current winner comparison requires rerunning that solver under the
+same conditions.
