@@ -1,0 +1,117 @@
+{
+  "run": {
+    "commit": "80055b308ab19ba344f03b84918abbdf7dd47bc0",
+    "dataset_commit": "4df73cea9c311faea7d03e6d6bffa8733c34a1aa",
+    "python": "3.12.15",
+    "packages": {
+      "networkx": "3.6.1",
+      "numpy": "2.3.5",
+      "scipy": "1.18.0",
+      "highspy": "1.15.1",
+      "gurobipy": "13.0.3"
+    },
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "platform": "Windows-11-10.0.26100-SP0",
+    "slurm_job": null,
+    "slurm_array_task": null,
+    "commits": {
+      "baseline": "d982be2f56905db602fd86818b4ac5f23edf3dd5",
+      "candidate": "80055b308ab19ba344f03b84918abbdf7dd47bc0"
+    },
+    "harness_commit": "80055b308ab19ba344f03b84918abbdf7dd47bc0",
+    "native_highs_version": "1.15.1",
+    "memory_limit_enforced": false
+  },
+  "cases": [
+    {
+      "id": "signed-rewards-40",
+      "name": "signed-rewards",
+      "seed": 40,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-41",
+      "name": "signed-rewards",
+      "seed": 41,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-42",
+      "name": "signed-rewards",
+      "seed": 42,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-43",
+      "name": "signed-rewards",
+      "seed": 43,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-44",
+      "name": "signed-rewards",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-45",
+      "name": "signed-rewards",
+      "seed": 45,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-42",
+      "name": "resource-tree",
+      "seed": 42,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-43",
+      "name": "resource-tree",
+      "seed": 43,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-44",
+      "name": "resource-tree",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-45",
+      "name": "resource-tree",
+      "seed": 45,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "groups-forest-42",
+      "name": "groups-forest",
+      "seed": 42,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "groups-forest-44",
+      "name": "groups-forest",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    }
+  ],
+  "workers": 48,
+  "repeats": 2,
+  "jobs": 1,
+  "time_limit": 15,
+  "memory_gb": 8,
+  "threads": 1
+}
