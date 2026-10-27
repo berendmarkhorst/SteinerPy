@@ -24,7 +24,8 @@ may share edges. Flat and one-list nested forms are equivalent.
 `groups=[["A", "B"], ["C", "D"]]` instead requires **at least one** member
 of each group in **one connected tree**. With groups, flat terminals can also
 require particular nodes; a single nested terminal list is equivalent. Multiple
-forest terminal lists combined with groups are not yet supported.
+forest lists are also supported: group choices share one connected component,
+while the other forest requirements may remain in separate components.
 
 Use lists for nested terminal syntax; tuple-valued node labels remain atomic.
 Mixed flat/nested inputs are rejected. `terminal_groups=` remains an alias for
@@ -33,43 +34,47 @@ the old nested syntax, including the positional second argument; supplying both
 
 | Features (no `variant` required) | Supported behavior |
 |---|---|
-| Undirected graph + flat or nested `terminals` | Steiner tree or forest; existing degree/edge-budget options apply |
-| Directed graph + `root` + one set of `terminals` | Rooted directed Steiner problem |
-| Directed graph + `root` + `terminals` + `hop_limit` | Existing hop-constrained problem |
-| Undirected graph + `groups` | Existing group Steiner problem |
-| Directed graph + `root` + `groups` | Existing directed group Steiner problem |
-| Directed graph + `root` + `groups` + `hop_limit` | Directed group problem with a limit on selected original arcs |
-| Directed graph + `root` + `groups` + `max_degree` | Directed group problem with original-node total degree limits; may also use `hop_limit` |
-| Directed graph + `root` + `groups` + `budget` | Maximize reached groups within an original-edge cost budget; optional degree/hop limits apply |
-| Undirected graph + `groups` + `node_costs` and/or mandatory `terminals` | New exact composition path, described below |
-| Same composition + `hop_limit` | Limit total selected original edges after node splitting |
+| Undirected graph + flat or nested `terminals` | Steiner tree or forest |
+| Directed graph + `root` + `terminals` and/or `groups` | Reach required terminals and group choices from the root |
+| Directed graph + several nested terminal lists | Directed forest; each list's first terminal is its root unless `root=` is supplied |
+| `groups`, optionally with mandatory `terminals` | Select at least one member per group; forest requirements may coexist |
+| Any of these + `node_costs` | Minimize original edge costs plus selected-node costs |
+| Any of these + `max_degree` / `hop_limit` | Limit original-node total degree / total selected original edges or arcs |
+| Any of these + `budget` (without rewards or penalties) | Maximize covered requirements within an edge-cost budget |
+| `node_prizes` | Minimize edge/node costs plus prizes of omitted nodes |
+| Signed `node_weights` | Maximize selected node weights; edge/node costs serve as budget resources |
+| `node_costs` + `node_budget` | Limit the sum of selected-node costs, independently of the edge budget |
+| `partial_terminals` | Listed terminals or group members have degree at most one when selected |
 
-Other named variants remain available through explicit `variant=` calls.
-Existing explicit calls and legacy classes retain their solution types and
-solver restrictions. Directed groups support budgets, degree and hop limits.
-The group/node-cost composition supports original-edge hop limits. Other
-undirected-group and legacy node-weighted modifier combinations remain restricted.
+These features can be combined, including forests, groups, rewards, budgets,
+degree/hop limits and terminal leaves. Choose either `node_prizes` or
+`node_weights`, not both. Terminal and group requirements stay mandatory with a
+reward objective unless `penalty_cost` makes them optional; with groups, explicit
+terminals remain mandatory. `penalty_budget` limits missed requirements.
+Rectilinear inputs and compatibility formulations use explicit `variant=` calls.
 
 `Problem(...)` validates combinations before constructing a solver strategy or
 transforming the graph. Invalid combinations raise `TypeError` or `ValueError`
 with the unsupported feature named. In particular:
 
-- Group/node-cost composition requires non-negative finite costs and no
-  preprocessing. Original-edge budgets, hop limits and original-node degree limits are supported.
-- Terminal-leaf variants cannot use edge budgets: their transformation changes
-  edge costs, so the existing budget would not describe the original network.
+- Composed problems require a simple graph without self-loops and finite,
+  non-negative edge/node costs. Signed rewards belong in `node_weights`.
+- The old terminal-leaf classes cannot use edge budgets; use
+  `Problem(..., partial_terminals=..., budget=...)` for that combination.
 - The legacy node-weighted variant requires an undirected graph; its node
   splitting creates both directions for every edge.
-- `pc_transform=True` requires a compatible classic prize-collecting or
-  maximum-weight objective without degree limits or budgets. Directed prizes
-  use `variant="directed_prize_collecting"` and its directed transformation.
-- The node-budgeted maximum-weight variant uses `node_budget`; additional
+- `pc_transform=True` requires an explicit compatible classic prize-collecting
+  or maximum-weight variant without degree limits or budgets. The transformed
+  directed-prize formulation uses `variant="directed_prize_collecting"`;
+  feature-based directed prizes also work without that transformation.
+- The explicit `budgeted_max_weight_connected` variant uses `node_budget`; additional
   edge/penalty budgets and prize-transform/reduction options are unsupported.
 
-Node costs and prizes must be finite and non-negative. Maximum-weight variants
-retain signed node weights; the node-budgeted variant's edge attributes remain
-topology-only. Existing automatic preprocessing disabling for directed and
-prize-collecting implementations is retained. Solver-time options and backend
+Node costs and prizes must be finite and non-negative. Maximum-weight objectives
+accept signed node weights. For composed problems, `preprocess=True` uses
+resource bounds that preserve original selections; compatible single trees can
+use classic reductions. The default and available accelerators depend on the
+selected formulation; see {doc}`performance`. Solver-time options and backend
 availability are checked when solving.
 
 ## Directed groups with hop and degree limits
@@ -97,8 +102,9 @@ zero degree limit is feasible only if the root belongs to every group.
 
 Both options are available on `DirectedGroupSteinerProblem`, separately or
 together. Decoded solutions are independently checked against the original-arc
-and original-node limits. Infeasibility raises `RuntimeError`. Additional
-mandatory terminals and node costs remain unsupported with this combination.
+and original-node limits. Infeasibility raises `RuntimeError`. Add mandatory
+`terminals` or `node_costs` through `Problem(...)` to combine them with these
+constraints; the direct legacy class retains its narrower constructor.
 
 ### Directed groups with an edge budget
 
@@ -178,9 +184,10 @@ requirement, and that node's cost is still paid. Decoding independently checks
 the selected original-edge count.
 
 Hop limits also work with mandatory `terminals` on this composition path. Use
-`node_costs={}` to select it when no node charges are needed. The legacy
-`node_weighted` variant and plain undirected group adapter retain their existing
-modifier restrictions.
+`Problem(graph, terminals=..., hop_limit=...)` or
+`Problem(graph, groups=..., hop_limit=...)` when no node charges are needed.
+The legacy `node_weighted` variant and direct `GroupSteinerProblem` constructor
+retain their modifier restrictions.
 
 Results are `NodeWeightedSolution` objects with original edges and
 `selected_nodes`, including singleton solutions with no edges. Inputs are
@@ -189,11 +196,13 @@ Infeasibility or termination without a valid incumbent raises `RuntimeError`.
 An interrupted solve with a valid incumbent returns `gap=inf`, without claiming
 optimality.
 
-HiGHS and Gurobi use their existing directed-cut solve loops. Preprocessing is
-automatically disabled; explicitly enabling it is rejected. This first
-composition requires a simple undirected graph without self-loops and does not
-yet support signed rewards, heuristic-only solving,
-optimum enumeration, or accelerator/reduction options.
+Both HiGHS and Gurobi support these combinations. Plain group/node-cost problems
+can use the shared cut formulation; additional features can select the general
+model. `preprocess=True` uses safe resource filtering for these combinations.
+`get_optimal_solutions()` enumerates distinct original selections, preserving
+ties even with composed preprocessing. Signed rewards use `node_weights`.
+Heuristic-only solving and classic accelerator options are not supported by
+the composition strategies.
 
 The node-splitting stage is shared with the legacy node-weighted solver. It
 retains explicit mappings to original nodes and edges; group sinks attach after
@@ -214,9 +223,10 @@ non-negative **original-edge** budget. Among maximum-coverage solutions, the
 solver minimizes original edge plus node costs in a second solve. Paid-node and
 artificial arcs do not consume the edge budget. Node costs therefore influence
 which equally good coverage solution is chosen, without using an edge-only
-allowance. Mandatory `terminals` remain required; optional groups may lie in
-different components. Overlapping groups count separately. Degree and hop limits
-may be combined with the budget.
+allowance. Mandatory `terminals` remain required. Covered groups must share one
+connected component; separate forest requirements may remain disconnected from
+it. Overlapping groups count separately. Degree and hop limits may be combined
+with the budget.
 
 The result is a `BudgetSolution`: `objective`/`connected_terminals` count reached
 original groups, `total_terminals` counts all groups, `penalties` contains missed
@@ -236,28 +246,61 @@ solution = problem.get_solution(solver="highs")
 
 | Entry point | Hop limits | Degree limits | Edge budgets | Preprocessing |
 |---|---|---|---|---|
-| `Problem(groups=..., node_costs=...)` or groups + mandatory terminals | Original edges | Original node incidence | Optional groups, then original-cost tie-break | Disabled; explicit true rejected |
-| `Problem(digraph, root=..., groups=...)` / `DirectedGroupSteinerProblem` | Original arcs | Incoming + outgoing original arcs | Optional groups | Disabled |
-| `Problem(graph, groups=...)` / `GroupSteinerProblem` | Rejected | Rejected | Rejected | Disabled; explicit true rejected |
+| `Problem(graph, groups=..., node_costs=...)` | Original edges | Original node incidence | Optional groups, then original-cost tie-break | Safe resource filtering when enabled |
+| `Problem(graph, groups=...)` | Original edges | Original node incidence | Optional groups | Safe resource filtering when enabled |
+| `Problem(digraph, root=..., groups=...)` | Original arcs | Incoming + outgoing original arcs | Optional groups | Safe resource filtering when enabled |
+| Direct `DirectedGroupSteinerProblem` | Original arcs | Incoming + outgoing original arcs | Optional groups | Disabled |
+| Direct `GroupSteinerProblem` | Rejected | Rejected | Rejected | Safe resource filtering when enabled |
 | `variant="node_weighted"` / `NodeWeightedSteinerProblem` | Rejected | Rejected | Rejected | Disabled; explicit true rejected |
 
-Use `node_costs={}` to select the shared composition path for undirected groups
-without node charges. Legacy node weighting retains its zero default for missing
-edge costs; standard/composed costs default to one. Migrating a legacy call
-therefore requires checking missing weights and forest semantics. Group
-composition uses a simple undirected graph without self-loops; parallel edges
-are rejected by all three legacy transformation adapters before edge identities
-can be lost.
+No dummy `node_costs={}` argument is needed to combine groups with modifiers.
+Group composition uses a simple graph without self-loops; parallel edges are
+rejected by all three legacy transformation adapters before edge identities
+can be lost. Edge-budget rows above describe coverage mode without rewards or
+penalties; with those objectives, the budget is a resource constraint.
 
 The old undirected group adapter now solves through sink-only shared
 composition and still returns `Solution`. This prevents an artificial group
 node from joining distinct members for free and yielding disconnected original
-edges. Its augmented-graph helper remains available, but unsafe preprocessing
-and unsupported solver/accelerator options are rejected. Constructors reject
+edges. Its augmented-graph helper remains available, but unsupported
+solver/accelerator options are rejected. Constructors reject
 unmapped constraints before transformation; the legacy node-weighted adapter
 now accepts explicit `preprocess=False` consistently.
 
+(problem-compatibility)=
+
 ## Explicit variants and compatibility
+
+`Problem` is the recommended entry point for new code. Existing public classes,
+their imports and `terminal_groups=` calls remain supported; this migration adds
+no new deprecation or removal schedule. The already deprecated
+`DegreeConstrainedSteinerProblem` and `BudgetConstrainedSteinerProblem` wrappers
+remain exceptions: pass `max_degree=` or `budget=` to `Problem` instead.
+
+| Existing call | `Problem` call |
+|---|---|
+| `SteinerProblem(graph, terminal_groups)` | `Problem(graph, terminals=terminal_groups)` |
+| `DirectedSteinerProblem(digraph, root=r, terminals=ts)` | `Problem(digraph, root=r, terminals=ts)` |
+| `GroupSteinerProblem(graph, groups)` | `Problem(graph, groups=groups)` |
+| `NodeWeightedSteinerProblem(graph, terminal_groups, weights)` | `Problem(graph, variant="node_weighted", terminal_groups=terminal_groups, node_weights=weights)` preserves legacy cost defaults |
+| `PrizeCollectingProblem(graph, terminal_groups, prizes)` | `Problem(graph, variant="prize_collecting", terminal_groups=terminal_groups, node_prizes=prizes)` preserves the legacy penalty objective |
+| `MaxWeightConnectedSubgraph(graph, weights)` | `Problem(graph, variant="max_weight_connected", node_weights=weights)` preserves the legacy formulation |
+
+For a feature-based node-cost model, use `node_costs=weights` instead of
+`variant="node_weighted", node_weights=weights`. Check edge costs first: missing
+edge weights cost **zero** in the legacy node-weighted formulation and **one**
+with `node_costs`. Set them explicitly when migrating. Preserve nested terminal
+lists for forest requirements; `groups` means choosing members, not connecting
+every node in each list. Feature-based forests need only connect each list
+internally; check connectivity and the reported objective when replacing a
+legacy transformed formulation.
+
+Likewise, `node_prizes` without an explicit compatibility variant minimizes
+costs plus omitted prizes, and `node_weights` maximizes signed selected weights.
+These differ from the legacy penalty objectives described below. Migration is
+not a constructor rename for these formulations. Return types and extra result
+fields follow the selected path; use `objective`, `edges`, `runtime`
+and `gap` as the common interface.
 
 The following explicit calls remain available without migrating existing code:
 
@@ -282,13 +325,17 @@ supports them. `budget` is an edge-cost budget; `node_budget` is a vertex-cost
 budget. Solver arguments belong to `get_solution()`. `Problem.variants` lists
 the supported names.
 
-`get_optimal_solutions()` retains each legacy variant's enumeration restrictions.
+`Problem.get_optimal_solutions()` supports composed features, group choices and
+edge budgets through original-selection enumeration. Explicit legacy prize,
+node-weighted and other transformed variants retain their enumeration
+restrictions; direct legacy classes are unchanged. See {doc}`solvers` for scope.
 For advanced access, `problem.implementation` is the selected legacy object or
 the new private composition strategy. Low-level model builders accept the legacy
 objects; the composition strategy owns its compilation and exposes `cut_stats`.
 `problem.variant` is the resolved legacy name, or `None` for a composed problem;
-`Problem.variants` lists the explicit legacy names. No legacy interface is
-deprecated by this change.
+`Problem.variants` lists the explicit legacy names.
+
+(objective-conventions)=
 
 ## Objective conventions
 
@@ -304,6 +351,8 @@ sign change: `reported = sign * L + offset`.
 |---|---|---|---|
 | Standard, directed, group, terminal-leaf | Original edge costs | Zero | `L` |
 | Node-weighted, or group plus node costs | Original edge costs | Original node costs | `L` |
+| Composed `node_prizes` | Original edge costs | Node costs minus prizes | `L + sum(all prizes)` |
+| Composed `node_weights` | Zero | Negative signed node weights | `-L`; costs enter resource budgets |
 | Classic prize collecting (`pc_transform=True`), including directed prizes | Original edge costs | Negative prizes | `L + sum(all prizes)` |
 | Maximum-weight transform (`pc_transform=True`, also heuristic mode) | Zero | Negative signed node weights | `-L` |
 | Node-budgeted maximum weight | Zero | Negative signed node weights | `-L`; node costs enter the budget constraint |
@@ -353,8 +402,9 @@ defaults: one for standard/composed costs, zero in legacy node splitting.
 
 ## Variant definitions
 
-The variants accepting `terminal_groups` can be solved as a **Steiner tree** (a single group of terminals that must all be connected) or as a **Steiner forest** (multiple independent groups, each connected within itself but not necessarily to other groups).
-Simply pass a list of terminal lists as `terminal_groups` — one list for a tree, multiple lists for a forest.
+Use flat `terminals` for a **Steiner tree** and nested terminal lists for a
+**Steiner forest**, as described above. The table links the corresponding legacy
+classes for formulation details; new code normally uses `Problem`.
 
 | Variant | Class | Description |
 |---------|-------|-------------|
@@ -382,43 +432,40 @@ treats edge attributes as topology-only; its objective and budget use node
 weights and node costs.
 
 ```python
-from steinerpy import (
-    PartialTerminalSteinerProblem, FullTerminalSteinerProblem, GroupSteinerProblem,
-    DirectedGroupSteinerProblem, HopConstrainedSteinerProblem, RectilinearSteinerProblem,
-    BudgetedMaxWeightConnectedSubgraph, DirectedPrizeCollectingProblem,
-)
+from steinerpy import Problem
 
 # Partial-terminal (terminals B and D must be leaves):
-PartialTerminalSteinerProblem(G, [['A', 'B', 'D']], partial_terminals=['B', 'D']).get_solution()
+Problem(G, terminals=['A', 'B', 'D'], partial_terminals=['B', 'D']).get_solution()
 
 # Group Steiner tree (one vertex from each group):
-GroupSteinerProblem(G, [['A', 'B'], ['C', 'D']]).get_solution()
+Problem(G, groups=[['A', 'B'], ['C', 'D']]).get_solution()
 
 # Directed Group Steiner tree (arborescence from 'r' reaching one vertex from each group):
-DirectedGroupSteinerProblem(DG, [['A', 'B'], ['C', 'D']], root='r').get_solution()
+Problem(DG, groups=[['A', 'B'], ['C', 'D']], root='r').get_solution()
 
 # Hop-constrained directed Steiner tree (<= 3 arcs):
-HopConstrainedSteinerProblem(DG, root='r', terminals=['x', 'y'], hop_limit=3).get_solution()
+Problem(DG, root='r', terminals=['x', 'y'], hop_limit=3).get_solution()
 
 # Directed prize-collecting Steiner tree (rooted arborescence from 'r'):
-DirectedPrizeCollectingProblem(DG, node_prizes={'x': 5, 'y': 3}, root='r').get_solution()
+Problem(DG, node_prizes={'x': 5, 'y': 3}, root='r').get_solution()
 
 # Rectilinear Steiner minimum tree through points in the plane:
-RectilinearSteinerProblem([(0, 0), (2, 0), (0, 2)]).get_solution()
+Problem(variant='rectilinear', points=[(0, 0), (2, 0), (0, 2)]).get_solution()
 
 # Max-weight connected subgraph with a vertex-cost budget:
-BudgetedMaxWeightConnectedSubgraph(G, node_weights, node_costs, node_budget=5).get_solution()
+Problem(G, node_weights=node_weights, node_costs=node_costs,
+        node_budget=5).get_solution()
 ```
 
 ## Optional constraint modifiers
 
-Two side-constraints are available as **optional keyword arguments** on compatible
-problem variants. Transformation restrictions are listed above:
+Two commonly used constraints are optional keyword arguments on `Problem`.
+Transformation restrictions for legacy calls are listed above:
 
 | Modifier kwarg | Effect |
 |----------------|--------|
 | `max_degree=k` | Every node in the solution has at most *k* incident edges. |
-| `budget=B` | Total edge cost may not exceed *B*; the solver maximises the number of connected terminals and returns a {class}`~steinerpy.BudgetSolution`. |
+| `budget=B` | Total edge cost may not exceed *B*; without rewards or penalties, maximize covered terminal/group requirements and return a {class}`~steinerpy.BudgetSolution`. |
 
 For budgeted forests, terminal groups may overlap and share selected edges;
 each edge is charged once. Connected terminals are counted per group, so a
@@ -430,18 +477,22 @@ forest edges, degree limits, and directed arc orientation. Select Gurobi with
 
 ```python
 # Degree-constrained Steiner tree
-solution = SteinerProblem(graph, terminal_groups, max_degree=2).get_solution()
+solution = Problem(graph, terminals=terminal_groups, max_degree=2).get_solution()
 
 # Budget-constrained Steiner tree
-solution = SteinerProblem(graph, terminal_groups, budget=10.0).get_solution()
+solution = Problem(graph, terminals=terminal_groups, budget=10.0).get_solution()
 
 # Both constraints together
-solution = SteinerProblem(graph, terminal_groups, max_degree=2, budget=10.0).get_solution()
+solution = Problem(graph, terminals=terminal_groups,
+                   max_degree=2, budget=10.0).get_solution()
 
 # Degree-constrained prize-collecting problem
-solution = PrizeCollectingProblem(graph, terminal_groups, node_prizes, max_degree=3).get_solution()
+solution = Problem(graph, terminals=terminal_groups,
+                   node_prizes=node_prizes, max_degree=3).get_solution()
 ```
 
 :::{note}
-`DegreeConstrainedSteinerProblem` and `BudgetConstrainedSteinerProblem` are still available for backward compatibility but are deprecated — pass the corresponding kwargs to the base class instead.
+`DegreeConstrainedSteinerProblem` and `BudgetConstrainedSteinerProblem` are
+already deprecated. Use the `Problem` keyword arguments shown above; see
+{ref}`problem-compatibility` for the compatibility policy.
 :::

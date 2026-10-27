@@ -18,10 +18,13 @@ problem = Problem(G, terminals=["A", "D"])
 solution = problem.get_solution()
 
 print(f"Optimal cost: {solution.objective}")
-print(f"Selected edges: {solution.selected_edges}")
+print(f"Selected edges: {solution.edges}")
 ```
 
 The returned {class}`~steinerpy.Solution` reports the objective value, the selected edges, the runtime, and — importantly — a **proven optimality gap**: `solution.gap == 0.0` means the solution is provably optimal.
+
+Use `solution.edges` for edges in the original input graph, including edges
+restored after preprocessing.
 
 ## Trees and forests
 
@@ -40,7 +43,8 @@ one member of each group. Tuple-valued node labels remain atomic inside
 `terminals`; use lists for the nested forest syntax.
 
 Existing classes still accept their original `terminal_groups` arguments.
-See {doc}`../guide/variants` for supported feature combinations.
+See {doc}`../guide/variants` for supported feature combinations and
+{ref}`problem-compatibility` for migration guidance.
 
 ## Next steps
 

@@ -34,8 +34,9 @@ problem = Problem(graph, groups=[["A", "B"], ["C", "D"]], node_costs={"B": 2})
 Flat `terminals` must all connect; nested lists must each connect internally,
 with sharing allowed. `groups` chooses at least one member per group in one
 connected tree. Group-plus-node-cost problems minimize edge costs plus selected
-node costs; this combination currently requires non-negative costs and exact
-solving without preprocessing.
+node costs; this combination requires non-negative costs and exact solving.
+With `preprocess=True`, only reductions compatible with the requested features
+are applied.
 
 See the [variant guide](docs/source/guide/variants.md) for supported combinations.
 Explicit `variant=` calls, `terminal_groups=`, and existing classes remain supported.
@@ -52,23 +53,27 @@ Requires Python 3.8+. The HiGHS backend is installed automatically; to use Gurob
 
 ```python
 import networkx as nx
-from steinerpy import SteinerProblem
+from steinerpy import Problem
 
 G = nx.Graph()
 G.add_edge("A", "B", weight=1)
 G.add_edge("B", "C", weight=2)
 G.add_edge("C", "D", weight=1)
 
-# One terminal group = Steiner tree; multiple groups = Steiner forest
+# Flat terminals = Steiner tree; nested lists = Steiner forest
 # Edge/arc costs must be non-negative.
-solution = SteinerProblem(G, [["A", "D"]]).get_solution()
+solution = Problem(G, terminals=["A", "D"]).get_solution()
 
 print(f"Optimal cost: {solution.objective}")
-print(f"Selected edges: {solution.selected_edges}")
+print(f"Selected edges: {solution.edges}")
 print(f"Proven optimality gap: {solution.gap}")  # 0.0 == provably optimal
 ```
 
 See the [documentation](https://steinerpy.readthedocs.io) for the full catalogue of problem variants, solver selection, performance features (dual ascent, graph reductions, heuristic-only mode), benchmarks against NetworkX and `pcst_fast`, and the API reference. The [example notebook](example.ipynb) walks through the main features.
+
+Existing problem classes remain supported. See the
+[migration and compatibility guide](docs/source/guide/variants.md#explicit-variants-and-compatibility)
+for equivalent `Problem(...)` calls and the existing degree/budget wrapper deprecations.
 
 For measurements on the three PACE 2018 tracks and historical participant
 results, see the [PACE benchmark report](benchmarks/reports/pace2018/README.md).

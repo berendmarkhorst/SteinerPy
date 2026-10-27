@@ -1,6 +1,6 @@
 # Solver backends
 
-Every problem class exposes a `solver` parameter on `get_solution()`.
+Select a backend with `Problem(...).get_solution(solver=...)`.
 Two backends are supported:
 
 | `solver` value | Backend | Notes |
@@ -9,14 +9,19 @@ Two backends are supported:
 | `"gurobi"` | [Gurobi](https://www.gurobi.com/) via *gurobipy* | Optional; requires *gurobipy* and a valid Gurobi license. Connectivity cuts are injected as **lazy constraints** inside a branch-and-cut callback, which lets Gurobi exploit its full branch-and-bound tree. |
 
 ```python
+from steinerpy import Problem
+
 # Use HiGHS (default — no extra installation required)
-solution = SteinerProblem(graph, terminal_groups).get_solution()
+solution = Problem(graph, terminals=terminals).get_solution()
 
 # Use Gurobi (requires gurobipy + license)
-solution = SteinerProblem(graph, terminal_groups).get_solution(solver="gurobi")
+solution = Problem(graph, terminals=terminals).get_solution(solver="gurobi")
 ```
 
-Both solvers implement the same cut-based (DO-D) formulation from Markhorst et al. (2025) and produce identical optimal solutions.
+Use a flat list of `terminals` for a tree, or nested lists for a forest.
+For ordinary tree/forest problems, both solvers implement the cut-based (DO-D)
+formulation from Markhorst et al. (2025) and prove the same optimal objective;
+they may return different trees when several solutions tie.
 Gurobi may be faster on larger instances because callbacks avoid repeated re-solves from scratch.
 
 Edge-budget problems (`budget=...`) use the same optional-flow formulation
@@ -53,11 +58,12 @@ bound proves optimality.
 
 ## Enumerating multiple optimal solutions
 
-`get_solution()` returns exactly one optimal Steiner tree. When multiple
-trees tie for the optimal cost, `get_optimal_solutions()` enumerates them
+`get_solution()` returns one solution, with its proof status reported by `gap`.
+When multiple trees tie for the optimal cost, `get_optimal_solutions()` enumerates them
 instead of silently returning an arbitrary one:
 
 ```python
+problem = Problem(graph, terminals=terminals, preprocess=False)
 pool = problem.get_optimal_solutions(
     limit=10, time_limit=300, log_file="", solver="highs", threads=None,
 )
@@ -75,8 +81,9 @@ redundant zero-cost branch or cycle does not create another solution. Distinct
 minimum-cost trees that use zero-cost edges are still enumerated when each of
 their edges is necessary for that tree's terminal connectivity.
 
-`get_optimal_solutions()` **requires `preprocess=False`**: the default graph
-reduction pipeline can arbitrarily collapse tied-cost alternatives (e.g.
+For ordinary tree/forest problems, `get_optimal_solutions()` **requires
+`preprocess=False`**: the default graph reduction pipeline can arbitrarily
+collapse tied-cost alternatives (e.g.
 terminal contraction) before any ILP runs, silently erasing them from
 enumeration — calling it on a `preprocess=True` instance raises `ValueError`,
 unless the problem was constructed with `enumeration_safe=True` (see below).
@@ -93,8 +100,10 @@ Construct the problem with **`enumeration_safe=True`** instead of
 every tied optimum:
 
 ```python
-problem = SteinerProblem(g, [["A", "D"]], preprocess=True, enumeration_safe=True)
-pool = problem.get_optimal_solutions()  # no ValueError, and still 2 tied trees
+problem = Problem(
+    graph, terminals=terminals, preprocess=True, enumeration_safe=True
+)
+pool = problem.get_optimal_solutions()
 ```
 
 `enumeration_safe` restricts preprocessing to reductions proven to preserve
@@ -131,13 +140,13 @@ It returns an `OptimalSolutionPool`:
 
 ```python
 import networkx as nx
-from steinerpy import SteinerProblem
+from steinerpy import Problem
 
 g = nx.Graph()
 for u, v in [("A", "B"), ("B", "C"), ("C", "D"), ("A", "E"), ("E", "F"), ("F", "D")]:
     g.add_edge(u, v, weight=1)
 
-problem = SteinerProblem(g, [["A", "D"]], preprocess=False)
+problem = Problem(g, terminals=["A", "D"], preprocess=False)
 pool = problem.get_optimal_solutions()
 
 print(len(pool), pool.exhausted)  # 2 True
@@ -149,7 +158,7 @@ for solution in pool:
 
 ### Implementation and scope
 
-Both backends use the same external no-good-cut enumeration loop: the model
+For ordinary trees, both backends use the same external no-good-cut enumeration loop: the model
 is rebuilt from scratch each iteration, with a cut excluding every
 previously-found edge set added before re-solving. On `solver="gurobi"` this
 means the native Gurobi solution pool (`PoolSearchMode`) is **not** used —
@@ -158,12 +167,32 @@ version-dependent question that cannot be verified in this project's test
 suite, so the provably correct external loop is used for both backends
 (at the cost of Gurobi's single-solve pooling speed advantage).
 
-`get_optimal_solutions()` is not yet supported for problem classes whose
-`get_solution()` transforms the model in a way this method's plain
-edge-indicator enumeration can't replicate: `PrizeCollectingProblem` (and
-its subclasses), `PartialTerminalSteinerProblem` (and
-`FullTerminalSteinerProblem`), `GroupSteinerProblem` (and
-`DirectedGroupSteinerProblem`), `RectilinearSteinerProblem`, and
-`NodeWeightedSteinerProblem`. Each raises `NotImplementedError`. Budget-
-constrained instances (`budget=...`) are also unsupported, for the same
-reason.
+The modular API also enumerates supported combinations of groups, forests,
+node costs, prizes, signed node weights, terminal leaves, direction and resource
+constraints. It compares original node/edge selections and returns distinct
+inclusion-minimal optima. For example:
+
+```python
+import networkx as nx
+from steinerpy import Problem
+
+graph = nx.cycle_graph(4)
+problem = Problem(graph, groups=[[0, 1], [2, 3]], budget=1)
+pool = problem.get_optimal_solutions()
+print(len(pool), pool.exhausted)  # 2 True
+```
+
+For these composed problems, preprocessing retains the original selections
+needed for enumeration; the classic preprocessing restrictions above do not
+apply to every composition. See the [variant guide](variants.md) for supported
+combinations and preprocessing behavior. `time_limit` applies to each solve
+in the enumeration loop, rather than to the entire pool.
+
+Explicit legacy adapters retain their enumeration restrictions. Calls using
+`variant="prize_collecting"`, `"directed_prize_collecting"`,
+`"max_weight_connected"`, `"budgeted_max_weight_connected"`,
+`"node_weighted"`, `"rectilinear"`, or plain legacy terminal-leaf adapters
+raise `NotImplementedError`. Feature-based calls with `node_prizes=`,
+`node_weights=`, `node_costs=` or `partial_terminals=` use the supported
+composition path instead; their objective conventions are documented in the
+{ref}`problem-compatibility` guide.

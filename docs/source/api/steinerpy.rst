@@ -1,12 +1,19 @@
 API reference
 =============
 
-All public classes are importable directly from the top-level :mod:`steinerpy`
-package:
+Use :class:`~steinerpy.Problem` to define connectivity, costs, and constraints.
+It selects a compatible implementation from the supplied features:
 
 .. code-block:: python
 
-   from steinerpy import Problem, SteinerProblem, PrizeCollectingProblem, ...
+   from steinerpy import Problem
+
+   problem = Problem(graph, terminals=["A", "D"], max_degree=3)
+   solution = problem.get_solution(solver="highs")
+
+The named problem classes below remain importable from :mod:`steinerpy` and
+supported for existing code. See :ref:`problem-compatibility` for migration
+examples, cost conventions, and the two existing wrapper deprecations.
 
 Unified interface
 -----------------
@@ -116,8 +123,10 @@ Solutions
 Deprecated
 ----------
 
-These classes remain for backward compatibility; pass ``max_degree=`` or
-``budget=`` to the base problem class instead (see :doc:`../guide/variants`).
+These two wrappers were already deprecated before the modular interface.
+They remain available for backward compatibility; pass ``max_degree=`` or
+``budget=`` to :class:`~steinerpy.Problem` instead. Other named problem classes
+are not deprecated by this migration (see :ref:`problem-compatibility`).
 
 .. autoclass:: steinerpy.DegreeConstrainedSteinerProblem
    :show-inheritance:
