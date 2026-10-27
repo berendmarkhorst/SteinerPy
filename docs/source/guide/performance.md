@@ -2,6 +2,11 @@
 
 All features on this page **preserve the optimum**: enabling (or disabling) any of these flags returns the same optimal objective (or, for the heuristic-only mode, a certified bound on it). The heavy graph reductions are **on by default**; the dual-ascent features remain opt-in.
 
+Configure problems with `Problem(...)`. The classic accelerators below apply
+to the compatible tree/forest implementations; supported feature combinations
+may use a different strategy. See the [variant guide](variants.md) for option
+compatibility. Flat `terminals` defines a tree; nested lists define a forest.
+
 ## Dual-ascent accelerator
 
 An optional [Wong (1984)](https://doi.org/10.1007/BF02612335) dual-ascent procedure can speed up the exact solve.
@@ -9,11 +14,13 @@ It computes, cheaply, a lower bound, a feasible primal solution, and *reduced co
 When the bound matches the heuristic, the instance is solved **without building the ILP at all**.
 
 ```python
+from steinerpy import Problem
+
 # Enable per problem (constructor) ...
-solution = SteinerProblem(graph, terminal_groups, dual_ascent=True).get_solution()
+solution = Problem(graph, terminals=terminals, dual_ascent=True).get_solution()
 
 # ... or per call (overrides the constructor flag)
-solution = SteinerProblem(graph, terminal_groups).get_solution(dual_ascent=True)
+solution = Problem(graph, terminals=terminals).get_solution(dual_ascent=True)
 ```
 
 It is off by default and returns the same optimum as the baseline.
@@ -49,7 +56,7 @@ of the `threads` argument to `get_solution()`, which controls the MIP solver.
 ```python
 # Delete edges proven non-optimal by the dual-ascent reduced costs, then cascade
 # the degree reductions — shrinking the model before the solve.
-solution = SteinerProblem(graph, terminal_groups, da_reduce=True).get_solution()
+solution = Problem(graph, terminals=terminals, da_reduce=True).get_solution()
 ```
 
 `da_reduce` is a **reduction test**: it removes edges *and nodes* that the dual-ascent reduced costs prove cannot appear in any optimal solution (bound-based edge and node elimination) and cascades the degree-1/degree-2 reductions to a fixpoint.
@@ -66,14 +73,14 @@ inputs cause a fresh computation.
 ```python
 # ON by default: Special Distance + long-edge deletion and node replacement,
 # interleaved with the degree reductions to a fixpoint.
-solution = SteinerProblem(graph, terminal_groups).get_solution()
+solution = Problem(graph, terminals=terminals).get_solution()
 
 # Disable them all ...
-SteinerProblem(graph, terminal_groups, heavy=False)
+Problem(graph, terminals=terminals, heavy=False)
 
 # ... or take fine-grained control (each flag defaults to the `heavy` value):
-SteinerProblem(graph, terminal_groups, special_distance=True, long_edge=False,
-               replace_nodes=False)
+Problem(graph, terminals=terminals, special_distance=True, long_edge=False,
+        replace_nodes=False)
 ```
 
 `heavy` (default **True**) enables three classic **alternative-based reduction tests** from the Steiner-tree literature, each of which removes only what is provably compatible with an optimal solution and then cascades the degree-1/degree-2 reductions:
@@ -95,10 +102,10 @@ search cap covers the whole graph. Small/sparse graphs and searches where the
 cap could bind retain the Python implementation and its existing work limit.
 
 `heavy` requires `preprocess=True` (the default), applies to undirected problems only, is skipped under a `budget`/`max_degree`/`hop_limit` modifier (those variants do not minimise plain edge cost), and preserves the optimum **value** — solutions still map back to the original graph, though among several equal-cost optima a different one may be returned than with `heavy=False`.
-It composes with `da_reduce=True` and `dual_ascent=True`; a good "throw everything at it" configuration is:
+It composes with `da_reduce=True` and `dual_ascent=True`:
 
 ```python
-SteinerProblem(graph, terminals, da_reduce=True, dual_ascent=True)
+Problem(graph, terminals=terminals, da_reduce=True, dual_ascent=True)
 ```
 
 ## Terminal contraction
@@ -125,7 +132,9 @@ The reductions above (heavy, terminal contraction, node replacement) all preserv
 ```python
 # Keep reduction, but only the tests that preserve every tied optimum, so
 # every tied-optimal tree can still be enumerated.
-problem = SteinerProblem(graph, terminal_groups, preprocess=True, enumeration_safe=True)
+problem = Problem(
+    graph, terminals=terminals, preprocess=True, enumeration_safe=True
+)
 pool = problem.get_optimal_solutions()
 ```
 
@@ -139,7 +148,7 @@ pool = problem.get_optimal_solutions()
 
 Because it gives up real reduction power to make that guarantee, `enumeration_safe` is opt-in rather than folded into `heavy` — use it specifically ahead of `get_optimal_solutions()`, not as a general-purpose default.
 
-Two restrictions apply:
+For classic tree/forest preprocessing, two restrictions apply:
 
 - **Edge weights must be strictly positive.** The tied-optimum-preservation argument (like the sound deletion tests generally) assumes positive costs; constructing with `enumeration_safe=True` and a non-positive edge weight raises `ValueError`.
 - **`get_optimal_solutions()` does not support `preprocess=True` together with `max_degree` or `hop_limit`** (`NotImplementedError`): the structural degree-1/degree-2 fixpoint always runs regardless of these modifiers and is not degree- or hop-aware, so a contraction could silently map back to a solution that violates the constraint. Use `preprocess=False` for degree- or hop-constrained enumeration.
@@ -149,7 +158,7 @@ Two restrictions apply:
 For a plain (undirected, single-group, unconstrained) Steiner tree with **few terminals**, the exact [Dreyfus–Wagner (1971)](https://doi.org/10.1002/net.3230010302) dynamic program — in the [Erickson–Monma–Veinott (1987)](https://doi.org/10.1287/moor.12.4.634) formulation — solves the reduced instance outright, bypassing the ILP entirely.
 This is the reductions + DP recipe of the winning PACE 2018 solvers; it is `O(3^k)` in the terminal count `k` but only linearithmic in the graph size, so for small `k` it beats any branch-and-cut by a wide margin (4–30× on benchmarked instances).
 
-It is **auto-selected** after preprocessing whenever the (reduced) terminal count is at most `STEINERPY_DW_MAX_TERMINALS` (default `10`; `0` disables), returns the identical optimum with `gap == 0.0`, and transparently accelerates the transformed group-Steiner, terminal-leaf and rectilinear variants as well.
+It is **auto-selected** after preprocessing whenever the (reduced) terminal count is at most `STEINERPY_DW_MAX_TERMINALS` (default `10`; `0` disables) and returns the identical optimum with `gap == 0.0`. Compatible legacy terminal-leaf and rectilinear adapters can also use this path; general feature composition and group problems use their own formulations.
 
 ## Cut-separation accelerators
 
@@ -172,8 +181,8 @@ dual-ascent seed cuts are never purged. The policy follows the cut-purging
 experiment of [Schmidt, Zey & Margot (2021)](https://doi.org/10.1007/s10107-019-01460-6),
 Section 5.1.1, and works with LP-first and nested-cut separation.
 
-After a HiGHS solve, `problem.cut_stats` reports generated/active/purged and
-reintroduced cuts, active and peak model rows, separation rounds, and separate
+After a HiGHS solve on this path, `problem.implementation.cut_stats` reports
+generated/active/purged and reintroduced cuts, active and peak model rows, separation rounds, and separate
 LP/MIP re-solve times. Use `benchmarks/benchmark_phase1.py --feature cut` for
 the fixed-seed age sweep. Cut purging remains off by default until representative
 instance suites show a robust benefit.
@@ -185,7 +194,7 @@ When you want that speed and can accept an approximate answer, pass `exact=False
 
 ```python
 # Return the dual-ascent primal directly — no ILP is built or solved.
-solution = SteinerProblem(graph, terminal_groups).get_solution(exact=False)
+solution = Problem(graph, terminals=terminals).get_solution(exact=False)
 
 print(solution.objective)  # heuristic tree weight (an upper bound on the optimum)
 print(solution.gap)        # PROVEN optimality gap: 0.0 == provably optimal
@@ -201,14 +210,14 @@ Two stronger, independently switchable candidates are available for plain
 undirected, single-group trees:
 
 ```python
-problem = SteinerProblem(
+problem = Problem(
     graph,
-    [terminals],
+    terminals=terminals,
     primal_local_search=True,  # vertex elimination + key-path exchange
     implied_profit=True,       # implied-profit shortest-path candidates
 )
 solution = problem.get_solution(dual_ascent=True)
-print(problem.heuristic_stats)
+print(problem.implementation.heuristic_stats)
 ```
 
 `primal_local_search` implements the vertex-elimination and key-path-exchange
@@ -223,38 +232,58 @@ bound remains unchanged, so exactness and the meaning of `Solution.gap` do not
 change.
 
 The same flags may be passed to `get_solution(...)` to override the constructor
-setting for one call. `problem.heuristic_stats` reports the separate portfolio
-runtime, before/after objectives, candidate count, and accepted local moves.
+setting for one call. `problem.implementation.heuristic_stats` reports the
+separate portfolio runtime, before/after objectives, candidate count, and
+accepted local moves.
 
 ## Prize-collecting / MWCSP acceleration
 
-{class}`~steinerpy.PrizeCollectingProblem` and {class}`~steinerpy.MaxWeightConnectedSubgraph` default to a penalty/Big-M flow ILP.
-For the **classic forgo-prize PCSTP** (and the MWCSP) you can opt into a much faster path that — following Rehfeldt & Koch (MWCSP 2019; PCSTP 2020) — transforms the problem to a rooted Steiner arborescence and reuses the dual-ascent + directed-cut machinery:
+Feature-based `Problem(graph, node_prizes=...)` and
+`Problem(graph, node_weights=...)` use the general composition model.
+The classic prize and maximum-weight accelerators require the explicit
+`variant=` adapters shown below. Those adapters default to the legacy
+penalty/Big-M flow ILP; their objective conventions differ from feature-based
+composition (see {ref}`objective-conventions`).
+
+For the **classic forgo-prize PCSTP** (and the MWCSP), `pc_transform=True`
+transforms the problem to a rooted Steiner arborescence and reuses dual ascent
+and directed cuts, following Rehfeldt & Koch (MWCSP 2019; PCSTP 2020):
 
 ```python
 # Exact, accelerated (often proves optimality without any ILP):
-sol = PrizeCollectingProblem(graph, [[root]], node_prizes, penalty_cost=0).get_solution(pc_transform=True)
+problem = Problem(
+    graph, variant="prize_collecting", terminals=[root],
+    node_prizes=node_prizes, penalty_cost=0,
+)
+sol = problem.get_solution(pc_transform=True)
 
 # Heuristic-only: dual-ascent primal, no ILP, with a PROVEN optimality gap:
-sol = PrizeCollectingProblem(graph, [[root]], node_prizes, penalty_cost=0).get_solution(exact=False)
+sol = problem.get_solution(exact=False)
 
 # Historical prize-constrained-distance (PCD) edge reduction:
-sol = PrizeCollectingProblem(graph, [[root]], node_prizes, penalty_cost=0, pc_reduce=True).get_solution(pc_transform=True)
+sol = Problem(
+    graph, variant="prize_collecting", terminals=[root],
+    node_prizes=node_prizes, penalty_cost=0, pc_reduce=True,
+).get_solution(pc_transform=True)
 
 # Experimental terminal-regions lower bounds + edge deletion:
-sol = PrizeCollectingProblem(
-    graph, [[root]], node_prizes, penalty_cost=0,
+sol = Problem(
+    graph, variant="prize_collecting", terminals=[root],
+    node_prizes=node_prizes, penalty_cost=0,
     pc_reduce="pcd+trd",
 ).get_solution(pc_transform=True)
 
 # Also delete certified zero-prize nodes:
-sol = PrizeCollectingProblem(
-    graph, [[root]], node_prizes, penalty_cost=0,
+sol = Problem(
+    graph, variant="prize_collecting", terminals=[root],
+    node_prizes=node_prizes, penalty_cost=0,
     pc_reduce="pcd+trd+nodes",
 ).get_solution(pc_transform=True)
 
 # MWCSP uses the exact MWCSP -> PCSTP -> SAP mapping:
-sol = MaxWeightConnectedSubgraph(graph, node_weights).get_solution(pc_transform=True)
+sol = Problem(
+    graph, variant="max_weight_connected", node_weights=node_weights,
+).get_solution(pc_transform=True)
 ```
 
 All three feature families are off by default (the penalty ILP is unchanged) and gated to the classic forgo-prize objective: a `penalty_budget`, multiple terminal groups, or a non-zero `penalty_cost` raises `NotImplementedError` (use the default penalty ILP for those).
@@ -269,8 +298,8 @@ and retained because the legacy graph representation has no deletion offset for
 their forgone prize. User-supplied terminals are protected as well. Every bound
 deletion uses a strict `LB > UB` comparison.
 
-`problem.pc_reduction_stats` reports preprocessing time, passes, edge/node
-counts by test, protected prize nodes, and the feasible upper bound. Run
+`problem.implementation.pc_reduction_stats` reports preprocessing time, passes,
+edge/node counts by test, protected prize nodes, and the feasible upper bound. Run
 `benchmarks/benchmark_phase1.py --feature pc` to compare all four stacks.
 The terminal-regions stacks remain experimental and off by default pending
 representative PCSPG/MWCS benchmark results.
