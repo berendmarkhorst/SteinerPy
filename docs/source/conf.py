@@ -51,6 +51,8 @@ autodoc_typehints = "description"
 nb_execution_mode = "off"
 
 myst_enable_extensions = ["colon_fence", "dollarmath"]
+# Resolve links to headings in the guides, reference pages, and notebooks.
+myst_heading_anchors = 3
 
 # -- Options for HTML output -------------------------------------------------
 
