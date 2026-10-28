@@ -49,9 +49,24 @@ jobs:
         fail_ci_if_error: true
         token: ${{ secrets.CODECOV_TOKEN }}
 
+  docs:
+    name: Documentation (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v4
+      with:
+        version: "latest"
+    - name: Install documentation dependencies
+      run: uv sync --python 3.12 --extra docs --frozen
+    - name: Execute and validate examples
+      run: uv run --frozen python docs/check_examples.py
+    - name: Build documentation
+      run: uv run --frozen sphinx-build -b html -W --keep-going docs/source docs/_build/html
+
   release:
     name: Bump version & publish to PyPI
-    needs: test
+    needs: [test, docs]
     # Release only when manually triggered on main, after all tests pass.
     if: >-
       github.event_name == 'workflow_dispatch' &&

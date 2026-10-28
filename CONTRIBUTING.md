@@ -73,15 +73,23 @@ The documentation lives in `docs/` and is built with Sphinx (MyST Markdown)
 and published on [Read the Docs](https://steinerpy.readthedocs.io). If your
 change adds or alters user-facing behaviour:
 
-- Update the relevant guide pages under `docs/source/guide/` (for example,
-  new problem variants belong in `guide/variants.md`).
+- Keep the user guide focused on modelling and solving. Put detailed option
+  restrictions in `docs/source/reference/`, and research evidence in
+  `benchmarks/reports/`. Link new features to a runnable example.
 - Update the API reference in `docs/source/api/steinerpy.rst`.
 - Build the docs locally to check they parse (requires Python ≥ 3.10):
 
   ```bash
   uv sync --extra docs
-  uv run sphinx-build -b html docs/source docs/build/html
+  uv run python docs/check_examples.py
+  uv run sphinx-build -b html -W --keep-going docs/source docs/_build/html
   ```
+
+Notebook outputs are committed; Read the Docs does not execute notebooks.
+Use `uv run python docs/check_examples.py --write` after editing an example
+to refresh its outputs. The root `example.ipynb` supplies the quickstart page;
+the other notebooks live in `docs/source/examples/`. All examples run with
+HiGHS. Use fixed graph positions, captions, and alternative text for figures.
 
 ## Adding a new problem variant
 

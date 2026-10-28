@@ -1,10 +1,9 @@
 # Benchmarks
 
-## Scope and scale
+These measurements describe specific datasets, configurations, and machines.
+Use them to understand the tested workloads; runtime on your inputs may differ.
 
-SteinerPy is a **Python / NetworkX library**, and it is honest about where that puts it.
-Its goal is *breadth and accessibility* — a unified, pip-installable, MIT-licensed API that solves many Steiner variants exactly (with a certified optimality gap), and drops straight into a Python data pipeline.
-Its sweet spot is **small-to-medium instances** (up to roughly a few thousand nodes/edges), rapid prototyping, and research that needs to move across variants quickly.
+## Scope and scale
 
 The [PACE 2018 report](https://github.com/berendmarkhorst/SteinerPy/blob/main/benchmarks/reports/pace2018/README.md)
 measures all three undirected Steiner-tree tracks on Snellius, with HiGHS,
@@ -19,12 +18,12 @@ and runtime with Python baselines. They do not measure SCIP-Jack's runtime.
 
 ## Setup
 
-Two scripts at the repository root benchmark SteinerPy against the standard baselines on **literature instances** (not random graphs), scoring every method on one optimality-gap axis against published / proven optima:
+Two scripts at the repository root benchmark SteinerPy against the standard baselines on literature instances, scoring every method on one optimality-gap axis against published / proven optima:
 
 - [`benchmark_compare.py`](https://github.com/berendmarkhorst/SteinerPy/blob/main/benchmark_compare.py) — Steiner tree, vs `networkx` `approximation.steiner_tree` (Kou and Mehlhorn), on the bundled SteinLib C-series (the `B` and `D` tiers are bundled too).
 - [`benchmark_pcstp.py`](https://github.com/berendmarkhorst/SteinerPy/blob/main/benchmark_pcstp.py) — Prize-collecting Steiner (PCSPG), vs [`pcst_fast`](https://github.com/fraenkel-lab/pcst_fast) (Goemans–Williamson 2-approx), on the DIMACS 2014 JMP set.
 
-The numbers below were produced on an **Apple M4, Python 3.13.4, networkx 3.6.1, Gurobi 13.0.2**; absolute times are machine-dependent, the gaps are not.
+The numbers below were produced on an Apple M4, Python 3.13.4, networkx 3.6.1, Gurobi 13.0.2; absolute times are machine-dependent, the gaps are not.
 Each table is generated verbatim by the script's `--markdown` flag — see [Reproducing](#reproducing) below.
 
 ## Steiner tree — SteinerPy vs NetworkX
@@ -39,11 +38,10 @@ Each table is generated verbatim by the script's `--markdown` flag — see [Repr
 | SteinerPy-exact+DA | 9.049 | 0.00 | 20/20 |
 | SteinerPy-heuristic | 0.245 | 4.45 | 2/20 |
 
-Average exact-vs-DA speedup (SteinerPy-exact / SteinerPy-exact+DA): **2.62×**.
-
-- **SteinerPy-exact+DA** solves all 20 to proven optimality. Crucially, on `c18` (500 nodes, 12 500 edges, 83 terminals) the plain exact solve finds no feasible solution within 60 s, while the dual-ascent accelerator (`dual_ascent=True`) proves optimality — it doesn't just speed up easy instances, it makes a hard one solvable (and is ~2.6× faster on average).
-- **NetworkX-kou / -mehlhorn** are the fastest but ≈6% off on average and solve only 1/20 to optimality, with no bound to tell you so.
-- **SteinerPy-heuristic** (`exact=False`, no ILP) stays in NetworkX's speed class (~0.25 s), beats both NetworkX heuristics on quality (4.45% vs ~6%), *and* reports a **certified** gap — bounding how far it could be from the optimum (0 = proven optimal), something `networkx.steiner_tree` cannot provide.
+The plain exact solve returned no feasible solution for `c18` within the limit;
+its averages therefore do not cover the same returned-solution set as the
+dual-ascent run. The gap column measures error against reference optima, not
+the solver-reported certificate. Rounded zero does not imply a completed proof.
 
 ## Prize-collecting Steiner (PCSPG) — SteinerPy vs pcst_fast
 
@@ -55,8 +53,9 @@ Average exact-vs-DA speedup (SteinerPy-exact / SteinerPy-exact+DA): **2.62×**.
 | SteinerPy-heuristic | 0.008 | 2.94 | 2/6 |
 | pcst_fast | 0.000 | 2.30 | 3/6 |
 
-`SteinerPy-exact` (`pc_transform=True`) proves optimality on all six in well under a second; `pcst_fast` is essentially instantaneous but ≈2–3% off with no certificate, and `SteinerPy-heuristic` matches its speed class while reporting a certified gap.
-(The bundled `K400/P400` instances are larger; run the full set yourself to see the time-limit behaviour.)
+The zero runtime for `pcst_fast` is rounded to three decimal places.
+The exact run uses the prize transformation; heuristic results do not all match
+the reference optima. These are six-instance results, not a general ranking.
 
 (reproducing)=
 ## Reproducing

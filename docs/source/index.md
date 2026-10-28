@@ -1,35 +1,41 @@
 # SteinerPy
 
-SteinerPy is a Python package for solving Steiner tree and Steiner forest problems — and many advanced variants — **to proven optimality**, directly on [NetworkX](https://networkx.org) graphs.
-It uses the open-source [HiGHS](https://highs.dev) solver by default, with [Gurobi](https://www.gurobi.com) supported as an optional backend via lazy-cut callbacks.
+```{image} _static/brand/steinerpy-logo-light.svg
+:alt: SteinerPy
+:width: 560px
+:align: center
+:class: only-light
+```
 
-The package aims for *breadth and accessibility*: a unified, pip-installable, MIT-licensed API that solves many Steiner variants exactly (with a certified optimality gap) and drops straight into a Python data pipeline.
-Its sweet spot is small-to-medium instances, rapid prototyping, and research that needs to move across problem variants quickly.
+```{image} _static/brand/steinerpy-logo-dark.svg
+:alt: SteinerPy
+:width: 560px
+:align: center
+:class: only-dark
+```
 
-Highlights:
+SteinerPy solves Steiner tree and forest problems on NetworkX graphs. You specify
+which nodes must connect, add costs and constraints, and solve with HiGHS or Gurobi.
+The result contains the selected edges, objective value, and optimality gap.
 
-- **One API, many variants** — Steiner tree/forest, prize-collecting, node-weighted, maximum-weight connected subgraph, directed (arborescence), hop-constrained, group, rectilinear, terminal-leaf, and budgeted variants.
-- **Exact, with a certificate** — every solve reports a proven optimality gap; `gap == 0.0` means provably optimal.
-- **Fast when you want it** — an opt-in dual-ascent accelerator, graph reduction tests, and a heuristic-only mode that stays in NetworkX's speed class while still certifying its gap.
-- **Two solver backends** — HiGHS (always available) and Gurobi (optional, requires a license).
-
-## Installation
-
-SteinerPy is available on [PyPI](https://pypi.org/project/steinerpy/):
+<span id="installation"></span>
 
 ```shell
 pip install steinerpy
 ```
 
-See {doc}`setup/installation` for requirements and the optional Gurobi backend.
+Start with {doc}`examples/quickstart`, or use {doc}`guide/variants` to choose the
+inputs for your model. See {doc}`setup/installation` for requirements and the
+optional Gurobi backend.
 
-## Getting help
+<span id="getting-help"></span>
 
-Feel free to open an issue on [GitHub](https://github.com/berendmarkhorst/SteinerPy/issues) if you have questions, run into a problem, or want to propose a feature.
+For questions and bug reports, open an issue on
+[GitHub](https://github.com/berendmarkhorst/SteinerPy/issues).
 
-## Citing SteinerPy
+<span id="citing-steinerpy"></span>
 
-If you use SteinerPy in your research, please cite the paper that introduced it — see {doc}`setup/citing` for the BibTeX entry.
+If you use the package in research, see {doc}`setup/citing`.
 
 ```{toctree}
 :maxdepth: 1
@@ -38,7 +44,7 @@ If you use SteinerPy in your research, please cite the paper that introduced it 
 
 setup/installation
 setup/getting_started
-setup/citing
+examples/quickstart
 ```
 
 ```{toctree}
@@ -49,7 +55,6 @@ setup/citing
 guide/variants
 guide/solvers
 guide/performance
-guide/phase1_research
 guide/benchmarks
 ```
 
@@ -58,21 +63,19 @@ guide/benchmarks
 :caption: Examples
 :hidden:
 
-examples/quickstart
+examples/connectivity
+examples/costs_and_budgets
+examples/constraints
 ```
 
 ```{toctree}
 :maxdepth: 1
-:caption: API reference
+:caption: Reference
 :hidden:
 
 api/steinerpy
-```
-
-```{toctree}
-:maxdepth: 1
-:caption: Extras
-:hidden:
-
+reference/compatibility
+reference/algorithms
+setup/citing
 extras/references
 ```

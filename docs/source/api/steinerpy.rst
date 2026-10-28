@@ -95,6 +95,8 @@ Further variants
    :show-inheritance:
    :special-members: __init__
 
+.. _solution-reference:
+
 Solutions
 ---------
 

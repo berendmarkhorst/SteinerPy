@@ -51,15 +51,21 @@ autodoc_typehints = "description"
 nb_execution_mode = "off"
 
 myst_enable_extensions = ["colon_fence", "dollarmath"]
+# Resolve links to headings in the guides, reference pages, and notebooks.
+myst_heading_anchors = 3
 
 # -- Options for HTML output -------------------------------------------------
 
 html_theme = "furo"
 html_title = f"SteinerPy {version}"
-html_static_path = []
+html_static_path = ["_static"]
+html_favicon = "_static/brand/favicon.ico"
 
 html_theme_options = {
     "source_repository": "https://github.com/berendmarkhorst/SteinerPy",
     "source_branch": "main",
     "source_directory": "docs/source/",
+    "light_logo": "brand/steinerpy-logo-light.svg",
+    "dark_logo": "brand/steinerpy-logo-dark.svg",
+    "sidebar_hide_name": True,
 }
