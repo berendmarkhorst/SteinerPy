@@ -1,5 +1,19 @@
 # SteinerPy
 
+```{image} _static/brand/steinerpy-logo-light.svg
+:alt: SteinerPy
+:width: 560px
+:align: center
+:class: only-light
+```
+
+```{image} _static/brand/steinerpy-logo-dark.svg
+:alt: SteinerPy
+:width: 560px
+:align: center
+:class: only-dark
+```
+
 SteinerPy solves Steiner tree and forest problems on NetworkX graphs. You specify
 which nodes must connect, add costs and constraints, and solve with HiGHS or Gurobi.
 The result contains the selected edges, objective value, and optimality gap.

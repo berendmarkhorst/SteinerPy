@@ -1,5 +1,13 @@
 # SteinerPy
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/source/_static/brand/steinerpy-logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/source/_static/brand/steinerpy-logo-light.svg">
+    <img src="https://raw.githubusercontent.com/berendmarkhorst/SteinerPy/main/docs/source/_static/brand/steinerpy-logo-light.png" alt="SteinerPy" width="600">
+  </picture>
+</p>
+
 [![PyPI version](https://badge.fury.io/py/steinerpy.svg)](https://pypi.org/project/steinerpy/)
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/steinerpy)](https://pypi.org/project/steinerpy/)
 [![Python 3.8+](https://img.shields.io/pypi/pyversions/steinerpy.svg)](https://pypi.org/project/steinerpy/)
