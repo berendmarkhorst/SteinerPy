@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "steinerpy"
 version = "1.0.20"
-description = "Package to solve Steiner Tree and Steiner Forest Problems with the HiGHS solver"
+description = "Python package for solving Steiner tree, Steiner forest, and related network optimization problems on NetworkX graphs, with HiGHS and optional Gurobi support."
 readme = "README.md"
 license = "MIT"
 authors = [

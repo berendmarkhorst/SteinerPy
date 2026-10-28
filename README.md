@@ -1,5 +1,3 @@
-# SteinerPy
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/source/_static/brand/steinerpy-logo-dark.svg">
