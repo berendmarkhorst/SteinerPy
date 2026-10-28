@@ -223,8 +223,12 @@ is no plugin system — variants are plain classes. The checklist:
 - Pull requests and pushes to `main` run tests automatically without publishing
   a release. Keep pull requests complete and self-contained so `main` stays usable.
 - To publish a release, open **Actions → CI/CD Pipeline → Run workflow**, select
-  **main**, and run it. After all tests pass, the workflow bumps the patch version,
-  creates a tag, and publishes to PyPI. Manual runs on other branches only run tests.
+  **main**, and enter the release version (for example, `1.1.0`). Leave it blank
+  to bump the patch version instead. After tests and documentation checks pass,
+  the workflow sets that version, creates a tag, and publishes to PyPI. If the
+  version is already committed, it tags that commit without another bump.
+  Manual runs on other branches only run tests. Use `RELEASE_NOTES.md` as the
+  body when creating the corresponding GitHub release from the published tag.
 - If you used LLMs / generative AI to produce part of the contribution,
   please disclose this in the pull request description.
 

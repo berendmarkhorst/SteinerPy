@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-28
+
+Define Steiner problems through one `Problem` interface: supply connectivity,
+costs, and constraints, and SteinerPy infers the model. Features can be combined
+beyond the named variants, while existing problem classes remain supported.
+
 ### Added
 - Legacy transformation constructors reject unmapped constraints before graph
   transformation, reject parallel-edge identity loss, and consistently handle
@@ -51,6 +57,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   solving. Transformations track original nodes/edges, charge selected nodes
   once, and validate decoded results. Unsupported constraints and preprocessing
   are rejected before model construction.
+
+### Changed
+- Removed the outdated Alpha package classifier.
+- Legacy undirected/directed group solvers and group/node-cost composition now
+  share group-terminal attachment with collision-free labels, zero-cost
+  connectors, and original group-member provenance. Composition attaches at
+  paid output ports; supported combinations and solver formulations are
+  unchanged.
+- Legacy node-weighted solving and group/node-cost composition now share a
+  private node-splitting transformation with explicit input/output ports and
+  original-node/edge provenance. Legacy labels, missing-cost defaults, terminal
+  corrections, and existing compatibility checks are retained.
+- HiGHS and Gurobi node-budgeted maximum-weight objectives and reporting now
+  use shared signed node-weight coefficients. Negative connectors, zero or
+  missing weights, topology-only edges, and separate node-cost budgets retain
+  their existing semantics. The normalized signed-weight specification uses
+  the same conversion.
+- Native prize-collecting and legacy maximum-weight penalty objectives now
+  consume shared edge/node coefficients and per-requirement penalties from
+  `ObjectiveSpec`. Existing constraints, penalty amounts, reporting units,
+  transform paths, and non-positive legacy prize handling are preserved.
+- Standard HiGHS and Gurobi edge objectives now consume shared objective
+  coefficients from the current working graph, preserving reduced/transformed
+  costs, directed arc orientation, and existing reporting corrections.
+- Existing objective conventions now have a private shared representation of
+  original edge/node coefficients, terminal penalties, and reporting signs and
+  offsets. Group/node-cost decoding uses it for cost checks; legacy solver
+  objectives, transformation corrections, gaps, and supported inputs retain
+  their current behavior. The variant guide explains differences between the
+  legacy penalty models and classic prize/maximum-weight transform paths.
+- `Problem` now checks compatibility through one validation entry point before
+  constructing or transforming an instance. Unsupported terminal-leaf budgets,
+  additional budgets on node-budgeted MWCS, and incompatible prize transforms
+  fail early, as do invalid cost/prize mappings. Supported combinations and
+  legacy preprocessing defaults remain available.
+- `Problem` input normalization and implementation dispatch now have separate
+  private modules. `ProblemSpec` records roots, objective data, constraints,
+  and geometry alongside connectivity, preserving omitted versus explicit
+  options, legacy defaults, validation errors, and supported combinations.
+
+### Fixed
+- Undirected group solves use shared sink-only composition: artificial group
+  nodes can no longer create free shortcuts and disconnected original results.
+- Legacy node splitting keeps distinct original nodes whose string forms
+  collide (such as `1` and `"1"`) separate, using collision-free labels when
+  needed.
+- Native prize-collecting solving and edge-cost reporting now consistently
+  default missing edge weights to one.
+- Directed hop limits now apply to HiGHS edge-budget solves as well as Gurobi,
+  with an independent limit check before accepting an incumbent.
+- Budgeted forests now build optional flows for each group's own requirements
+  and share purchased edges across groups. Overlapping terminals no longer
+  raise `KeyError`, and different roots can use an undirected edge in either
+  direction without paying for it twice. Reporting still counts requirements
+  per group, including repeated vertices. Missing edge costs default to one
+  in both budget constraints and incumbent validation.
+
+## [1.0.20] - 2026-09-15
+
+### Added
 - **Experimental terminal-regions PCSTP reductions** (off by default):
   `pc_reduce="pcd+trd"` adds Rehfeldt & Koch's (2020) terminal-regions
   decomposition and Proposition 12 lower bound for bound-based edge deletion;
@@ -180,42 +246,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Joins the existing creep-flow and back-cut accelerators; scipy path only.
 
 ### Changed
-- Legacy undirected/directed group solvers and group/node-cost composition now
-  share group-terminal attachment with collision-free labels, zero-cost
-  connectors, and original group-member provenance. Composition attaches at
-  paid output ports; supported combinations and solver formulations are
-  unchanged.
-- Legacy node-weighted solving and group/node-cost composition now share a
-  private node-splitting transformation with explicit input/output ports and
-  original-node/edge provenance. Legacy labels, missing-cost defaults, terminal
-  corrections, and existing compatibility checks are retained.
-- HiGHS and Gurobi node-budgeted maximum-weight objectives and reporting now
-  use shared signed node-weight coefficients. Negative connectors, zero or
-  missing weights, topology-only edges, and separate node-cost budgets retain
-  their existing semantics. The normalized signed-weight specification uses
-  the same conversion.
-- Native prize-collecting and legacy maximum-weight penalty objectives now
-  consume shared edge/node coefficients and per-requirement penalties from
-  `ObjectiveSpec`. Existing constraints, penalty amounts, reporting units,
-  transform paths, and non-positive legacy prize handling are preserved.
-- Standard HiGHS and Gurobi edge objectives now consume shared objective
-  coefficients from the current working graph, preserving reduced/transformed
-  costs, directed arc orientation, and existing reporting corrections.
-- Existing objective conventions now have a private shared representation of
-  original edge/node coefficients, terminal penalties, and reporting signs and
-  offsets. Group/node-cost decoding uses it for cost checks; legacy solver
-  objectives, transformation corrections, gaps, and supported inputs retain
-  their current behavior. The variant guide explains differences between the
-  legacy penalty models and classic prize/maximum-weight transform paths.
-- `Problem` now checks compatibility through one validation entry point before
-  constructing or transforming an instance. Unsupported terminal-leaf budgets,
-  additional budgets on node-budgeted MWCS, and incompatible prize transforms
-  fail early, as do invalid cost/prize mappings. Supported combinations and
-  legacy preprocessing defaults remain available.
-- `Problem` input normalization and implementation dispatch now have separate
-  private modules. `ProblemSpec` records roots, objective data, constraints,
-  and geometry alongside connectivity, preserving omitted versus explicit
-  options, legacy defaults, validation errors, and supported combinations.
 - Near-integral connectivity candidates use capacity-checked reachability
   cuts before max-flow. Identical certificates within a separation round are
   emitted once; fractional and uncertified demands retain min-cut separation.
@@ -254,21 +284,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adjacency and the terminal→group map are now precomputed once per build.
 
 ### Fixed
-- Undirected group solves use shared sink-only composition: artificial group
-  nodes can no longer create free shortcuts and disconnected original results.
-- Legacy node splitting keeps distinct original nodes whose string forms
-  collide (such as `1` and `"1"`) separate, using collision-free labels when
-  needed.
-- Native prize-collecting solving and edge-cost reporting now consistently
-  default missing edge weights to one.
-- Directed hop limits now apply to HiGHS edge-budget solves as well as Gurobi,
-  with an independent limit check before accepting an incumbent.
-- Budgeted forests now build optional flows for each group's own requirements
-  and share purchased edges across groups. Overlapping terminals no longer
-  raise `KeyError`, and different roots can use an undirected edge in either
-  direction without paying for it twice. Reporting still counts requirements
-  per group, including repeated vertices. Missing edge costs default to one
-  in both budget constraints and incumbent validation.
 - NetworkX cut separation completes the maximum flow before extracting a
   source-side cut; an intermediate preflow can leave excess at internal nodes
   and produce a source partition that is not a minimum cut.

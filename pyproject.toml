@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "steinerpy"
-version = "1.0.20"
+version = "1.1.0"
 description = "Python package for solving Steiner tree, Steiner forest, and related network optimization problems on NetworkX graphs, with HiGHS and optional Gurobi support."
 readme = "README.md"
 license = "MIT"
@@ -20,7 +20,6 @@ maintainers = [
 ]
 keywords = ["steiner", "tree", "forest", "optimization", "graph", "networkx", "highs"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
