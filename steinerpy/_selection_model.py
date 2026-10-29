@@ -153,10 +153,10 @@ class SelectionModel:
     def solve(self, objective, deadline):
         self._fallback = None
         # Extra rows help hard models but regress some easy ones. Only strengthen
-        # an unfinished solve with enough time left to use the stronger model.
-        probe = self._connectivity_roots is not None and deadline - perf_counter() > 2
+        # after a two-second probe, leaving at least as much time for the retry.
+        probe = self._connectivity_roots is not None and deadline - perf_counter() > 4
         outcome = self._optimize(
-            objective, min(deadline, perf_counter() + 1) if probe else deadline
+            objective, min(deadline, perf_counter() + 2) if probe else deadline
         )
         if (
             not probe
