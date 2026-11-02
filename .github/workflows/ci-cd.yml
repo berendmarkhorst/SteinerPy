@@ -20,9 +20,13 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    env:
+      # Python 3.15 currently builds highspy from source; bound compiler memory.
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
 
     steps:
     - uses: actions/checkout@v4
@@ -41,11 +45,15 @@ jobs:
       run: uv python install ${{ matrix.python-version }}
 
     - name: Install dependencies
-      run: uv sync --dev
+      run: uv sync --frozen --dev --python ${{ matrix.python-version }}
+
+    - name: Verify selected interpreter
+      run: |
+        uv run --frozen --python ${{ matrix.python-version }} python -c "import sys; print(sys.version); assert sys.version_info[:2] == tuple(map(int, '${{ matrix.python-version }}'.split('.')))"
 
     - name: Run tests
       run: |
-        uv run pytest tests/ -v --cov=steinerpy --cov-report=xml --cov-report=html
+        uv run --frozen --python ${{ matrix.python-version }} pytest tests/ -v --cov=steinerpy --cov-report=xml --cov-report=html
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
@@ -55,7 +63,7 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
 
   docs:
-    name: Documentation (Python 3.12)
+    name: Documentation and packaging (Python 3.14)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -63,11 +71,27 @@ jobs:
       with:
         version: "latest"
     - name: Install documentation dependencies
-      run: uv sync --python 3.12 --extra docs --frozen
+      run: uv sync --python 3.14 --extra docs --frozen
     - name: Execute and validate examples
-      run: uv run --frozen python docs/check_examples.py
+      run: uv run --frozen --python 3.14 python docs/check_examples.py
     - name: Build documentation
-      run: uv run --frozen sphinx-build -b html -W --keep-going docs/source docs/_build/html
+      run: uv run --frozen --python 3.14 sphinx-build -b html -W --keep-going docs/source docs/_build/html
+    - name: Build distributions and check the installed wheel
+      run: |
+        uv build --python 3.14
+        uv venv --python 3.14 "$RUNNER_TEMP/steinerpy-installed"
+        uv pip install --python "$RUNNER_TEMP/steinerpy-installed/bin/python" dist/*.whl
+        STEINERPY_DW_MAX_TERMINALS=0 "$RUNNER_TEMP/steinerpy-installed/bin/python" -I - <<'PY'
+        import networkx as nx
+        import steinerpy
+        from importlib.metadata import version
+        print("Installed", version("steinerpy"), "from", steinerpy.__file__)
+        problem = steinerpy.Problem(nx.cycle_graph(4), terminals=[0, 2], preprocess=False)
+        solution = problem.get_solution(solver="highs", time_limit=30)
+        assert solution.gap == 0 and solution.objective == 2
+        assert nx.is_tree(nx.Graph(solution.edges))
+        assert {0, 2} <= set(nx.Graph(solution.edges))
+        PY
 
   release:
     name: Bump version & publish to PyPI

@@ -1,9 +1,9 @@
 codecov:
   require_ci_to_pass: true
   notify:
-    # Wait for all 5 matrix uploads (Python 3.8-3.12) before posting the comment,
+    # Wait for all 8 matrix uploads (Python 3.8-3.15) before posting the comment,
     # so it never reports partial/flaky numbers.
-    after_n_builds: 5
+    after_n_builds: 8
 
 coverage:
   status:
