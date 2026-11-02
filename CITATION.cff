@@ -9,14 +9,6 @@ url: "https://github.com/berendmarkhorst/SteinerPy"
 authors:
   - family-names: Markhorst
     given-names: Berend
-  - family-names: Berkhout
-    given-names: Joost
-  - family-names: Zocca
-    given-names: Alessandro
-  - family-names: Pruyn
-    given-names: Jeroen
-  - family-names: van der Mei
-    given-names: Rob
 
 preferred-citation:
   type: article

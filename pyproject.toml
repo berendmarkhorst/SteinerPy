@@ -10,10 +10,6 @@ readme = "README.md"
 license = "MIT"
 authors = [
     {name = "Berend Markhorst"},
-    {name = "Joost Berkhout"},
-    {name = "Alessandro Zocca"},
-    {name = "Jeroen Pruyn"},
-    {name = "Rob van der Mei"},
 ]
 maintainers = [
     {name = "Berend Markhorst", email = "berend.markhorst@gmail.com"},

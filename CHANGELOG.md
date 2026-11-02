@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Corrected the software author metadata to Berend Markhorst; the pipe-routing
+  paper citation retains its full author list.
+
 ## [1.1.0] - 2026-10-28
 
 Define Steiner problems through one `Problem` interface: supply connectivity,
