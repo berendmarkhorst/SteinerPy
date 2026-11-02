@@ -1,0 +1,37 @@
+{
+  "method": "SHA-256 of sorted undirected integer-labeled edges and sorted terminal list; exact equality only, no isomorphism claim. All weights are one.",
+  "generated_cases": 52,
+  "exact_calibration_repeats": [
+    {
+      "validation_case": "heldout-checkerboard_grid-8-101",
+      "discovery_case": "discovery-checkerboard_grid-8-0",
+      "graph_terminal_sha256": "fd65e8999a58dccd5260da50741ed713f165a7bad90fe96620ae2fdf0d98f566"
+    },
+    {
+      "validation_case": "heldout-checkerboard_grid-8-102",
+      "discovery_case": "discovery-checkerboard_grid-8-1",
+      "graph_terminal_sha256": "fc2763eb6128debbccfbbdc96d8c011866ed6a08f88c1cd34bf3fe78d44774a4"
+    },
+    {
+      "validation_case": "heldout-sparse_grid-9-101",
+      "discovery_case": "discovery-sparse_grid-9-0",
+      "graph_terminal_sha256": "f3cf51c8515e06c55eed49062df3211fdc64cdcf777be8e82576601392188123"
+    },
+    {
+      "validation_case": "heldout-sparse_grid-9-102",
+      "discovery_case": "discovery-sparse_grid-9-1",
+      "graph_terminal_sha256": "fd05f664a874078a4089c3c3b806b2143ed8b7490afc25ddc1489f12ae38d3e3"
+    },
+    {
+      "validation_case": "heldout-parity_cube-6-101",
+      "discovery_case": "discovery-parity_cube-6-0",
+      "graph_terminal_sha256": "fa4118381c2509826fe0ac87bb590641183c4f239008867dd08f0e978907e4a6"
+    },
+    {
+      "validation_case": "heldout-parity_cube-6-102",
+      "discovery_case": "discovery-parity_cube-6-1",
+      "graph_terminal_sha256": "4abee1b52bb4bfc281119000f5630d50456d8733ec7b5e9f58c3b62044375e4f"
+    }
+  ],
+  "novel_generated_cases": 46
+}

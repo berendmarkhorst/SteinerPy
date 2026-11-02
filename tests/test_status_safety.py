@@ -88,6 +88,7 @@ def test_deadline_after_violated_cut_discards_previous_incumbent(monkeypatch):
 def test_public_get_solution_rejects_disconnected_incomplete_result(
     monkeypatch,
 ):
+    monkeypatch.setenv("STEINERPY_UNIFORM_NODE_MODEL", "0")
     graph = nx.path_graph(3)
     nx.set_edge_attributes(graph, 1, "weight")
     problem = SteinerProblem(graph, [[0, 2]], preprocess=False)
@@ -103,6 +104,7 @@ def test_public_get_solution_rejects_disconnected_incomplete_result(
 
 
 def test_public_get_solution_accepts_valid_unproven_incumbent(monkeypatch):
+    monkeypatch.setenv("STEINERPY_UNIFORM_NODE_MODEL", "0")
     graph = nx.path_graph(3)
     nx.set_edge_attributes(graph, 1, "weight")
     problem = SteinerProblem(graph, [[0, 2]], preprocess=False)

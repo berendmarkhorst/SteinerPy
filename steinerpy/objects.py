@@ -745,6 +745,8 @@ class BaseSteinerProblem:
             from .mathematical_model import _check_gurobipy
             _check_gurobipy()
 
+        self.cut_stats = {}
+
         # Trivial after preprocessing: when every group is down to <= 1
         # *distinct* terminal (e.g. terminal contraction solved the whole
         # instance, or the caller passed duplicate terminals in a group), the
@@ -914,7 +916,16 @@ class BaseSteinerProblem:
                 da_cuts = steiner_cuts(da, self.roots)
                 da_ub = da.upper_bound
 
-        if solver == "gurobi":
+        from ._uniform_node import uniform_cost, prefer_node_model, solve_uniform_node
+        node_cost = uniform_cost(self) if not use_da else None
+        if node_cost is not None and not prefer_node_model(self):
+            node_cost = None
+        if node_cost is not None:
+            gap, runtime, objective, selected_edges, _status = solve_uniform_node(
+                self, node_cost, time_limit=time_limit, logfile=log_file,
+                solver=solver, threads=threads,
+            )
+        elif solver == "gurobi":
             model, x, y1, y2, z = build_model_gurobi(self, time_limit=time_limit, logfile=log_file, threads=threads)
             if da_cuts is not None:
                 from .dual_ascent import (
@@ -983,6 +994,8 @@ class BaseSteinerProblem:
         selected_edges, original_selected_edges, objective, gap = (
             self._finalize_exact_incumbent(selected_edges, objective, gap)
         )
+        if node_cost is not None and selected_edges and not _math.isfinite(objective):
+            raise RuntimeError("Uniform node tree cost is not finite after backmapping.")
 
         solution = Solution(
             gap=gap,
@@ -1282,8 +1295,21 @@ class SteinerProblem(BaseSteinerProblem):
     al. (2025), which builds on the Steiner forest formulations of Schmidt, Zey
     & Margot (2021); see :mod:`steinerpy.mathematical_model`.
 
+    Plain single-tree instances with positive uniform working edge costs can
+    use the node-separator formulation of Fischetti et al. (2017). Automatic
+    selection favors connected terminal-induced subgraphs and terminal--Steiner
+    incidence graphs with at least five edges per remaining Steiner node on
+    average. Set
+    ``STEINERPY_UNIFORM_NODE_MODEL=1`` to force the eligible node formulation,
+    or ``0`` to retain directed cuts. Preprocessing and few-terminal shortcuts
+    run first; enumeration and explicitly enabled dual-ascent/primal-portfolio
+    options retain their existing formulations.
+
     References:
 
+    - M. Fischetti et al. (2017), *Thinning out Steiner trees: a node-based
+      model for uniform edge costs*, Mathematical Programming Computation 9,
+      203-229, doi:10.1007/s12532-016-0111-0.
     - B. Markhorst, J. Berkhout, A. Zocca, J. Pruyn, R. van der Mei (2025),
       *Future-proof ship pipe routing: Navigating the energy transition*,
       Ocean Engineering 319, 120113, doi:10.1016/j.oceaneng.2024.120113 —

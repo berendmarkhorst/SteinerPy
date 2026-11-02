@@ -1,0 +1,29 @@
+{
+  "rule_id": "uniform-selection-v1",
+  "frozen_utc": "2026-11-02T08:34:37.134861+00:00",
+  "minimum_incidence_degree": 5,
+  "rule_source": "def prefer_node_model(problem):\n    \"\"\"Choose the node formulation within its mathematically eligible domain.\n\n    Connected terminals attain the node-count lower bound without Steiner\n    choices. Otherwise prefer terminal--Steiner incidence graphs with at least\n    five edges per useful Steiner variable. This conservative empirical rule\n    is evaluated in ``benchmarks/reports/uniform-selection`` on both backends.\n    Nonterminal leaf pruning is only for selection; it does not alter the\n    working graph or its reduction/backmapping state.\n    \"\"\"\n    setting = os.environ.get(\"STEINERPY_UNIFORM_NODE_MODEL\", \"auto\")\n    if setting in {\"0\", \"1\"}:\n        return setting == \"1\"\n    graph = problem.graph\n    terminals = set(problem.terminal_groups[0])\n    if not terminals or not terminals <= set(graph):\n        return False\n    if nx.is_connected(graph.subgraph(terminals)):\n        return True\n    component = nx.node_connected_component(graph, problem.terminal_groups[0][0])\n    if not terminals <= component:\n        return False\n    graph = graph.subgraph(component)\n    if any(node not in terminals and degree == 1 for node, degree in graph.degree()):\n        from .graph_reducer import degree_one_reduction\n\n        graph = degree_one_reduction(graph, terminals)\n    if any((left in terminals) == (right in terminals) for left, right in graph.edges):\n        return False\n    steiner_count = len(graph) - len(terminals)\n    return steiner_count > 0 and graph.number_of_edges() >= 5 * steiner_count\n",
+  "source_hashes": {
+    "steinerpy/_uniform_node.py": "a29812f340eed7aecfb7f661c5857a216df6a7e5bad8ab5703d548bf73097337",
+    "steinerpy/objects.py": "167a05fd62ad5b00d1db1347943c6713028653e8347a1bdc88c9355de549dcda",
+    "steinerpy/mathematical_model.py": "291e5fba140119ddc075ac8635c413d7a41ce8c07f68ab7847eff022d709125b",
+    "benchmarks/benchmark_uniform.py": "8e68ce48d317667f1ecd7b7f10bc087920f807bf1ab9e67337e11049628384de",
+    "benchmarks/uniform_selection.py": "085f5ea3aeec169ad920a2d1d28d9c26f19c0555c523741abb7a83bc4215cc95"
+  },
+  "evidence_and_manifest_sha256": {
+    "discovery-highs.json": "4a997d80defa0edaef5f8133377925873ac1ed499fba0666fa947190686483ca",
+    "discovery-gurobi.json": "dcfa4a3daec30cc8e0e2abb3bf5d28b06c309572eefbc6bc3e128312db5ba514",
+    "challenge-highs.json": "47a1cc1bab385f1c7cfe56b4eaf56ee5c993a0e7b2bf71b3e2e070bb1d16dc70",
+    "challenge-gurobi.json": "9d80cf6b66ac18ffdf4c930a2332dc61cc9c4f24bff6780db6b109b4e5a81187",
+    "discovery-gurobi-repeat.json": "79c339188f3a68a08208dc215786ea6751c95784e8f10dd2c9222382d7b6b30a",
+    "heldout-manifest.json": "114d74a8c256239427750ccf7b7bfd28cfb1656a0645ea1e9b148e689e541769",
+    "external-manifest.json": "07b55724a74f5e9361e3a3d7705c3a4f3d7185759da9794cd714eda7c22e6a03"
+  },
+  "note": "Rule fixed using discovery and challenge measurements only, before held-out or external solves.",
+  "post_validation_documentation": {
+    "steinerpy/objects.py": {
+      "sha256": "247d29313f77944a07dd8e181fb432488138ad513c973d6490f19473388175da",
+      "change": "Clarify terminal-induced connectivity and average degree in the class docstring; executable AST verified unchanged after all timing runs."
+    }
+  }
+}

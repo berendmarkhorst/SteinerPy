@@ -12,6 +12,7 @@ from steinerpy import mathematical_model as mm, objects
 
 def inject_incumbent(monkeypatch, solver, objective, edges, gap):
     monkeypatch.setenv("STEINERPY_DW_MAX_TERMINALS", "0")
+    monkeypatch.setenv("STEINERPY_UNIFORM_NODE_MODEL", "0")
     monkeypatch.setattr(mm, "_check_gurobipy", lambda: None)
     suffix = "_gurobi" if solver == "gurobi" else ""
     monkeypatch.setattr(objects, "build_model" + suffix, lambda *a, **k: (None,) * 5)

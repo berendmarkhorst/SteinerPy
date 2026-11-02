@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add the uniform-cost node-variable MIP of Fischetti et al. (2017) for eligible
+  plain Steiner trees on HiGHS and Gurobi. Automatic selection uses connected
+  terminal-induced subgraphs or terminal/nonterminal incidence graphs with at
+  least five edges per remaining nonterminal on average, after ignoring
+  terminal-free components and pruning nonterminal leaves. Earlier exact
+  shortcuts retain priority and enumeration remains edge-based. Set
+  `STEINERPY_UNIFORM_NODE_MODEL=0` to disable the node model, `1` to force it
+  when mathematically eligible, or leave it unset (or use `auto`) for the
+  structural rule.
+
 ### Changed
 - Corrected the software author metadata to Berend Markhorst; the pipe-routing
   paper citation retains its full author list.

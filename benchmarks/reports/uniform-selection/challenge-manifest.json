@@ -1,0 +1,98 @@
+[
+  {
+    "id": "challenge-torus-8-0",
+    "split": "challenge",
+    "family": "torus",
+    "size": 8,
+    "seed": 17,
+    "variant": 0
+  },
+  {
+    "id": "challenge-torus-8-1",
+    "split": "challenge",
+    "family": "torus",
+    "size": 8,
+    "seed": 17,
+    "variant": 1
+  },
+  {
+    "id": "challenge-torus-10-0",
+    "split": "challenge",
+    "family": "torus",
+    "size": 10,
+    "seed": 17,
+    "variant": 0
+  },
+  {
+    "id": "challenge-torus-10-1",
+    "split": "challenge",
+    "family": "torus",
+    "size": 10,
+    "seed": 17,
+    "variant": 1
+  },
+  {
+    "id": "challenge-king_grid-8-0",
+    "split": "challenge",
+    "family": "king_grid",
+    "size": 8,
+    "seed": 17,
+    "variant": 0
+  },
+  {
+    "id": "challenge-king_grid-10-0",
+    "split": "challenge",
+    "family": "king_grid",
+    "size": 10,
+    "seed": 17,
+    "variant": 0
+  },
+  {
+    "id": "challenge-grid3-6-0",
+    "split": "challenge",
+    "family": "grid3",
+    "size": 6,
+    "seed": 17,
+    "variant": 0
+  },
+  {
+    "id": "challenge-periodic_grid3-6-0",
+    "split": "challenge",
+    "family": "periodic_grid3",
+    "size": 6,
+    "seed": 17,
+    "variant": 0
+  },
+  {
+    "id": "challenge-dangling_clique-8-0",
+    "split": "challenge",
+    "family": "dangling_clique",
+    "size": 8,
+    "seed": 17,
+    "variant": 0
+  },
+  {
+    "id": "challenge-terminal_cliques-8-0",
+    "split": "challenge",
+    "family": "terminal_cliques",
+    "size": 8,
+    "seed": 17,
+    "variant": 0
+  },
+  {
+    "id": "challenge-incidence_chain-12-0",
+    "split": "challenge",
+    "family": "incidence_chain",
+    "size": 12,
+    "seed": 17,
+    "variant": 0
+  },
+  {
+    "id": "challenge-cube_leaves-5-0",
+    "split": "challenge",
+    "family": "cube_leaves",
+    "size": 5,
+    "seed": 17,
+    "variant": 0
+  }
+]

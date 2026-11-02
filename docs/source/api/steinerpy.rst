@@ -25,6 +25,19 @@ Unified interface
 Core problems
 -------------
 
+Plain, unconstrained Steiner trees can automatically use the
+:ref:`uniform-edge-cost node formulation <uniform-edge-costs>` when their
+working graph has exactly equal, finite, positive costs. This supports both
+HiGHS and Gurobi without new arguments or a different solution type.
+Automatic selection favors connected terminal-induced subgraphs, or a component
+containing all terminals whose edges all join terminals to nonterminals with at
+least five edges per remaining nonterminal on average, after ignoring
+terminal-free components and pruning nonterminal leaves. Earlier exact
+shortcuts retain priority.
+Set ``STEINERPY_UNIFORM_NODE_MODEL=0`` to disable the node model, ``1`` to force
+it when mathematically eligible, or leave it unset (or set to ``auto``) to use
+the structural rule. Enumeration continues to use the existing edge formulation.
+
 .. autoclass:: steinerpy.SteinerProblem
    :members:
    :inherited-members:

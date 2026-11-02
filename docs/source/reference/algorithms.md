@@ -28,7 +28,8 @@ When enabled it additionally warm-starts the cut loop with the Steiner cuts foun
 
 ## Connectivity cut separation
 
-Both HiGHS and Gurobi use the accelerated SciPy separator. Before computing
+The directed-cut formulations for HiGHS and Gurobi use the accelerated SciPy
+separator. Before computing
 per-terminal maximum flows, it checks for paths whose arcs each carry enough
 capacity to satisfy the connectivity demand. Such terminals need no maximum
 flow. Remaining flows skip residual graph traversal when their value already
@@ -158,9 +159,80 @@ This is the reductions + DP recipe of the winning PACE 2018 solvers; it is `O(3^
 
 It is auto-selected after preprocessing whenever the (reduced) terminal count is at most `STEINERPY_DW_MAX_TERMINALS` (default `10`; `0` disables) and returns the identical optimum with `gap == 0.0`. Compatible legacy terminal-leaf and rectilinear adapters can also use this path; general feature composition and group problems use their own formulations.
 
+(uniform-edge-costs)=
+## Uniform edge costs
+
+Plain Steiner trees with uniform positive edge costs can automatically use a
+node-variable MIP on HiGHS and Gurobi when the earlier preprocessing,
+decomposition, and few-terminal DP paths have not already solved the instance.
+This implements the uniform-cost idea of [Fischetti et al. (2017), *Thinning out Steiner trees:
+a node-based model for uniform edge costs*](https://doi.org/10.1007/s12532-016-0111-0).
+The model minimizes the number of selected vertices: a connected selection
+admits a spanning tree with one fewer edge. The returned tree is decoded into
+original edges, and its objective uses the original edge costs.
+
+Eligibility is checked on the current working graph: it must be a simple,
+undirected graph without self-loops, with one terminal group and finite,
+strictly positive edge costs that are exactly equal. Missing costs default to
+`1`, and the configured `weight` attribute is respected. Preprocessing can
+destroy uniformity by summing costs during contraction; the directed-cut
+formulation remains available in that case. Forests, constrained and
+transformed variants, and solves with `dual_ascent`, `primal_local_search`, or
+`implied_profit` enabled retain their existing paths.
+
+Within this eligible domain, the default selection rule uses the node model
+in either of these cases:
+
+- The subgraph induced by the terminals is connected. Its spanning tree
+  attains the lower bound of `k - 1` edges for `k` distinct terminals.
+- After ignoring components without terminals and repeatedly removing
+  nonterminal leaves, all terminals lie in one component, every remaining edge
+  joins a terminal to a nonterminal, and there are at least five edges per
+  remaining nonterminal on average.
+
+Other eligible instances retain the existing formulation. The component and
+leaf checks only guide selection; they do not change the working graph or its
+original-edge mapping. The threshold of five is an empirical choice from 64
+discovery and challenge cases, not a threshold from the paper or a guarantee
+that the node model is faster. The
+[selection report](https://github.com/berendmarkhorst/SteinerPy/blob/main/benchmarks/reports/uniform-selection/README.md)
+documents the rule, its supporting evidence, and the independent validation protocol.
+
+```python
+import networkx as nx
+from steinerpy import Problem
+
+graph = nx.hypercube_graph(5)
+terminals = [node for node in graph if sum(node) % 2 == 0]
+# Sixteen terminals exceed the default few-terminal DP limit.
+problem = Problem(graph, terminals=terminals, preprocess=False)
+solution = problem.get_solution(solver="highs")
+assert solution.gap == 0.0
+print(solution.objective, solution.edges)
+```
+
+HiGHS repeatedly solves the integer model and adds node-separator cuts for
+disconnected selections. Gurobi adds these cuts lazily at integer incumbents.
+This path does not separate fractional node cuts. Both backends independently
+check the final selection before returning it; an interrupted solve with a
+valid incumbent reports `gap == float("inf")`.
+
+The `STEINERPY_UNIFORM_NODE_MODEL` environment variable controls selection:
+
+| Value | Behavior |
+|---|---|
+| Unset or `auto` | Apply the structural rule above. |
+| `0` | Disable the node model and retain the existing solver paths. |
+| `1` | Force the node model whenever it is mathematically eligible. |
+
+The override does not bypass earlier exact shortcuts or the eligibility and
+option exclusions above. Public method signatures and solution types are
+unchanged, and `get_optimal_solutions()`
+continues to enumerate edge selections using its existing formulation.
+
 ## Cut-separation accelerators
 
-The exact solve enforces connectivity lazily with directed Steiner cuts found by minimum-cut separation.
+The directed-cut formulation enforces connectivity lazily with directed Steiner cuts found by minimum-cut separation.
 Three classic accelerators are applied automatically (no flags needed):
 
 - LP-first separation ([Koch & Martin 1998](<https://doi.org/10.1002/(SICI)1097-0037(199810)32:3%3C207::AID-NET5%3E3.0.CO;2-O>)) — on the HiGHS path the cut loop first runs on the LP relaxation: each round is a cheap LP re-solve, and the accumulated root cuts strengthen every subsequent MIP solve. Tune or disable with `STEINERPY_LP_CUT_ROUNDS` (default `50`, `0` disables). The Gurobi path separates fractional points inside its branch-and-cut callback instead.

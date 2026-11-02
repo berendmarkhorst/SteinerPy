@@ -1,0 +1,418 @@
+[
+  {
+    "id": "heldout-bipartite-16-101",
+    "split": "heldout",
+    "family": "bipartite",
+    "size": 16,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-bipartite-16-102",
+    "split": "heldout",
+    "family": "bipartite",
+    "size": 16,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-bipartite-24-101",
+    "split": "heldout",
+    "family": "bipartite",
+    "size": 24,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-bipartite-24-102",
+    "split": "heldout",
+    "family": "bipartite",
+    "size": 24,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-regular_incidence-16-101",
+    "split": "heldout",
+    "family": "regular_incidence",
+    "size": 16,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-regular_incidence-16-102",
+    "split": "heldout",
+    "family": "regular_incidence",
+    "size": 16,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-regular_incidence-24-101",
+    "split": "heldout",
+    "family": "regular_incidence",
+    "size": 24,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-regular_incidence-24-102",
+    "split": "heldout",
+    "family": "regular_incidence",
+    "size": 24,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-subdivision-16-101",
+    "split": "heldout",
+    "family": "subdivision",
+    "size": 16,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-subdivision-16-102",
+    "split": "heldout",
+    "family": "subdivision",
+    "size": 16,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-subdivision-24-101",
+    "split": "heldout",
+    "family": "subdivision",
+    "size": 24,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-subdivision-24-102",
+    "split": "heldout",
+    "family": "subdivision",
+    "size": 24,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-checkerboard_grid-8-101",
+    "split": "heldout",
+    "family": "checkerboard_grid",
+    "size": 8,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-checkerboard_grid-8-102",
+    "split": "heldout",
+    "family": "checkerboard_grid",
+    "size": 8,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-checkerboard_grid-10-101",
+    "split": "heldout",
+    "family": "checkerboard_grid",
+    "size": 10,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-checkerboard_grid-10-102",
+    "split": "heldout",
+    "family": "checkerboard_grid",
+    "size": 10,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-sparse_grid-9-101",
+    "split": "heldout",
+    "family": "sparse_grid",
+    "size": 9,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-sparse_grid-9-102",
+    "split": "heldout",
+    "family": "sparse_grid",
+    "size": 9,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-sparse_grid-11-101",
+    "split": "heldout",
+    "family": "sparse_grid",
+    "size": 11,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-sparse_grid-11-102",
+    "split": "heldout",
+    "family": "sparse_grid",
+    "size": 11,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-parity_cube-6-101",
+    "split": "heldout",
+    "family": "parity_cube",
+    "size": 6,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-parity_cube-6-102",
+    "split": "heldout",
+    "family": "parity_cube",
+    "size": 6,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-parity_cube-7-101",
+    "split": "heldout",
+    "family": "parity_cube",
+    "size": 7,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-parity_cube-7-102",
+    "split": "heldout",
+    "family": "parity_cube",
+    "size": 7,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-random_cube-6-101",
+    "split": "heldout",
+    "family": "random_cube",
+    "size": 6,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-random_cube-6-102",
+    "split": "heldout",
+    "family": "random_cube",
+    "size": 6,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-random_cube-7-101",
+    "split": "heldout",
+    "family": "random_cube",
+    "size": 7,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-random_cube-7-102",
+    "split": "heldout",
+    "family": "random_cube",
+    "size": 7,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-regular-64-101",
+    "split": "heldout",
+    "family": "regular",
+    "size": 64,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-regular-64-102",
+    "split": "heldout",
+    "family": "regular",
+    "size": 64,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-regular-96-101",
+    "split": "heldout",
+    "family": "regular",
+    "size": 96,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-regular-96-102",
+    "split": "heldout",
+    "family": "regular",
+    "size": 96,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-random-64-101",
+    "split": "heldout",
+    "family": "random",
+    "size": 64,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-random-64-102",
+    "split": "heldout",
+    "family": "random",
+    "size": 64,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-random-96-101",
+    "split": "heldout",
+    "family": "random",
+    "size": 96,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-random-96-102",
+    "split": "heldout",
+    "family": "random",
+    "size": 96,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-small_world-64-101",
+    "split": "heldout",
+    "family": "small_world",
+    "size": 64,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-small_world-64-102",
+    "split": "heldout",
+    "family": "small_world",
+    "size": 64,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-small_world-96-101",
+    "split": "heldout",
+    "family": "small_world",
+    "size": 96,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-small_world-96-102",
+    "split": "heldout",
+    "family": "small_world",
+    "size": 96,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-geometric-64-101",
+    "split": "heldout",
+    "family": "geometric",
+    "size": 64,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-geometric-64-102",
+    "split": "heldout",
+    "family": "geometric",
+    "size": 64,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-geometric-96-101",
+    "split": "heldout",
+    "family": "geometric",
+    "size": 96,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-geometric-96-102",
+    "split": "heldout",
+    "family": "geometric",
+    "size": 96,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-clustered-64-101",
+    "split": "heldout",
+    "family": "clustered",
+    "size": 64,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-clustered-64-102",
+    "split": "heldout",
+    "family": "clustered",
+    "size": 64,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-clustered-96-101",
+    "split": "heldout",
+    "family": "clustered",
+    "size": 96,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-clustered-96-102",
+    "split": "heldout",
+    "family": "clustered",
+    "size": 96,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-bridged_incidence-16-101",
+    "split": "heldout",
+    "family": "bridged_incidence",
+    "size": 16,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-bridged_incidence-16-102",
+    "split": "heldout",
+    "family": "bridged_incidence",
+    "size": 16,
+    "seed": 102,
+    "variant": 1
+  },
+  {
+    "id": "heldout-bridged_incidence-24-101",
+    "split": "heldout",
+    "family": "bridged_incidence",
+    "size": 24,
+    "seed": 101,
+    "variant": 0
+  },
+  {
+    "id": "heldout-bridged_incidence-24-102",
+    "split": "heldout",
+    "family": "bridged_incidence",
+    "size": 24,
+    "seed": 102,
+    "variant": 1
+  }
+]
