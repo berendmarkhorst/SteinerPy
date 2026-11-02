@@ -53,7 +53,12 @@ Explicit `variant=` calls, `terminal_groups=`, and existing classes remain suppo
 pip install steinerpy
 ```
 
-Requires Python 3.8+. The HiGHS backend is installed automatically; to use Gurobi instead, install [gurobipy](https://pypi.org/project/gurobipy/) and provide a valid license.
+Supports standard CPython 3.8–3.15, with Python 3.8 retained as the minimum.
+The HiGHS backend is installed automatically. Python 3.15 currently requires
+building `highspy` from source with a C++ toolchain; see the
+[installation requirements](docs/source/setup/installation.md#python-315).
+To use Gurobi, install [gurobipy](https://pypi.org/project/gurobipy/) and provide
+a valid license; its Python compatibility is separate from HiGHS support.
 
 ## Quick start
 

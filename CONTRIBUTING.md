@@ -26,25 +26,29 @@ SteinerPy uses [uv](https://docs.astral.sh/uv/) to manage dependencies and
 environments. After forking and cloning the repository:
 
 ```bash
-uv sync --dev
+uv sync --python 3.14 --dev --locked
 ```
 
 This installs SteinerPy in editable mode together with the development
 dependencies. Then check that everything works by running the test suite:
 
 ```bash
-uv run pytest
+uv run --python 3.14 --locked pytest
 ```
 
 The test suite runs with coverage enabled by default (configured in
 `pyproject.toml`).
+Choose another supported interpreter with `--python` in both commands when
+checking compatibility. Python 3.15 requires building `highspy` with a C++
+toolchain until upstream publishes wheels; see the
+[installation requirements](docs/source/setup/installation.md#python-315).
 
 ## Code style
 
 - Format code with **black** (line length 88): `uv run black steinerpy tests`
 - Lint with **flake8**: `uv run flake8 steinerpy tests`
 - Type-check with **mypy** where practical: `uv run mypy steinerpy`
-- Support Python 3.8–3.12 — avoid syntax or standard-library features newer
+- Support standard CPython 3.8–3.15 — avoid syntax or standard-library features newer
   than 3.8, since CI tests the full matrix.
 
 Every public function, class, and method should have a docstring. When a class
@@ -65,7 +69,19 @@ All new code should come with tests. A few conventions used in this project:
 - CI uploads coverage to Codecov and fails if the upload fails, so make sure
   new code paths are exercised by the tests.
 
-Run the suite locally with `uv run pytest` before opening a pull request.
+Run the suite locally with `uv run --python 3.14 --locked pytest` before opening a pull request.
+
+When a new stable Python version is released, check the
+[official downloads](https://www.python.org/downloads/), installation and wheel
+availability for HiGHS, SciPy, and NetworkX, then run the full test suite on
+that interpreter. Record upstream blockers and keep optional Gurobi availability
+separate. Update the CI matrix, `pyproject.toml` classifiers, this guide, and
+installation documentation together; every advertised version needs a required
+passing CI check. Refresh the lock only as needed, retaining its older-Python
+resolutions, and verify package build/install and documentation on a supported
+modern Python. Retiring older versions is a separate decision: adding support
+must not silently raise `requires-python`. Prerelease and free-threaded builds
+are outside the current matrix.
 
 ## Documentation
 
@@ -77,12 +93,12 @@ change adds or alters user-facing behaviour:
   restrictions in `docs/source/reference/`, and research evidence in
   `benchmarks/reports/`. Link new features to a runnable example.
 - Update the API reference in `docs/source/api/steinerpy.rst`.
-- Build the docs locally to check they parse (requires Python ≥ 3.10):
+- Build the docs locally with Python 3.14, matching CI and Read the Docs:
 
   ```bash
-  uv sync --extra docs
-  uv run python docs/check_examples.py
-  uv run sphinx-build -b html -W --keep-going docs/source docs/_build/html
+  uv sync --python 3.14 --extra docs --locked
+  uv run --python 3.14 --locked python docs/check_examples.py
+  uv run --python 3.14 --locked sphinx-build -b html -W --keep-going docs/source docs/_build/html
   ```
 
 Notebook outputs are committed; Read the Docs does not execute notebooks.

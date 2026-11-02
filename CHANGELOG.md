@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   structural rule.
 
 ### Changed
+- Extend the standard CPython compatibility matrix and package classifiers
+  through Python 3.15 while retaining Python 3.8 as the minimum. Select the
+  requested interpreter explicitly in CI, and use Python 3.14 for documentation.
+  Python 3.15 requires a source build of `highspy` until upstream provides wheels;
+  optional Gurobi compatibility remains separate.
 - Corrected the software author metadata to Berend Markhorst; the pipe-routing
   paper citation retains its full author list.
 
