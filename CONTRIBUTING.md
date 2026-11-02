@@ -75,7 +75,7 @@ When a new stable Python version is released, check the
 [official downloads](https://www.python.org/downloads/), installation and wheel
 availability for HiGHS, SciPy, and NetworkX, then run the full test suite on
 that interpreter. Record upstream blockers and keep optional Gurobi availability
-separate. Update the CI matrix, `pyproject.toml` classifiers, this guide, and
+separate. Update the CI matrix, `pyproject.toml` classifiers, README badge, this guide, and
 installation documentation together; every advertised version needs a required
 passing CI check. Refresh the lock only as needed, retaining its older-Python
 resolutions, and verify package build/install and documentation on a supported
