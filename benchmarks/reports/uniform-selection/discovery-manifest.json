@@ -1,0 +1,418 @@
+[
+  {
+    "id": "discovery-bipartite-12-0",
+    "split": "discovery",
+    "family": "bipartite",
+    "size": 12,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-bipartite-12-1",
+    "split": "discovery",
+    "family": "bipartite",
+    "size": 12,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-bipartite-20-0",
+    "split": "discovery",
+    "family": "bipartite",
+    "size": 20,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-bipartite-20-1",
+    "split": "discovery",
+    "family": "bipartite",
+    "size": 20,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-regular_incidence-12-0",
+    "split": "discovery",
+    "family": "regular_incidence",
+    "size": 12,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-regular_incidence-12-1",
+    "split": "discovery",
+    "family": "regular_incidence",
+    "size": 12,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-regular_incidence-20-0",
+    "split": "discovery",
+    "family": "regular_incidence",
+    "size": 20,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-regular_incidence-20-1",
+    "split": "discovery",
+    "family": "regular_incidence",
+    "size": 20,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-subdivision-12-0",
+    "split": "discovery",
+    "family": "subdivision",
+    "size": 12,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-subdivision-12-1",
+    "split": "discovery",
+    "family": "subdivision",
+    "size": 12,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-subdivision-20-0",
+    "split": "discovery",
+    "family": "subdivision",
+    "size": 20,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-subdivision-20-1",
+    "split": "discovery",
+    "family": "subdivision",
+    "size": 20,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-checkerboard_grid-6-0",
+    "split": "discovery",
+    "family": "checkerboard_grid",
+    "size": 6,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-checkerboard_grid-6-1",
+    "split": "discovery",
+    "family": "checkerboard_grid",
+    "size": 6,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-checkerboard_grid-8-0",
+    "split": "discovery",
+    "family": "checkerboard_grid",
+    "size": 8,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-checkerboard_grid-8-1",
+    "split": "discovery",
+    "family": "checkerboard_grid",
+    "size": 8,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-sparse_grid-7-0",
+    "split": "discovery",
+    "family": "sparse_grid",
+    "size": 7,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-sparse_grid-7-1",
+    "split": "discovery",
+    "family": "sparse_grid",
+    "size": 7,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-sparse_grid-9-0",
+    "split": "discovery",
+    "family": "sparse_grid",
+    "size": 9,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-sparse_grid-9-1",
+    "split": "discovery",
+    "family": "sparse_grid",
+    "size": 9,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-parity_cube-5-0",
+    "split": "discovery",
+    "family": "parity_cube",
+    "size": 5,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-parity_cube-5-1",
+    "split": "discovery",
+    "family": "parity_cube",
+    "size": 5,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-parity_cube-6-0",
+    "split": "discovery",
+    "family": "parity_cube",
+    "size": 6,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-parity_cube-6-1",
+    "split": "discovery",
+    "family": "parity_cube",
+    "size": 6,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-random_cube-5-0",
+    "split": "discovery",
+    "family": "random_cube",
+    "size": 5,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-random_cube-5-1",
+    "split": "discovery",
+    "family": "random_cube",
+    "size": 5,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-random_cube-6-0",
+    "split": "discovery",
+    "family": "random_cube",
+    "size": 6,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-random_cube-6-1",
+    "split": "discovery",
+    "family": "random_cube",
+    "size": 6,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-regular-40-0",
+    "split": "discovery",
+    "family": "regular",
+    "size": 40,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-regular-40-1",
+    "split": "discovery",
+    "family": "regular",
+    "size": 40,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-regular-64-0",
+    "split": "discovery",
+    "family": "regular",
+    "size": 64,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-regular-64-1",
+    "split": "discovery",
+    "family": "regular",
+    "size": 64,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-random-40-0",
+    "split": "discovery",
+    "family": "random",
+    "size": 40,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-random-40-1",
+    "split": "discovery",
+    "family": "random",
+    "size": 40,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-random-64-0",
+    "split": "discovery",
+    "family": "random",
+    "size": 64,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-random-64-1",
+    "split": "discovery",
+    "family": "random",
+    "size": 64,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-small_world-40-0",
+    "split": "discovery",
+    "family": "small_world",
+    "size": 40,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-small_world-40-1",
+    "split": "discovery",
+    "family": "small_world",
+    "size": 40,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-small_world-64-0",
+    "split": "discovery",
+    "family": "small_world",
+    "size": 64,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-small_world-64-1",
+    "split": "discovery",
+    "family": "small_world",
+    "size": 64,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-geometric-40-0",
+    "split": "discovery",
+    "family": "geometric",
+    "size": 40,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-geometric-40-1",
+    "split": "discovery",
+    "family": "geometric",
+    "size": 40,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-geometric-64-0",
+    "split": "discovery",
+    "family": "geometric",
+    "size": 64,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-geometric-64-1",
+    "split": "discovery",
+    "family": "geometric",
+    "size": 64,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-clustered-40-0",
+    "split": "discovery",
+    "family": "clustered",
+    "size": 40,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-clustered-40-1",
+    "split": "discovery",
+    "family": "clustered",
+    "size": 40,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-clustered-64-0",
+    "split": "discovery",
+    "family": "clustered",
+    "size": 64,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-clustered-64-1",
+    "split": "discovery",
+    "family": "clustered",
+    "size": 64,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-bridged_incidence-12-0",
+    "split": "discovery",
+    "family": "bridged_incidence",
+    "size": 12,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-bridged_incidence-12-1",
+    "split": "discovery",
+    "family": "bridged_incidence",
+    "size": 12,
+    "seed": 1,
+    "variant": 1
+  },
+  {
+    "id": "discovery-bridged_incidence-20-0",
+    "split": "discovery",
+    "family": "bridged_incidence",
+    "size": 20,
+    "seed": 0,
+    "variant": 0
+  },
+  {
+    "id": "discovery-bridged_incidence-20-1",
+    "split": "discovery",
+    "family": "bridged_incidence",
+    "size": 20,
+    "seed": 1,
+    "variant": 1
+  }
+]

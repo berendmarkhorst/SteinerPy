@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "retrieved_on": "2026-11-02",
+  "notes": [
+    "Reference bounds are independent of SteinerPy timings and solver status.",
+    "Historical published bounds are not asserted to be the latest known bounds.",
+    "An incumbent matching a published upper bound alone is not an optimality certificate.",
+    "The csd values are independently derived from the checksummed input structure, not taken from a published results table."
+  ],
+  "sources": {
+    "polzin_vahdati": {
+      "title": "The Steiner Tree Challenge: An updated Study",
+      "authors": "Tobias Polzin and Siavash Vahdati Daneshmand",
+      "url": "https://dimacs11.zib.de/papers/PolzinVahdatiDIMACS.pdf",
+      "location": "Table 12, PDF page 10; interpretation of exact values and intervals on PDF page 1",
+      "interpretation": "A single value denotes a proven optimum; an interval denotes lower and upper bounds at the time limit."
+    },
+    "fischetti_pucn": {
+      "title": "Thinning out Steiner trees: a node-based model for uniform edge costs",
+      "authors": "Matteo Fischetti et al.",
+      "url": "https://dimacs11.zib.de/workshop/FischettiLeitnerLjubicLuipersbeck.pdf",
+      "location": "Table 7, PDF page 22",
+      "interpretation": "The selected PUCN rows have equal lower and upper bounds and zero reported gap."
+    },
+    "fischetti_gaps": {
+      "title": "Thinning out Steiner trees: a node-based model for uniform edge costs",
+      "authors": "Matteo Fischetti et al.",
+      "url": "https://dimacs11.zib.de/workshop/FischettiLeitnerLjubicLuipersbeck.pdf",
+      "location": "Table 4, PDF page 17",
+      "interpretation": "Use the y-model proven optimum, not the weaker lower bound from the separate (x,y)-model run."
+    },
+    "csd_structure": {
+      "title": "DIMACS SPG-GAPS input structure",
+      "url": "https://dimacs11.zib.de/instances/SPG-GAPS.zip",
+      "description_url": "https://dimacs11.zib.de/downloads.html",
+      "location": "gaps/csd/csd10.stp and gaps/csd/csd15.stp",
+      "interpretation": "Independent structural derivation; no published optimum for these two rows was identified in the sources checked.",
+      "proof": "Each input is K_q with every edge subdivided once, all subdivision vertices terminal, and every edge of cost 1. Every terminal needs an adjacent selected original vertex, so selected original vertices cover K_q and number at least q-1. Any q-1 original vertices together with all terminals induce a connected graph. A spanning tree therefore attains |T|+q-2 edges, meeting the lower bound.",
+      "verification": "Checked that every terminal has two distinct nonterminal neighbors, the terminal neighborhoods are exactly all unordered pairs of nonterminals without repetitions, every edge crosses the terminal partition, and all weights equal 1."
+    }
+  },
+  "instances": [
+    {"id": "external-hc6u", "lower_bound": 39, "upper_bound": 39, "status": "published_optimum", "source": "polzin_vahdati"},
+    {"id": "external-hc7u", "lower_bound": 77, "upper_bound": 77, "status": "published_optimum", "source": "polzin_vahdati"},
+    {"id": "external-hc8u", "lower_bound": 146, "upper_bound": 148, "status": "published_bounds", "source": "polzin_vahdati"},
+    {"id": "external-bipe2u", "lower_bound": 54, "upper_bound": 54, "status": "published_optimum", "source": "polzin_vahdati"},
+    {"id": "external-bip42u", "lower_bound": 236, "upper_bound": 236, "status": "published_optimum", "source": "polzin_vahdati"},
+    {"id": "external-cc3-5n", "lower_bound": 20, "upper_bound": 20, "status": "published_optimum", "source": "fischetti_pucn"},
+    {"id": "external-cc5-3n", "lower_bound": 42, "upper_bound": 42, "status": "published_optimum", "source": "fischetti_pucn"},
+    {"id": "external-cc6-2n", "lower_bound": 18, "upper_bound": 18, "status": "published_optimum", "source": "fischetti_pucn"},
+    {"id": "external-csd10", "lower_bound": 53, "upper_bound": 53, "status": "derived_optimum", "source": "csd_structure", "complete_graph_order": 10},
+    {"id": "external-csd15", "lower_bound": 118, "upper_bound": 118, "status": "derived_optimum", "source": "csd_structure", "complete_graph_order": 15},
+    {"id": "external-s2", "lower_bound": 73, "upper_bound": 73, "status": "published_optimum", "source": "fischetti_gaps"},
+    {"id": "external-s3", "lower_bound": 514, "upper_bound": 514, "status": "published_optimum", "source": "fischetti_gaps"}
+  ]
+}

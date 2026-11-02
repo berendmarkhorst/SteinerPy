@@ -1,0 +1,499 @@
+{
+  "checked_utc": "2026-11-02T09:21:21.588410+00:00",
+  "closed_definition": "certificate_valid and finite gap <= 1e-12; raw strict-zero status retained",
+  "material_runtime_definition": "both close, auto total > 2 * directed total and auto total > directed total + 0.1 seconds",
+  "reports": [
+    {
+      "file": "heldout-highs.json",
+      "sha256": "7c79747b5382d14a6e02d51a909add65fe5a7301d7a67d3b216266f5bcae36ac",
+      "measurements": 156,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 39,
+            "feasible": 4,
+            "incomplete": 9
+          },
+          "closed": 42,
+          "valid_incumbents": 43,
+          "formulations": {
+            "directed_cut": 33,
+            "uniform_node": 19
+          }
+        },
+        "directed": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 30,
+            "incomplete": 17,
+            "feasible": 5
+          },
+          "closed": 34,
+          "valid_incumbents": 35,
+          "formulations": {
+            "directed_cut": 52
+          }
+        },
+        "node": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 35,
+            "incomplete": 15,
+            "feasible": 2
+          },
+          "closed": 35,
+          "valid_incumbents": 37,
+          "formulations": {
+            "uniform_node": 52
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "heldout-gurobi.json",
+      "sha256": "1e94d45c5048d5534b1ac526ba04ea358abf919d078d50f892bd18f6da94f5ef",
+      "measurements": 156,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 50,
+            "feasible": 2
+          },
+          "closed": 50,
+          "valid_incumbents": 52,
+          "formulations": {
+            "directed_cut": 33,
+            "uniform_node": 19
+          }
+        },
+        "directed": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 48,
+            "feasible": 4
+          },
+          "closed": 48,
+          "valid_incumbents": 52,
+          "formulations": {
+            "directed_cut": 52
+          }
+        },
+        "node": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 42,
+            "feasible": 10
+          },
+          "closed": 42,
+          "valid_incumbents": 52,
+          "formulations": {
+            "uniform_node": 52
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "external-highs.json",
+      "sha256": "3e95fdde7928c2621440ab72da21100d9eb9398d2d63c6ded1f22c277b71c222",
+      "measurements": 36,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 12,
+          "raw_status": {
+            "feasible": 1,
+            "incomplete": 8,
+            "optimal": 3
+          },
+          "closed": 3,
+          "valid_incumbents": 4,
+          "formulations": {
+            "uniform_node": 6,
+            "directed_cut": 6
+          }
+        },
+        "directed": {
+          "rows": 12,
+          "raw_status": {
+            "incomplete": 11,
+            "feasible": 1
+          },
+          "closed": 1,
+          "valid_incumbents": 1,
+          "formulations": {
+            "directed_cut": 12
+          }
+        },
+        "node": {
+          "rows": 12,
+          "raw_status": {
+            "incomplete": 6,
+            "optimal": 6
+          },
+          "closed": 6,
+          "valid_incumbents": 6,
+          "formulations": {
+            "uniform_node": 12
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "external-gurobi.json",
+      "sha256": "723c2f59b173ac56906dc4c6a3288b962d801671ce829c9edb679884b995c35a",
+      "measurements": 36,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 12,
+          "raw_status": {
+            "optimal": 5,
+            "feasible": 4,
+            "incomplete": 3
+          },
+          "closed": 5,
+          "valid_incumbents": 9,
+          "formulations": {
+            "uniform_node": 6,
+            "directed_cut": 6
+          }
+        },
+        "directed": {
+          "rows": 12,
+          "raw_status": {
+            "feasible": 5,
+            "incomplete": 5,
+            "optimal": 2
+          },
+          "closed": 2,
+          "valid_incumbents": 7,
+          "formulations": {
+            "directed_cut": 12
+          }
+        },
+        "node": {
+          "rows": 12,
+          "raw_status": {
+            "optimal": 8,
+            "feasible": 4
+          },
+          "closed": 8,
+          "valid_incumbents": 12,
+          "formulations": {
+            "uniform_node": 12
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "external-long-highs.json",
+      "sha256": "f809e39e1858f81a770491584c0eb79ceadae40f6ea1062e8944987fb5216c15",
+      "measurements": 6,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 3,
+          "raw_status": {
+            "feasible": 1,
+            "incomplete": 2
+          },
+          "closed": 0,
+          "valid_incumbents": 1,
+          "formulations": {
+            "uniform_node": 3
+          }
+        },
+        "directed": {
+          "rows": 3,
+          "raw_status": {
+            "incomplete": 3
+          },
+          "closed": 0,
+          "valid_incumbents": 0,
+          "formulations": {
+            "directed_cut": 3
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "external-long-gurobi.json",
+      "sha256": "bb77500fec111a70e41b4b1364e7cc46abfe790db8b541b7fdaf1c250ef61ce1",
+      "measurements": 6,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 3,
+          "raw_status": {
+            "optimal": 1,
+            "feasible": 2
+          },
+          "closed": 1,
+          "valid_incumbents": 3,
+          "formulations": {
+            "uniform_node": 3
+          }
+        },
+        "directed": {
+          "rows": 3,
+          "raw_status": {
+            "feasible": 2,
+            "incomplete": 1
+          },
+          "closed": 0,
+          "valid_incumbents": 2,
+          "formulations": {
+            "directed_cut": 3
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "heldout-preprocess-highs.json",
+      "sha256": "d3d423b90fbdcd362513024cd87e6d803d17a5bc282b7976e0a9cca21b575337",
+      "measurements": 104,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 40,
+            "feasible": 8,
+            "incomplete": 4
+          },
+          "closed": 47,
+          "valid_incumbents": 48,
+          "formulations": {
+            "directed_cut": 20,
+            "uniform_node": 6,
+            "shortcut": 16,
+            "dreyfus_wagner": 10
+          }
+        },
+        "directed": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 39,
+            "feasible": 7,
+            "incomplete": 6
+          },
+          "closed": 46,
+          "valid_incumbents": 46,
+          "formulations": {
+            "directed_cut": 26,
+            "shortcut": 16,
+            "dreyfus_wagner": 10
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "heldout-preprocess-gurobi.json",
+      "sha256": "6c79835a21b4febce2702567ca5f7685e21ff485d10d93b8135106b05a7497b7",
+      "measurements": 104,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 50,
+            "feasible": 2
+          },
+          "closed": 50,
+          "valid_incumbents": 52,
+          "formulations": {
+            "directed_cut": 20,
+            "uniform_node": 6,
+            "shortcut": 16,
+            "dreyfus_wagner": 10
+          }
+        },
+        "directed": {
+          "rows": 52,
+          "raw_status": {
+            "optimal": 48,
+            "feasible": 4
+          },
+          "closed": 48,
+          "valid_incumbents": 52,
+          "formulations": {
+            "directed_cut": 26,
+            "shortcut": 16,
+            "dreyfus_wagner": 10
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "heldout-near-limit-highs.json",
+      "sha256": "e65cfe9c35d5b7410949d13b76ff5ada6c4cb6f7983a4f282a74f6dccdd385c7",
+      "measurements": 6,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 3,
+          "raw_status": {
+            "optimal": 3
+          },
+          "closed": 3,
+          "valid_incumbents": 3,
+          "formulations": {
+            "uniform_node": 3
+          }
+        },
+        "directed": {
+          "rows": 3,
+          "raw_status": {
+            "incomplete": 3
+          },
+          "closed": 0,
+          "valid_incumbents": 0,
+          "formulations": {
+            "directed_cut": 3
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "external-near-limit-gurobi.json",
+      "sha256": "2f182d91ac5f99ffe2b9904547b9eaec828fdb0a4d08cb0cc4011c2ef983ecc9",
+      "measurements": 6,
+      "frozen_source_hashes_recorded": true,
+      "configurations": {
+        "auto": {
+          "rows": 3,
+          "raw_status": {
+            "optimal": 3
+          },
+          "closed": 3,
+          "valid_incumbents": 3,
+          "formulations": {
+            "uniform_node": 3
+          }
+        },
+        "directed": {
+          "rows": 3,
+          "raw_status": {
+            "feasible": 1,
+            "optimal": 2
+          },
+          "closed": 2,
+          "valid_incumbents": 3,
+          "formulations": {
+            "directed_cut": 3
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "original-highs.json",
+      "sha256": "e473ff2bece7b6a6878b0a6a058e7b1a8604a3be78e967edbee8ee00695dea67",
+      "measurements": 48,
+      "frozen_source_hashes_recorded": false,
+      "configurations": {
+        "auto": {
+          "rows": 24,
+          "raw_status": {
+            "optimal": 24
+          },
+          "closed": 24,
+          "valid_incumbents": 24,
+          "formulations": {
+            "directed_cut": 9,
+            "shortcut": 3,
+            "uniform_node": 12
+          }
+        },
+        "directed": {
+          "rows": 24,
+          "raw_status": {
+            "optimal": 12,
+            "incomplete": 10,
+            "feasible": 2
+          },
+          "closed": 12,
+          "valid_incumbents": 14,
+          "formulations": {
+            "directed_cut": 21,
+            "shortcut": 3
+          }
+        }
+      },
+      "automatic_regressions": []
+    },
+    {
+      "file": "original-gurobi.json",
+      "sha256": "f4a707fe8ddbfd4e235e1bc2fc3429de4922e71698540361c89000efa1fc7406",
+      "measurements": 48,
+      "frozen_source_hashes_recorded": false,
+      "configurations": {
+        "auto": {
+          "rows": 24,
+          "raw_status": {
+            "optimal": 24
+          },
+          "closed": 24,
+          "valid_incumbents": 24,
+          "formulations": {
+            "directed_cut": 9,
+            "shortcut": 3,
+            "uniform_node": 12
+          }
+        },
+        "directed": {
+          "rows": 24,
+          "raw_status": {
+            "optimal": 24
+          },
+          "closed": 24,
+          "valid_incumbents": 24,
+          "formulations": {
+            "directed_cut": 21,
+            "shortcut": 3
+          }
+        }
+      },
+      "automatic_regressions": []
+    }
+  ],
+  "total_measurements": 712,
+  "all_reference_and_paired_objective_checks_passed": true,
+  "automatic_regressions": 0,
+  "package_verification": {
+    "python": "3.12.15",
+    "pytest_passed": 4025,
+    "pytest_skipped": 29,
+    "pytest_existing_deprecation_warnings": 9,
+    "overall_coverage_percent": 94,
+    "uniform_node_coverage_percent": 94,
+    "sphinx_warnings_as_errors": "passed",
+    "documentation_notebooks_passed": 4,
+    "new_files_black_and_python38_syntax_checked": 7,
+    "python38_runtime_tested": false,
+    "cached_external_input_checksums_verified": 12
+  },
+  "isolated_pr_verification": {
+    "pytest_passed": 3998,
+    "pytest_skipped": 29,
+    "pytest_existing_deprecation_warnings": 9,
+    "overall_coverage_percent": 94,
+    "uniform_node_coverage_percent": 94,
+    "sphinx_warnings_as_errors": "passed",
+    "documentation_notebooks_passed": 4,
+    "note": "Checkout includes only issue110 changes; unrelated pending benchmark/release work is excluded."
+  }
+}

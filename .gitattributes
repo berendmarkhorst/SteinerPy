@@ -1,0 +1,9 @@
+# Preserve raw artifact bytes and their intentional CRLF for recorded checksums.
+benchmarks/reports/uniform/*.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+benchmarks/reports/uniform-selection/*.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# Keep generated timing dumps collapsed in reviews; retain visible provenance.
+benchmarks/reports/uniform/*highs*.json linguist-generated=true
+benchmarks/reports/uniform/*gurobi*.json linguist-generated=true
+benchmarks/reports/uniform-selection/*highs*.json linguist-generated=true
+benchmarks/reports/uniform-selection/*gurobi*.json linguist-generated=true
