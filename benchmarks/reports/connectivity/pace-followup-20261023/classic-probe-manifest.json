@@ -1,0 +1,47 @@
+{
+  "run": {
+    "commit": "80055b308ab19ba344f03b84918abbdf7dd47bc0",
+    "dataset_commit": "4df73cea9c311faea7d03e6d6bffa8733c34a1aa",
+    "python": "3.12.15",
+    "packages": {
+      "networkx": "3.6.1",
+      "numpy": "2.3.5",
+      "scipy": "1.18.0",
+      "highspy": "1.15.1",
+      "gurobipy": "13.0.3"
+    },
+    "cpu": "Intel64 Family 6 Model 181 Stepping 0, GenuineIntel",
+    "platform": "Windows-11-10.0.26100-SP0",
+    "slurm_job": null,
+    "slurm_array_task": null,
+    "harness_commit": "1b980bbf422a634798aed249507b188bc796ae73",
+    "native_highs_version": "1.15.1",
+    "memory_limit_enforced": false,
+    "time_limit": 15,
+    "threads": 1,
+    "memory_gb": 8
+  },
+  "case": {
+    "track": 1,
+    "instance": "instance101.gr",
+    "split": "public",
+    "path": "Track1/instance101.gr",
+    "reference_lower": 1601190.0,
+    "reference_upper": 1601190.0,
+    "instance_sha256": "f3b57ceb37a9840155986ce81c3b6d1d056749dc68258a17ea0cfd50b3ca0c5c",
+    "id": "track1-instance101",
+    "kind": "pace"
+  },
+  "configurations": {
+    "default": {},
+    "dual_ascent": {
+      "dual_ascent": true
+    },
+    "portfolio": {
+      "dual_ascent": true,
+      "primal_local_search": true,
+      "implied_profit": true
+    }
+  },
+  "repeats": 2
+}

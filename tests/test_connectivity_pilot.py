@@ -77,7 +77,7 @@ def isolated(case, tmp_path, limit=30, root=None):
     )
 
 
-@pytest.mark.parametrize("config", ["highs", "composition-highs"])
+@pytest.mark.parametrize("config", ["highs", "composition-highs", "api-highs"])
 def test_isolated_pace_worker_keeps_original_solution_checks(tmp_path, config):
     graph = tmp_path / "test.gr"
     graph.write_text(
@@ -98,6 +98,8 @@ def test_isolated_pace_worker_keeps_original_solution_checks(tmp_path, config):
     assert row["feasible"] and row["reference_optimal"]
     assert len(row["solution_edges"]) == 2
     assert not row["gurobi_started"]
+    if config == "api-highs":
+        assert row["implementation"] == "SteinerProblem"
 
 
 def test_combined_worker_uses_public_dispatch_and_records_a_certificate(tmp_path):

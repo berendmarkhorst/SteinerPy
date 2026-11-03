@@ -70,7 +70,7 @@ def worker(request_path):
     # Fail rather than silently measure an installed or the wrong checkout.
     if "steinerpy" in sys.modules:
         raise RuntimeError("Production code was imported before checkout selection")
-    if request["config"] not in {"highs", "composition-highs"}:
+    if request["config"] not in {"highs", "composition-highs", "api-highs"}:
         raise ValueError("This pilot only runs HiGHS")
     if case["kind"] == "pace":
         pace.worker(request_path)

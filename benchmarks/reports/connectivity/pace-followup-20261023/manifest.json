@@ -1,0 +1,270 @@
+{
+  "run": {
+    "commit": "1b980bbf422a634798aed249507b188bc796ae73",
+    "dataset_commit": "4df73cea9c311faea7d03e6d6bffa8733c34a1aa",
+    "python": "3.12.3",
+    "packages": {
+      "networkx": "3.7",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "highspy": "1.15.1",
+      "gurobipy": "13.0.3"
+    },
+    "cpu": "AMD EPYC 7H12 64-Core Processor",
+    "platform": "Linux-5.14.0-687.59.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "slurm_job": "28477305",
+    "slurm_array_task": null,
+    "commits": {
+      "baseline": "d982be2f56905db602fd86818b4ac5f23edf3dd5",
+      "candidate": "80055b308ab19ba344f03b84918abbdf7dd47bc0"
+    },
+    "harness_commit": "1b980bbf422a634798aed249507b188bc796ae73",
+    "native_highs_version": "1.15.1",
+    "memory_limit_enforced": true,
+    "competitor_commit": "2700bdc3033d0d01c5d3648832b4535fceb70991",
+    "compiler": "rustc 1.79.0-nightly (129f3b996 2024-06-10) (built from a source tarball)",
+    "binary_sha256": {
+      "track1": "47bcdcc88fc4d332ead0d90f895e1ffd44fe7550388c7236d18cbe466c53a10b",
+      "track2": "a97f48f14ffd93ba5f9b33695a7730d76feb412d082c1045f2801cc8a2ff7b73"
+    }
+  },
+  "combined_cases": [
+    {
+      "id": "signed-rewards-40",
+      "name": "signed-rewards",
+      "seed": 40,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-41",
+      "name": "signed-rewards",
+      "seed": 41,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-42",
+      "name": "signed-rewards",
+      "seed": 42,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-43",
+      "name": "signed-rewards",
+      "seed": 43,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-44",
+      "name": "signed-rewards",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "signed-rewards-45",
+      "name": "signed-rewards",
+      "seed": 45,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-42",
+      "name": "resource-tree",
+      "seed": 42,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-43",
+      "name": "resource-tree",
+      "seed": 43,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-44",
+      "name": "resource-tree",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "resource-tree-45",
+      "name": "resource-tree",
+      "seed": 45,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "groups-forest-42",
+      "name": "groups-forest",
+      "seed": 42,
+      "config": "highs",
+      "kind": "combined"
+    },
+    {
+      "id": "groups-forest-44",
+      "name": "groups-forest",
+      "seed": 44,
+      "config": "highs",
+      "kind": "combined"
+    }
+  ],
+  "pace_cases": [
+    {
+      "track": 1,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track1/instance001.gr",
+      "reference_lower": 503.0,
+      "reference_upper": 503.0,
+      "instance_sha256": "76ea79c05e41de49a8c3b24c953d512155a5ff7ad40109fb77c915ec6e7efed1",
+      "id": "track1-instance001",
+      "kind": "pace",
+      "binary": "target/release/track1"
+    },
+    {
+      "track": 1,
+      "instance": "instance050.gr",
+      "split": "private",
+      "path": "Track1/instance050.gr",
+      "reference_lower": 2016.0,
+      "reference_upper": 2016.0,
+      "instance_sha256": "92f4b6e4c4919f273501a35f2ec8f57c7a06d9f621bcc584d6503e080a25b522",
+      "id": "track1-instance050",
+      "kind": "pace",
+      "binary": "target/release/track1"
+    },
+    {
+      "track": 1,
+      "instance": "instance101.gr",
+      "split": "public",
+      "path": "Track1/instance101.gr",
+      "reference_lower": 1601190.0,
+      "reference_upper": 1601190.0,
+      "instance_sha256": "f3b57ceb37a9840155986ce81c3b6d1d056749dc68258a17ea0cfd50b3ca0c5c",
+      "id": "track1-instance101",
+      "kind": "pace",
+      "binary": "target/release/track1"
+    },
+    {
+      "track": 1,
+      "instance": "instance150.gr",
+      "split": "private",
+      "path": "Track1/instance150.gr",
+      "reference_lower": 2173.0,
+      "reference_upper": 2173.0,
+      "instance_sha256": "1142e88b88e921e5c23a925ac43ec97bbe90b50c1b5ea63a48c733831e16ef6a",
+      "id": "track1-instance150",
+      "kind": "pace",
+      "binary": "target/release/track1"
+    },
+    {
+      "track": 2,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track2/instance001.gr",
+      "reference_lower": 1086.0,
+      "reference_upper": 1086.0,
+      "instance_sha256": "c3913bf1709f5dd21c4c94204810b24f0fb100d29571ecfa25bc162dacde490b",
+      "id": "track2-instance001",
+      "kind": "pace",
+      "binary": "target/release/track2"
+    },
+    {
+      "track": 2,
+      "instance": "instance050.gr",
+      "split": "private",
+      "path": "Track2/instance050.gr",
+      "reference_lower": 4069628.0,
+      "reference_upper": 4069628.0,
+      "instance_sha256": "3c663bb8ee04c0c1a4061685fc789f9a24f6fe1abd7c5a0dda3b193e6c5abd3a",
+      "id": "track2-instance050",
+      "kind": "pace",
+      "binary": "target/release/track2"
+    },
+    {
+      "track": 2,
+      "instance": "instance101.gr",
+      "split": "public",
+      "path": "Track2/instance101.gr",
+      "reference_lower": 230200846.0,
+      "reference_upper": 230200846.0,
+      "instance_sha256": "0b38a02c025f8e49ffb9a1f48a59bd75567f317486bba2f46741852fa4e6d422",
+      "id": "track2-instance101",
+      "kind": "pace",
+      "binary": "target/release/track2"
+    },
+    {
+      "track": 2,
+      "instance": "instance150.gr",
+      "split": "private",
+      "path": "Track2/instance150.gr",
+      "reference_lower": 7102320.0,
+      "reference_upper": 7102320.0,
+      "instance_sha256": "d6cb1c1a9ae9ab7012dbab3ead89a0b3199f983611c5c6bbc5096a948a6f3f16",
+      "id": "track2-instance150",
+      "kind": "pace",
+      "binary": "target/release/track2"
+    },
+    {
+      "track": 3,
+      "instance": "instance001.gr",
+      "split": "public",
+      "path": "Track3/instance001.gr",
+      "reference_lower": 2256.0,
+      "reference_upper": 2256.0,
+      "instance_sha256": "57b06e0686347939436566441bedf41e22dd0abee6d48145243ccbe92d2f7fae",
+      "id": "track3-instance001",
+      "kind": "pace",
+      "binary": "target/release/track1"
+    },
+    {
+      "track": 3,
+      "instance": "instance050.gr",
+      "split": "private",
+      "path": "Track3/instance050.gr",
+      "reference_lower": 8401094.0,
+      "reference_upper": 8401094.0,
+      "instance_sha256": "b4bd85e657945f7aa6ef4450e3cbfd2ce4087263403dbb78bedc5d20a41b28e0",
+      "id": "track3-instance050",
+      "kind": "pace",
+      "binary": "target/release/track1"
+    },
+    {
+      "track": 3,
+      "instance": "instance101.gr",
+      "split": "public",
+      "path": "Track3/instance101.gr",
+      "reference_lower": 107617854.0,
+      "reference_upper": 107617854.0,
+      "instance_sha256": "a036cc705e5965460956639f4ef9245624e7543fac59dd101721e8325aaa6e0b",
+      "id": "track3-instance101",
+      "kind": "pace",
+      "binary": "target/release/track1"
+    },
+    {
+      "track": 3,
+      "instance": "instance150.gr",
+      "split": "private",
+      "path": "Track3/instance150.gr",
+      "reference_lower": 253921201.0,
+      "reference_upper": 253921201.0,
+      "instance_sha256": "6214e67c403c4282e3fbfce83338e061a348fa9f437337865bd9ee02e5069244",
+      "id": "track3-instance150",
+      "kind": "pace",
+      "binary": "target/release/track1"
+    }
+  ],
+  "workers": 96,
+  "repeats": 2,
+  "jobs": 3,
+  "threads": 1,
+  "memory_gb": 8,
+  "combined_time_limit": 15,
+  "pace_time_limit": 120
+}

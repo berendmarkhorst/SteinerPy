@@ -22,7 +22,14 @@ import subprocess
 import sys
 import time
 
-CONFIGS = ("highs", "gurobi", "heuristic", "composition-highs", "composition-gurobi")
+CONFIGS = (
+    "highs",
+    "gurobi",
+    "heuristic",
+    "composition-highs",
+    "composition-gurobi",
+    "api-highs",
+)
 WLS_COOLDOWN = 310  # A closed environment's five-minute token can still be occupied.
 
 
@@ -136,7 +143,7 @@ def worker(request_path):
         logging.disable(logging.CRITICAL)
         random.seed(0)
         from benchmarks.stp_parser import read_stp
-        from steinerpy import SteinerProblem
+        from steinerpy import Problem, SteinerProblem
         from steinerpy import objects
 
         def timed_builder(original, uses_gurobi):
@@ -174,15 +181,22 @@ def worker(request_path):
         config = request["config"]
         if config.startswith("composition-"):
             problem = composition_problem(graph, groups)
+        elif config == "api-highs":
+            problem = Problem(graph, terminals=groups[0], preprocess=True)
         else:
             # Default classic solver, with one model per process. Decomposition and
             # DA fallback can create additional environments and are not used here.
             problem = SteinerProblem(graph, groups, preprocess=True, dual_ascent=False)
-        row.update(preprocess_seconds=time.monotonic() - prep, phase="solve")
-        if hasattr(problem, "graph"):
+        implementation = problem.implementation if config == "api-highs" else problem
+        row.update(
+            preprocess_seconds=time.monotonic() - prep,
+            phase="solve",
+            implementation=type(implementation).__name__,
+        )
+        if hasattr(implementation, "graph"):
             row.update(
-                reduced_nodes=len(problem.graph),
-                reduced_edges=problem.graph.number_of_edges(),
+                reduced_nodes=len(implementation.graph),
+                reduced_edges=implementation.graph.number_of_edges(),
             )
         write_json(progress, row)
         remaining = max(0, request["time_limit"] - (time.monotonic() - started) - 2)
