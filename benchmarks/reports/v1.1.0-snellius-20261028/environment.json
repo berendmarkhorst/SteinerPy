@@ -1,0 +1,56 @@
+{
+  "tag": "v1.1.0",
+  "commit": "ef7265ee646ebd9f6b47635d68a2a4b7ee590200",
+  "mode": "full",
+  "prepared_utc": "2026-10-28T16:01:16.377156+00:00",
+  "software": {
+    "python": "3.12.3",
+    "implementation": "CPython",
+    "packages": {
+      "steinerpy": "1.1.0",
+      "networkx": "3.6.1",
+      "numpy": "1.26.4",
+      "scipy": "1.16.3",
+      "highspy": "1.12.0",
+      "gurobipy": "13.0.3",
+      "pcst_fast": "1.0.10"
+    },
+    "engines": {
+      "highs": "1.12.0",
+      "gurobi": "13.0.3"
+    }
+  },
+  "settings": {
+    "time_limit": 1800.0,
+    "memory_gb": 8.0,
+    "threads": 1,
+    "seed": 0,
+    "parity_repeats": 3,
+    "solvers": [
+      "highs",
+      "gurobi"
+    ],
+    "decompose": false,
+    "dw_max_terminals": 10,
+    "worker_environment": {
+      "PYTHONHASHSEED": "0",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "BLIS_NUM_THREADS": "1",
+      "VECLIB_MAXIMUM_THREADS": "1",
+      "STEINERPY_THREADS": "1",
+      "STEINERPY_SEP_THREADS": "1",
+      "STEINERPY_REDUCE_JOBS": "1",
+      "STEINERPY_ASCENT_JOBS": "1",
+      "STEINERPY_DECOMPOSE": "0",
+      "STEINERPY_DW_MAX_TERMINALS": "10",
+      "STEINERPY_NESTED_CUTS": "1",
+      "STEINERPY_LP_CUT_ROUNDS": "50",
+      "STEINERPY_CUT_PURGE_AGE": "0"
+    }
+  },
+  "environments": "environments/*.json",
+  "note": "Compute-node hardware and allocation are recorded separately per environment_id in every result."
+}

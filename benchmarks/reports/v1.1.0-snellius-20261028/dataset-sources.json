@@ -1,0 +1,26 @@
+[
+  {
+    "dataset": "B",
+    "url": "https://steinlib.zib.de/download/B.tgz",
+    "archive_sha256": "a8854fadb55071ab76be51261914a5768300401938ddf2b67823b6f44432d0ea",
+    "instances": 18,
+    "downloaded_utc": "2026-10-28T15:45:42.783686+00:00",
+    "hash_provenance": "Calculated from independently fetched official archives; not publisher-supplied"
+  },
+  {
+    "dataset": "C",
+    "url": "https://steinlib.zib.de/download/C.tgz",
+    "archive_sha256": "0486d949ca037ff72f3207de1a5a681baa9001a104822b492867236ede96e6ec",
+    "instances": 20,
+    "downloaded_utc": "2026-10-28T15:45:43.009512+00:00",
+    "hash_provenance": "Calculated from independently fetched official archives; not publisher-supplied"
+  },
+  {
+    "dataset": "PCSPG-JMP",
+    "url": "https://dimacs11.zib.de/instances/PCSPG-JMP.zip",
+    "archive_sha256": "73d32d9343470eb4e78d1d933415c8649476b6a77b0ed92a021a8b184a5035e7",
+    "instances": 34,
+    "downloaded_utc": "2026-10-28T15:45:43.335256+00:00",
+    "hash_provenance": "Calculated from independently fetched official archives; not publisher-supplied"
+  }
+]

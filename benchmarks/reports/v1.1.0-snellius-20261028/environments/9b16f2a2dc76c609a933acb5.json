@@ -1,0 +1,65 @@
+{
+  "python": "3.12.3",
+  "implementation": "CPython",
+  "packages": {
+    "steinerpy": "1.1.0",
+    "networkx": "3.6.1",
+    "numpy": "1.26.4",
+    "scipy": "1.16.3",
+    "highspy": "1.12.0",
+    "gurobipy": "13.0.3",
+    "pcst_fast": "1.0.10"
+  },
+  "engines": {
+    "highs": "1.12.0",
+    "gurobi": "13.0.3"
+  },
+  "tag": "v1.1.0",
+  "commit": "ef7265ee646ebd9f6b47635d68a2a4b7ee590200",
+  "steinerpy_version": "1.1.0",
+  "cpu": "AMD EPYC 7H12 64-Core Processor",
+  "platform": "Linux-5.14.0-687.65.1.el9_8.x86_64-x86_64-with-glibc2.34",
+  "machine": "x86_64",
+  "allocated_memory_mb": "28672",
+  "allocated_memory_per_cpu_mb": null,
+  "allocated_cpus": "16",
+  "slurm_partition": "rome",
+  "slurm_walltime": "1-00:00:00",
+  "requested_slurm_walltime": null,
+  "memory_limit_enforced": true,
+  "settings": {
+    "time_limit": 1800.0,
+    "memory_gb": 8.0,
+    "threads": 1,
+    "seed": 0,
+    "parity_repeats": 3,
+    "solvers": [
+      "highs",
+      "gurobi"
+    ],
+    "decompose": false,
+    "dw_max_terminals": 10,
+    "worker_environment": {
+      "PYTHONHASHSEED": "0",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "BLIS_NUM_THREADS": "1",
+      "VECLIB_MAXIMUM_THREADS": "1",
+      "STEINERPY_THREADS": "1",
+      "STEINERPY_SEP_THREADS": "1",
+      "STEINERPY_REDUCE_JOBS": "1",
+      "STEINERPY_ASCENT_JOBS": "1",
+      "STEINERPY_DECOMPOSE": "0",
+      "STEINERPY_DW_MAX_TERMINALS": "10",
+      "STEINERPY_NESTED_CUTS": "1",
+      "STEINERPY_LP_CUT_ROUNDS": "50",
+      "STEINERPY_CUT_PURGE_AGE": "0"
+    }
+  },
+  "harness_sha256": "136a0a1db93132edd634e16e1ca741bf4fd9f098ce2ee43c2a8cd9bcd5230106",
+  "manifest_sha256": "591785cd1f11e5f1e3029255477234bcda13fe1c9714d6531db3e04eefe5c8a4",
+  "environment_id": "9b16f2a2dc76c609a933acb5",
+  "recorded_utc": "2026-11-03T14:46:24.151235+00:00"
+}
