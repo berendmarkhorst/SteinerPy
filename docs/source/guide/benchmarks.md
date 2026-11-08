@@ -5,6 +5,11 @@ Use them to understand the tested workloads; runtime on your inputs may differ.
 
 ## Scope and scale
 
+The [completed v1.1.0 Snellius campaign](https://github.com/berendmarkhorst/SteinerPy/blob/main/benchmarks/reports/v1.1.0-snellius-20261028/README.md)
+contains 9,843 measurements across PACE 2018, API parity, SteinLib B/C and
+prize-collecting JMP cases. It includes per-case results, solution certificates,
+provenance and Slurm accounting, with failures retained in every denominator.
+
 The [PACE 2018 report](https://github.com/berendmarkhorst/SteinerPy/blob/main/benchmarks/reports/pace2018/README.md)
 measures all three undirected Steiner-tree tracks on Snellius, with HiGHS,
 Gurobi and heuristic configurations reported separately. It includes per-instance

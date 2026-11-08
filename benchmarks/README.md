@@ -7,6 +7,14 @@ This directory is **not** part of the installable package (it ships in neither
 the wheel nor the sdist). Benchmark infrastructure tests live in `tests/`;
 the expensive benchmark sweeps are not collected by `pytest`.
 
+## Completed v1.1.0 Snellius campaign
+
+The [28 October campaign](reports/v1.1.0-snellius-20261028/README.md) completed
+all 9,843 measurements on 4 November 2026: PACE 2018, API parity, SteinLib B/C
+and prize-collecting JMP cases. The report includes compressed per-case CSVs
+with certificates, provenance and Slurm accounting. It measures the frozen
+`v1.1.0` release; the earlier PACE baseline below remains a separate experiment.
+
 ## PACE 2018
 
 The [public report](reports/pace2018/README.md) covers all three applicable
